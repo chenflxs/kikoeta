@@ -1,0 +1,56 @@
+# ============================================================
+# Kikoeta 根目录忽略规则
+# 说明：app/ 内的 Flutter / Rust 模板 .gitignore 已覆盖大部分
+#       框架产物（如 .dart_tool/、build/、flutter/ephemeral/ 等），
+#       本文件补充仓库根级日志、Android 构建产物、密钥、IDE 等规则。
+# ============================================================
+
+# ---------- 日志 ----------
+*.log
+*.log.*
+
+# ---------- Android 构建产物与本地配置 ----------
+# 注意：app/.gitignore 的 /build/ 只覆盖 app/build/，不覆盖 app/android/build/，
+#       因此这里必须显式列出。
+app/android/build/
+app/android/.gradle/
+app/android/.kotlin/
+app/android/local.properties
+app/android/captures/
+app/android/.cxx/
+app/android/**/.cxx/
+app/android/**/*.iml
+
+# ---------- Android 签名与密钥（切勿入库） ----------
+app/android/key.properties
+**/*.keystore
+**/*.jks
+
+# ---------- Rust 构建产物 ----------
+app/rust/target/
+
+# ---------- Python（rust_builder / cargokit 使用） ----------
+__pycache__/
+*.pyc
+
+# ---------- IDE ----------
+.idea/
+*.iml
+*.ipr
+*.iws
+# .vscode/ 如需共享调试配置，可取消注释
+#.vscode/
+
+# ---------- 系统与编辑器临时文件 ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+
+# ---------- 环境变量 ----------
+.env
+
+# ---------- 内部计划，不纳入版本控制 ----------
+TODO.md

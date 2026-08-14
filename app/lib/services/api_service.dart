@@ -1,0 +1,601 @@
+import 'dart:convert';
+
+import '../data.dart';
+import '../src/rust/api/kikoeru_api.dart';
+import '../src/rust/api/simple.dart';
+import '../src/rust/api/textcodec.dart';
+
+/// 一页作品 + 服务端分页信息（用于 hasMore 判断）
+class WorksPage {
+  final List<Work> works;
+  final int page;
+  final int pageSize;
+  final int totalCount;
+  final bool hasMore;
+  const WorksPage({
+    required this.works,
+    required this.page,
+    required this.pageSize,
+    required this.totalCount,
+    required this.hasMore,
+  });
+}
+
+/// asmr.one API 客户端（网络层由 Rust 核心执行）
+class ApiService {
+  static String resolveBase(AppState app) {
+    if (app.customServer && app.customSites.isNotEmpty) {
+      return app.customSites[app.customServerIdx].url;
+    }
+    return 'https://api.asmr.one';
+  }
+
+  static Future<WorksPage> fetchWorks(AppState app,
+      {int page = 1, int perPage = 20}) async {
+    final base = resolveBase(app);
+    if (app.customServer) {
+      // kikoeru-express：分页大小由服务器配置决定，年龄用 nsfw、字幕用 lyric
+      final json = await apiGetCustomWorks(
+        base: base,
+        page: page,
+        order: orderParam(app),
+        sort: app.orderAsc ? 'asc' : 'desc',
+        nsfw: customNsfw(app.ageFilter),
+        lyric: app.subOnly ? 'ai_local' : null,
+        seed: app.category == 'rec' ? app.randomSeed?.toString() : null,
+      );
+      return parseWorks(json, base: base, perPage: perPage);
+    }
+    // asmr.one：年龄筛选改为搜索对应的年龄 tag，由服务端过滤，避免客户端逐页补拉
+    final ageTag = oneAgeTag(app.ageFilter);
+    if (ageTag != null) {
+      final json = await apiSearch(
+        base: base,
+        query: ageTag,
+        page: page,
+        perPage: perPage,
+        order: orderParam(app),
+        sort: app.orderAsc ? 'asc' : 'desc',
+        subtitle: app.subOnly ? true : null,
+        seed: app.category == 'rec' ? app.randomSeed?.toString() : null,
+      );
+      return parseWorks(json, base: base, perPage: perPage);
+    }
+    final json = await apiGetWorks(
+      base: base,
+      page: page,
+      perPage: perPage,
+      order: orderParam(app),
+      sort: app.orderAsc ? 'asc' : 'desc',
+      subtitle: app.subOnly ? true : null,
+      seed: app.category == 'rec' ? app.randomSeed?.toString() : null,
+    );
+    return parseWorks(json, base: base, perPage: perPage);
+  }
+
+  static Future<WorksPage> searchWorks(AppState app, String query,
+      {int page = 1, int perPage = 20}) async {
+    final base = resolveBase(app);
+    if (app.customServer) {
+      // kikoeru-express：搜索走 /api/search?keyword=，年龄用 nsfw 过滤
+      final json = await apiSearchCustom(
+        base: base,
+        keyword: query.trim(),
+        page: page,
+        order: orderParam(app),
+        sort: app.orderAsc ? 'asc' : 'desc',
+        nsfw: customNsfw(app.ageFilter),
+        seed: app.category == 'rec' ? app.randomSeed?.toString() : null,
+      );
+      return parseWorks(json, base: base, perPage: perPage);
+    }
+    // asmr.one：把年龄 tag 拼进搜索关键词，由服务端一并 AND 过滤
+    final ageTag = oneAgeTag(app.ageFilter);
+    final q = ageTag == null ? query : '${query.trim()} $ageTag'.trim();
+    final json = await apiSearch(
+      base: base,
+      query: q,
+      page: page,
+      perPage: perPage,
+      order: orderParam(app),
+      sort: app.orderAsc ? 'asc' : 'desc',
+      subtitle: app.subOnly ? true : null,
+      seed: app.category == 'rec' ? app.randomSeed?.toString() : null,
+    );
+    return parseWorks(json, base: base, perPage: perPage);
+  }
+
+  /// 首页/搜索排序参数：热门与推荐使用服务端固定 order
+  static String orderParam(AppState app) {
+    // betterRandom 接口固定只返回 1 个作品，热门改用销量排序
+    if (app.category == 'hot') return 'dl_count';
+    if (app.category == 'rec') return 'random';
+    return switch (app.sort) {
+      // 发布时间 = DLsite 发布日期；收录时间 = one 站收录日期（两个参数行为不同）
+      'date' => 'release',
+      // 自建站（kikoeru-express）的入库时间排序参数是 created_at
+      'collect' => app.customServer ? 'created_at' : 'create_date',
+      'myrating' => 'rating',
+      'sales' => 'dl_count',
+      'price' => 'price',
+      'rating' => 'rate_average_2dp',
+      'comments' => 'review_count',
+      'rj' => 'id',
+      _ => 'release',
+    };
+  }
+
+  /// kikoeru-express 的 nsfw 参数：1=全年龄 2=仅R18（服务端无 R15 分级，按全年龄处理）
+  static int? customNsfw(int? ageFilter) {
+    return switch (ageFilter) {
+      null => null,
+      0 => 1,
+      1 => 1,
+      2 => 2,
+      _ => null,
+    };
+  }
+
+  /// asmr.one 的年龄标签（用作搜索关键词）
+  static String? oneAgeTag(int? ageFilter) {
+    return switch (ageFilter) {
+      0 => r'$age:general$',
+      1 => r'$age:r15$',
+      2 => r'$age:adult$',
+      _ => null,
+    };
+  }
+
+  static Future<String> checkHealth(AppState app, String base) async {
+    return apiHealth(base: base);
+  }
+
+  /// 歌单列表（需登录）
+  static Future<List<PlaylistInfo>> fetchPlaylists(AppState app) async {
+    final json = await apiGetPlaylists(base: resolveBase(app));
+    final data = jsonDecode(json) as Map<String, dynamic>;
+    final list = (data['playlists'] as List?) ?? const [];
+    return list
+        .map((e) {
+          final m = e as Map<String, dynamic>;
+          return PlaylistInfo(
+            id: m['id'] as String? ?? '',
+            name: m['name'] as String? ?? '未命名歌单',
+            worksCount: (m['works_count'] as num?)?.toInt() ?? 0,
+            coverUrl: m['mainCoverUrl'] as String?,
+          );
+        })
+        .where((p) => p.id.isNotEmpty)
+        .toList();
+  }
+
+  /// 歌单作品（需登录），结构与作品列表一致
+  static Future<WorksPage> fetchPlaylistWorks(AppState app, String id,
+      {int page = 1, int perPage = 20}) async {
+    final json = await apiGetPlaylistWorks(
+      base: resolveBase(app),
+      id: id,
+      page: page,
+      perPage: perPage,
+    );
+    return parseWorks(json, base: resolveBase(app), perPage: perPage);
+  }
+
+  /// 我的评价/收藏列表（GET /api/review，需登录）
+  static Future<WorksPage> fetchMyReviews(AppState app,
+      {int page = 1, int perPage = 20}) async {
+    final json = await apiGetMyReviews(
+      base: resolveBase(app),
+      page: page,
+      perPage: perPage,
+    );
+    return parseWorks(json, base: resolveBase(app), perPage: perPage);
+  }
+
+  static String? _likedPlaylistId;
+
+  /// 系统「收藏」歌单 id（缓存在内存）
+  static Future<String> likedPlaylistId(AppState app) async {
+    if (_likedPlaylistId != null) return _likedPlaylistId!;
+    final pls = await fetchPlaylists(app);
+    if (pls.isEmpty) {
+      throw Exception('未获取到歌单，请确认已登录');
+    }
+    PlaylistInfo? liked;
+    for (final p in pls) {
+      if (p.name == '收藏' || p.name == '__SYS_PLAYLIST_LIKED') {
+        liked = p;
+        break;
+      }
+    }
+    _likedPlaylistId = (liked ?? pls.first).id;
+    return _likedPlaylistId!;
+  }
+
+  /// 切换作品的收藏状态（服务器系统「收藏」歌单），返回切换后的状态
+  static Future<bool> toggleFavorite(AppState app, Work w) async {
+    final id = w.apiId;
+    if (id == null) {
+      throw Exception('该作品缺少编号，无法收藏');
+    }
+    final pid = await likedPlaylistId(app);
+    final fav = app.isFavorited(w);
+    if (fav) {
+      await apiPlaylistRemoveWorks(
+        base: resolveBase(app),
+        playlistId: pid,
+        workIds: ['$id'],
+      );
+      app.removeFavorite(w);
+    } else {
+      await apiPlaylistAddWorks(
+        base: resolveBase(app),
+        playlistId: pid,
+        workIds: ['$id'],
+      );
+      app.addFavorite(w);
+    }
+    return !fav;
+  }
+
+  static Future<String> login(
+      AppState app, String base, String name, String password) {
+    return apiLogin(base: base, name: name, password: password);
+  }
+
+  static String? tokenFor(AppState app, String base) => getToken(base: base);
+
+  static Future<List<LyricLine>> fetchLrc(AppState app, Work w,
+      {String? trackTitle, LyricCandidate? pick}) async {
+    final apiId = w.apiId;
+    if (apiId == null) return const [];
+    final nodes = await fetchTracks(app, apiId);
+    final candidates = _findLyricCandidates(nodes);
+    if (candidates.isEmpty) return const [];
+    // 指定候选（在线歌词选择）
+    if (pick != null) {
+      _LyricCandidate? match;
+      for (final c in candidates) {
+        if (c.url != null && c.url == pick.url) {
+          match = c;
+          break;
+        }
+      }
+      if (match != null) return _loadLyricCandidate(match);
+      return const [];
+    }
+    // 与当前曲目同名的歌词优先（如 Track01.mp3 -> Track01.lrc）
+    final trackBase = _baseName(trackTitle ?? '');
+    if (trackBase.isNotEmpty) {
+      for (final c in candidates) {
+        if (_baseName(c.title) == trackBase) c.score += 80;
+      }
+    }
+    candidates.sort((a, b) => b.score.compareTo(a.score));
+    // 按分数从高到低尝试，直到解析出带时间轴的歌词
+    for (final c in candidates.take(3)) {
+      final lrc = await _loadLyricCandidate(c);
+      if (lrc.isNotEmpty) return lrc;
+    }
+    return const [];
+  }
+
+  /// 歌词候选列表（供「选择在线歌词」使用，已按分数排序）
+  static Future<List<LyricCandidate>> lyricCandidates(AppState app, Work w,
+      {String? trackTitle}) async {
+    final apiId = w.apiId;
+    if (apiId == null) return const [];
+    final nodes = await fetchTracks(app, apiId);
+    final candidates = _findLyricCandidates(nodes);
+    final trackBase = _baseName(trackTitle ?? '');
+    if (trackBase.isNotEmpty) {
+      for (final c in candidates) {
+        if (_baseName(c.title) == trackBase) c.score += 80;
+      }
+    }
+    candidates.sort((a, b) => b.score.compareTo(a.score));
+    return candidates
+        .map((c) => LyricCandidate(
+              title: c.title,
+              path: c.path,
+              url: c.url,
+              score: c.score,
+            ))
+        .toList();
+  }
+
+  static Future<List<LyricLine>> _loadLyricCandidate(_LyricCandidate c) async {
+    final url = c.url;
+    if (url == null) return const [];
+    try {
+      final bytes = await apiGetBytes(url: url);
+      final decoded = apiDecodeText(bytes: bytes, encoding: '');
+      return parseLrc(decoded.text);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// 歌词候选：收集曲目树中的 .lrc / .txt 文件并按中文优先打分
+  static List<_LyricCandidate> _findLyricCandidates(
+      List<MediaNode> nodes, [String folder = '']) {
+    final out = <_LyricCandidate>[];
+    for (final n in nodes) {
+      final path = folder.isEmpty ? n.title : '$folder/${n.title}';
+      if (n.isDir) {
+        out.addAll(_findLyricCandidates(n.children, path));
+        continue;
+      }
+      final lower = n.title.toLowerCase();
+      if (!lower.endsWith('.lrc') && !lower.endsWith('.txt')) continue;
+      final pathLower = path.toLowerCase();
+      var score = 0;
+      if (lower.endsWith('.lrc')) score += 20;
+      // 文件夹带歌词/字幕含义
+      if (pathLower.contains('lyric') ||
+          pathLower.contains('lrc') ||
+          path.contains('歌词') ||
+          path.contains('字幕') ||
+          path.contains('台本') ||
+          pathLower.contains('subtitle')) {
+        score += 10;
+      }
+      // 中文优先：简/繁/zh/sc/tc 等字样（文件或文件夹名）
+      for (final h in _zhLyricHints) {
+        if (_pathHas(pathLower, h)) {
+          score += 100;
+          break;
+        }
+      }
+      // 非中文（日/英/韩等）降权
+      for (final h in _otherLangHints) {
+        if (_pathHas(pathLower, h)) {
+          score -= 60;
+          break;
+        }
+      }
+      out.add(_LyricCandidate(
+        title: n.title,
+        path: path,
+        url: n.url,
+        score: score,
+      ));
+    }
+    return out;
+  }
+
+  static const _zhLyricHints = [
+    '简体', '繁体', '简中', '繁中', '中文', '中字', '汉化', '汉',
+    '简', '繁', 'zh', 'sc', 'tc',
+  ];
+  static const _otherLangHints = [
+    '日本語', '日语', '日文', '日', 'jp', 'ja',
+    '英语', '英文', 'en', 'eng', 'english',
+    '韓国', '韩语', '한국어', 'ko', 'kr',
+  ];
+
+  /// 拉丁语种码按整词匹配，避免误伤（如 en 不匹配 special/English 以外的单词）
+  static bool _pathHas(String s, String hint) {
+    if (RegExp(r'^[a-z][a-z0-9-]*$').hasMatch(hint)) {
+      return RegExp('(?<![a-z0-9])${RegExp.escape(hint)}(?![a-z0-9])')
+          .hasMatch(s);
+    }
+    return s.contains(hint);
+  }
+
+  static String _baseName(String name) {
+    final i = name.lastIndexOf('.');
+    return i > 0 ? name.substring(0, i).toLowerCase() : name.toLowerCase();
+  }
+
+  static List<LyricLine> parseLrc(String text) {
+    final lines = <LyricLine>[];
+    final re = RegExp(r'\[(\d{1,2}):(\d{1,2})(?:[.:](\d{1,3}))?\]');
+    for (final raw in text.split('\n')) {
+      final line = raw.trim();
+      if (line.isEmpty) continue;
+      final matches = re.allMatches(line).toList();
+      if (matches.isEmpty) continue;
+      final content = line.substring(line.lastIndexOf(']') + 1).trim();
+      for (final m in matches) {
+        final mm = int.parse(m.group(1)!);
+        final ss = int.parse(m.group(2)!);
+        lines.add(LyricLine(mm * 60 + ss, content, content));
+      }
+    }
+    lines.sort((a, b) => a.t.compareTo(b.t));
+    return lines;
+  }
+
+  static Future<List<MediaNode>> fetchTracks(AppState app, int workApiId) async {
+    final key = _tracksKey(app, workApiId);
+    final cached = _tracksCache[key];
+    if (cached != null) return cached;
+    final json = await apiGetTracks(base: resolveBase(app), rj: '$workApiId');
+    final nodes = _parseNodes(jsonDecode(json), '', resolveBase(app));
+    if (_tracksCache.length >= 10) _tracksCache.remove(_tracksCache.keys.first);
+    _tracksCache[key] = nodes;
+    return nodes;
+  }
+
+  static final Map<String, List<MediaNode>> _tracksCache = {};
+  static String _tracksKey(AppState app, int id) => '${resolveBase(app)}|$id';
+
+  static List<MediaNode> _parseNodes(dynamic list, String parentPath, String base) {
+    if (list is! List) return const [];
+    final nodes = list.map((e) {
+      final m = e as Map<String, dynamic>;
+      final title = m['title'] as String? ?? '';
+      final type = m['type'] as String? ?? 'folder';
+      final path = parentPath.isEmpty ? title : '$parentPath/$title';
+      final raw = m['children'];
+      final hash = m['hash'] as String?;
+      final url = m['mediaUrl'] as String? ??
+          m['streamUrl'] as String? ??
+          m['url'] as String? ??
+          (hash != null ? '$base/api/media/stream/$hash' : null);
+      return MediaNode(
+        title: title,
+        type: type,
+        path: path,
+        url: url,
+        duration: (m['duration'] as num?)?.toInt() ?? 0,
+        children: _parseNodes(raw is List ? raw : null, path, base),
+      );
+    }).toList();
+    // 文件夹始终在文件前，同级按文件名自然排序（数字感知）
+    nodes.sort((a, b) {
+      if (a.isDir != b.isDir) return a.isDir ? -1 : 1;
+      return _naturalCompare(a.title, b.title);
+    });
+    return nodes;
+  }
+
+  static int _naturalCompare(String a, String b) {
+    final pa = RegExp(r'\d+|\D+')
+        .allMatches(a.toLowerCase())
+        .map((m) => m.group(0)!)
+        .toList();
+    final pb = RegExp(r'\d+|\D+')
+        .allMatches(b.toLowerCase())
+        .map((m) => m.group(0)!)
+        .toList();
+    final n = pa.length < pb.length ? pa.length : pb.length;
+    for (var i = 0; i < n; i++) {
+      final x = pa[i];
+      final y = pb[i];
+      final xd = int.tryParse(x);
+      final yd = int.tryParse(y);
+      if (xd != null && yd != null) {
+        if (xd != yd) return xd.compareTo(yd);
+      } else {
+        final c = x.compareTo(y);
+        if (c != 0) return c;
+      }
+    }
+    return pa.length.compareTo(pb.length);
+  }
+
+  static WorksPage parseWorks(String json, {String? base, int perPage = 20}) {
+    final data = jsonDecode(json) as Map<String, dynamic>;
+    final list = (data['works'] as List?) ?? const [];
+    final works = list
+        .asMap()
+        .entries
+        .map((e) => _mapWork(e.value as Map<String, dynamic>, e.key, base))
+        .toList();
+    // one 站与 kikoeru-express 均返回 {works, pagination:{currentPage,pageSize,totalCount}}
+    var page = 1;
+    var pageSize = perPage;
+    var total = -1;
+    final pag = data['pagination'];
+    if (pag is Map<String, dynamic>) {
+      page = (pag['currentPage'] as num?)?.toInt() ?? page;
+      pageSize = (pag['pageSize'] as num?)?.toInt() ?? pageSize;
+      total = (pag['totalCount'] as num?)?.toInt() ?? -1;
+    }
+    final hasMore =
+        total >= 0 ? page * pageSize < total : works.length == perPage;
+    return WorksPage(
+      works: works,
+      page: page,
+      pageSize: pageSize,
+      totalCount: total,
+      hasMore: hasMore,
+    );
+  }
+
+  static Work _mapWork(Map<String, dynamic> m, int i, [String? base]) {
+    final rawId = m['id'];
+    final apiId = rawId is num ? rawId.toInt() : null;
+    final ageStr = m['age_category_string'] as String?;
+    final Age age;
+    if (ageStr == 'adult') {
+      age = Age.r18;
+    } else if (ageStr == 'r15') {
+      age = Age.r15;
+    } else {
+      // kikoeru-express 无 age_category_string，用 nsfw 布尔区分 R18
+      age = (m['nsfw'] == true) ? Age.r18 : Age.all;
+    }
+    final vas = ((m['vas'] as List?) ?? const [])
+        .map((v) => (v as Map)['name'] as String? ?? '')
+        .where((s) => s.isNotEmpty)
+        .join(' / ');
+    final tags = <String>[];
+    final grayTags = <String>[];
+    for (final t in ((m['tags'] as List?) ?? const [])) {
+      final name = (t as Map)['name'] as String? ?? '';
+      if (name.isEmpty) continue;
+      // 反编译原版 + 实测：Tag 模型 voteStatus 为每作品维度状态：
+      // 0=低愿力（需投票，显示灰色，默认不在列表展示）
+      // 1=普通（作品自带或已获认同，实心；字段缺失时默认 1）
+      // >=2=否决（完全不展示，服务端通常已过滤）
+      final status = (t['voteStatus'] as num?)?.toInt() ??
+          (t['vote_status'] as num?)?.toInt() ??
+          1;
+      if (status >= 2) continue;
+      tags.add(name);
+      if (status == 0) grayTags.add(name);
+    }
+    final circle = (m['circle'] as Map?)?['name'] as String? ?? (m['name'] as String? ?? '');
+    final lyricStatus = m['lyric_status'];
+    return Work(
+      rj: m['source_id'] as String? ??
+          (apiId != null ? 'RJ$apiId' : 'RJ00000000'),
+      title: m['title'] as String? ?? '未知作品',
+      circle: circle,
+      va: vas.isEmpty ? 'CV. 未知' : 'CV. $vas',
+      age: age,
+      dur: _fmtDuration((m['duration'] as num?)?.toInt() ?? 0),
+      tags: tags,
+      grayTags: grayTags,
+      grad: i % 8,
+      coverUrl: m['mainCoverUrl'] as String? ??
+          m['thumbnailCoverUrl'] as String? ??
+          // kikoeru-express 不返回封面 URL，按 {base}/api/cover/{id} 构造
+          (base != null && apiId != null
+              ? '${base.replaceAll(RegExp(r'/+$'), '')}/api/cover/$apiId'
+              : null),
+      hasSubtitle: m['has_subtitle'] as bool? ??
+          (lyricStatus is String && lyricStatus.isNotEmpty),
+      apiId: apiId,
+    );
+  }
+
+  static String _fmtDuration(int seconds) {
+    if (seconds <= 0) return '--:--';
+    final h = seconds ~/ 3600;
+    final m = (seconds % 3600) ~/ 60;
+    final s = seconds % 60;
+    if (h > 0) return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+}
+
+class _LyricCandidate {
+  final String title;
+  final String path;
+  final String? url;
+  int score;
+  _LyricCandidate({
+    required this.title,
+    required this.path,
+    required this.url,
+    required this.score,
+  });
+}
+
+/// 在线歌词候选（公开给播放器选择）
+class LyricCandidate {
+  final String title;
+  final String path;
+  final String? url;
+  final int score;
+  const LyricCandidate({
+    required this.title,
+    required this.path,
+    required this.url,
+    required this.score,
+  });
+}
