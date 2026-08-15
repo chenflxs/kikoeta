@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../data.dart';
 import '../services/android_battery.dart';
@@ -37,6 +38,9 @@ class _SettingsPageState extends State<SettingsPage> {
   final Map<String, String> _loginStatus = {};
   // 电池优化白名单状态（仅安卓）：true=已关闭省电优化 / false=未关闭 / null=未知或非安卓
   bool? _batteryIgnoring;
+  // 版本号彩蛋：连续点击计数（前 3 次静默，超过 3 秒未点击则重置）
+  int _devTaps = 0;
+  Timer? _devTimer;
   late final TextEditingController _aiBase;
   late final TextEditingController _aiModel;
   late final TextEditingController _aiKey;
@@ -68,6 +72,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   void dispose() {
+    _devTimer?.cancel();
     _aiBase.dispose();
     _aiModel.dispose();
     _aiKey.dispose();
@@ -672,9 +677,20 @@ class _SettingsPageState extends State<SettingsPage> {
               title: '版本',
               sub: null,
               trailing: const Text(
-                'Kikoeta 0.1-beta',
+                'Kikoeta 0.1.0-beta',
                 style: TextStyle(fontSize: 12),
               ),
+              onTap: _onVersionTap,
+            ),
+            _row(
+              icon: null,
+              title: '仓库',
+              sub: null,
+              trailing: const Text(
+                'https://github.com/chenflxs/kikoeta',
+                style: TextStyle(fontSize: 12),
+              ),
+              onTap: _openRepo,
             ),
           ]),
         ],
@@ -754,6 +770,53 @@ class _SettingsPageState extends State<SettingsPage> {
     );
     if (onTap == null) return content;
     return InkWell(onTap: onTap, child: content);
+  }
+
+  /// 打开项目仓库主页
+  Future<void> _openRepo() async {
+    final ok = await launchUrl(
+      Uri.parse('https://github.com/chenflxs/kikoeta'),
+      mode: LaunchMode.externalApplication,
+    );
+    if (!ok) _toast('打开失败');
+  }
+
+  /// 版本号彩蛋：像安卓开发者模式一样连续点击——前 3 次静默，
+  /// 之后提示剩余步数；3 秒内没有下一次点击则重置计数；归零后弹窗
+  void _onVersionTap() {
+    _devTimer?.cancel();
+    _devTaps++;
+    if (_devTaps >= 7) {
+      _devTaps = 0;
+      showDialog<void>(
+        context: context,
+        builder: (_) => AlertDialog(
+          backgroundColor: p.surface,
+          title: const Text(
+            '开发者模式',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+          ),
+          content: const Text(
+            '你不会真以为有开发者模式吧？',
+            style: TextStyle(fontSize: 13),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text('好吧', style: TextStyle(color: p.accent)),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    if (_devTaps > 3) {
+      _toast('再执行 ${7 - _devTaps} 步进入开发者模式');
+    }
+    _devTimer = Timer(const Duration(seconds: 3), () {
+      _devTaps = 0;
+      _devTimer = null;
+    });
   }
 
   Widget _switchRow(
