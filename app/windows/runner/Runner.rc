@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.kikoeta" "\0"
-            VALUE "FileDescription", "kikoeta_app" "\0"
+            VALUE "CompanyName", "Kikoeta" "\0"
+            VALUE "FileDescription", "Kikoeta - ASMR 音声本地收听客户端" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "kikoeta_app" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.kikoeta. All rights reserved." "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 chenflxs. All rights reserved." "\0"
             VALUE "OriginalFilename", "kikoeta_app.exe" "\0"
-            VALUE "ProductName", "kikoeta_app" "\0"
+            VALUE "ProductName", "Kikoeta" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

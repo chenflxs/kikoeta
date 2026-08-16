@@ -24,8 +24,10 @@ class PlaylistsPage extends StatelessWidget {
       ),
       body: app.playlists.isEmpty
           ? Center(
-              child: Text('暂无播放列表，点击右下角新建',
-                  style: TextStyle(fontSize: 13, color: p.dim)),
+              child: Text(
+                '暂无播放列表，点击右下角新建',
+                style: TextStyle(fontSize: 13, color: p.dim),
+              ),
             )
           : ListView.separated(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 90),
@@ -36,9 +38,11 @@ class PlaylistsPage extends StatelessWidget {
                 final entries = app.playlists[name]!;
                 return InkWell(
                   borderRadius: BorderRadius.circular(14),
-                  onTap: () => Navigator.of(ctx).push(MaterialPageRoute(
-                    builder: (_) => PlaylistDetailPage(app: app, name: name),
-                  )),
+                  onTap: () => Navigator.of(ctx).push(
+                    MaterialPageRoute(
+                      builder: (_) => PlaylistDetailPage(app: app, name: name),
+                    ),
+                  ),
                   child: Container(
                     padding: const EdgeInsets.all(13),
                     decoration: BoxDecoration(
@@ -55,8 +59,11 @@ class PlaylistsPage extends StatelessWidget {
                             color: p.surface2,
                             borderRadius: BorderRadius.circular(11),
                           ),
-                          child: Icon(Icons.queue_music,
-                              size: 18, color: p.accent),
+                          child: Icon(
+                            Icons.queue_music,
+                            size: 18,
+                            color: p.accent,
+                          ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -68,11 +75,15 @@ class PlaylistsPage extends StatelessWidget {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
-                                    fontSize: 13.5, fontWeight: FontWeight.w600),
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                               const SizedBox(height: 2),
-                              Text('${entries.length} 个条目',
-                                  style: TextStyle(fontSize: 11, color: p.dim)),
+                              Text(
+                                '${entries.length} 个条目',
+                                style: TextStyle(fontSize: 11, color: p.dim),
+                              ),
                             ],
                           ),
                         ),
@@ -123,10 +134,13 @@ class PlaylistsPage extends StatelessWidget {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
           TextButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: const Text('创建')),
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('创建'),
+          ),
         ],
       ),
     );
@@ -157,10 +171,13 @@ class PlaylistsPage extends StatelessWidget {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
           TextButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: const Text('保存')),
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('保存'),
+          ),
         ],
       ),
     );
@@ -185,8 +202,10 @@ class PlaylistDetailPage extends StatelessWidget {
       appBar: AppBar(title: Text(name), leading: const BackButton()),
       body: entries.isEmpty
           ? Center(
-              child: Text('播放列表为空',
-                  style: TextStyle(fontSize: 13, color: p.dim)),
+              child: Text(
+                '播放列表为空',
+                style: TextStyle(fontSize: 13, color: p.dim),
+              ),
             )
           : ListView.separated(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
@@ -224,14 +243,16 @@ class PlaylistDetailPage extends StatelessWidget {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
-                                    fontSize: 13.5, fontWeight: FontWeight.w600),
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                               const SizedBox(height: 2),
                               Text(
                                 e.rj.isEmpty
                                     ? (e.tracks.isEmpty
-                                        ? '未知作品'
-                                        : '${e.tracks.length} 个曲目')
+                                          ? '未知作品'
+                                          : '${e.tracks.length} 个曲目')
                                     : '${e.rj} · ${e.circle}',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -243,7 +264,11 @@ class PlaylistDetailPage extends StatelessWidget {
                       ),
                       IconButton(
                         onPressed: () => app.removeFromPlaylist(name, i),
-                        icon: Icon(Icons.delete_outline, size: 18, color: p.dim),
+                        icon: Icon(
+                          Icons.delete_outline,
+                          size: 18,
+                          color: p.dim,
+                        ),
                         visualDensity: VisualDensity.compact,
                       ),
                     ],

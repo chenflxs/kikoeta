@@ -3,12 +3,7 @@ import 'package:flutter/material.dart';
 import '../data.dart';
 import '../theme.dart';
 
-const _typeLabels = {
-  'rj': 'RJ号',
-  'circle': '社团',
-  'va': '声优',
-  'tag': '标签',
-};
+const _typeLabels = {'rj': 'RJ号', 'circle': '社团', 'va': '声优', 'tag': '标签'};
 
 class BlacklistPage extends StatelessWidget {
   final AppState app;
@@ -32,9 +27,11 @@ class BlacklistPage extends StatelessWidget {
       ),
       body: app.blacklist.isEmpty
           ? Center(
-              child: Text('暂无黑名单条目\n黑名单中的作品不会出现在首页与搜索',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 13, color: p.dim, height: 1.6)),
+              child: Text(
+                '暂无黑名单条目\n黑名单中的作品不会出现在首页与搜索',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13, color: p.dim, height: 1.6),
+              ),
             )
           : ListView.separated(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
@@ -54,8 +51,10 @@ class BlacklistPage extends StatelessWidget {
                   child: Row(
                     children: [
                       Container(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
                         decoration: BoxDecoration(
                           color: p.red.withValues(alpha: .12),
                           borderRadius: BorderRadius.circular(7),
@@ -72,12 +71,18 @@ class BlacklistPage extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                              fontSize: 13.5, fontWeight: FontWeight.w600),
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                       IconButton(
                         onPressed: () => app.toggleBlacklist(type, value),
-                        icon: Icon(Icons.delete_outline, size: 18, color: p.dim),
+                        icon: Icon(
+                          Icons.delete_outline,
+                          size: 18,
+                          color: p.dim,
+                        ),
                         visualDensity: VisualDensity.compact,
                       ),
                     ],
@@ -127,15 +132,18 @@ class BlacklistPage extends StatelessWidget {
                   hintStyle: TextStyle(fontSize: 13, color: p.dim),
                   filled: true,
                   fillColor: p.surface2,
-                  border:
-                      OutlineInputBorder(borderRadius: BorderRadius.circular(11)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(11),
+                  ),
                 ),
               ),
             ],
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消'),
+            ),
             TextButton(
               onPressed: () {
                 final v = ctrl.text.trim();

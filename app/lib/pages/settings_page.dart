@@ -59,8 +59,9 @@ class _SettingsPageState extends State<SettingsPage> {
     _aiKey = TextEditingController(text: app.aiConfig['key']);
     _deeplKey = TextEditingController(text: app.deeplKey);
     _colorHexCtrl = TextEditingController(text: _toHex(app.lyricsColor));
-    _outlineHexCtrl =
-        TextEditingController(text: _toHex(app.lyricsOutlineColor));
+    _outlineHexCtrl = TextEditingController(
+      text: _toHex(app.lyricsOutlineColor),
+    );
     _proxyCtrl = TextEditingController(text: app.httpProxyUrl);
     if (Platform.isAndroid) {
       AndroidBattery.instance.isIgnoring().then((v) {
@@ -99,8 +100,8 @@ class _SettingsPageState extends State<SettingsPage> {
           color: s == '检测中…'
               ? p.muted
               : s.startsWith('正常')
-                  ? p.green
-                  : p.red,
+              ? p.green
+              : p.red,
         ),
       ),
     );
@@ -109,7 +110,9 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _autoCheckAll() {
     final jobs = <Future<void>>[];
     if (app.asmrUser.isNotEmpty && app.asmrPass.isNotEmpty) {
-      jobs.add(_autoCheck('asmr', 'https://api.asmr.one', app.asmrUser, app.asmrPass));
+      jobs.add(
+        _autoCheck('asmr', 'https://api.asmr.one', app.asmrUser, app.asmrPass),
+      );
     }
     for (var i = 0; i < app.customSites.length; i++) {
       final s = app.customSites[i];
@@ -121,7 +124,12 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   /// 检测服务器；可达且已配置账密时自动登录；灰点=服务器不可达/未配置
-  Future<void> _autoCheck(String key, String base, String user, String pass) async {
+  Future<void> _autoCheck(
+    String key,
+    String base,
+    String user,
+    String pass,
+  ) async {
     setState(() {
       _health[key] = '检测中…';
       _loginStatus[key] = 'gray';
@@ -158,7 +166,11 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Widget _loginDot(String key) {
     final s = _loginStatus[key];
-    final color = s == 'ok' ? p.green : s == 'fail' ? p.red : p.dim;
+    final color = s == 'ok'
+        ? p.green
+        : s == 'fail'
+        ? p.red
+        : p.dim;
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: Container(
@@ -187,12 +199,24 @@ class _SettingsPageState extends State<SettingsPage> {
                 children: [
                   _healthBadge('asmr') ?? const SizedBox.shrink(),
                   _loginDot('asmr'),
-                  _miniBtn('检测', () => _autoCheck(
-                      'asmr', 'https://api.asmr.one', app.asmrUser, app.asmrPass)),
+                  _miniBtn(
+                    '检测',
+                    () => _autoCheck(
+                      'asmr',
+                      'https://api.asmr.one',
+                      app.asmrUser,
+                      app.asmrPass,
+                    ),
+                  ),
                   const SizedBox(width: 8),
                   _miniBtn('配置', () async {
                     await showOneConfigSheet(context, app);
-                    _autoCheck('asmr', 'https://api.asmr.one', app.asmrUser, app.asmrPass);
+                    _autoCheck(
+                      'asmr',
+                      'https://api.asmr.one',
+                      app.asmrUser,
+                      app.asmrPass,
+                    );
                   }),
                 ],
               ),
@@ -209,7 +233,10 @@ class _SettingsPageState extends State<SettingsPage> {
                   children: [
                     _healthBadge('site$i') ?? const SizedBox.shrink(),
                     _loginDot('site$i'),
-                    _miniBtn('检测', () => _autoCheck('site$i', s.url, s.user, s.pass)),
+                    _miniBtn(
+                      '检测',
+                      () => _autoCheck('site$i', s.url, s.user, s.pass),
+                    ),
                     const SizedBox(width: 4),
                     IconButton(
                       visualDensity: VisualDensity.compact,
@@ -239,7 +266,11 @@ class _SettingsPageState extends State<SettingsPage> {
                   if (app.customSites.isNotEmpty) {
                     final fresh = app.customSites.last;
                     _autoCheck(
-                        'site${app.customSites.length - 1}', fresh.url, fresh.user, fresh.pass);
+                      'site${app.customSites.length - 1}',
+                      fresh.url,
+                      fresh.user,
+                      fresh.pass,
+                    );
                   }
                 },
                 icon: const Icon(Icons.add, size: 17),
@@ -371,7 +402,8 @@ class _SettingsPageState extends State<SettingsPage> {
               (v) async {
                 if (v && Platform.isAndroid) {
                   // 开启时先请求悬浮窗权限（未授权会拉起系统授权页）
-                  final ok = await AndroidLyricsOverlay.instance.requestPermission();
+                  final ok = await AndroidLyricsOverlay.instance
+                      .requestPermission();
                   if (!ok) {
                     if (mounted) _toast('未授予悬浮窗权限，桌面歌词无法显示');
                     return; // 保持关闭
@@ -386,12 +418,15 @@ class _SettingsPageState extends State<SettingsPage> {
                 children: [
                   Icon(Icons.format_size, size: 17, color: p.accent),
                   const SizedBox(width: 12),
-                  const Text('字体大小',
-                      style: TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.w600)),
+                  const Text(
+                    '字体大小',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
                   const Spacer(),
-                  Text('${app.lyricsFontSize.round()}',
-                      style: TextStyle(fontSize: 12, color: p.dim)),
+                  Text(
+                    '${app.lyricsFontSize.round()}',
+                    style: TextStyle(fontSize: 12, color: p.dim),
+                  ),
                   Expanded(
                     child: Slider(
                       value: app.lyricsFontSize,
@@ -425,12 +460,18 @@ class _SettingsPageState extends State<SettingsPage> {
                   Icon(Icons.line_weight, size: 17, color: p.accent),
                   const SizedBox(width: 12),
                   const Expanded(
-                    child: Text('描边宽度',
-                        style: TextStyle(
-                            fontSize: 13, fontWeight: FontWeight.w600)),
+                    child: Text(
+                      '描边宽度',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
-                  Text(app.lyricsOutlineWidth.toStringAsFixed(1),
-                      style: TextStyle(fontSize: 12, color: p.dim)),
+                  Text(
+                    app.lyricsOutlineWidth.toStringAsFixed(1),
+                    style: TextStyle(fontSize: 12, color: p.dim),
+                  ),
                   SizedBox(
                     width: 120,
                     child: Slider(
@@ -559,9 +600,9 @@ class _SettingsPageState extends State<SettingsPage> {
           _sec('隐私'),
           _group([
             _switchRow(
-              Icons.lock_outline,
-              '锁屏不显示封面',
-              '播放时锁屏只显示标题',
+              Icons.notifications_off_outlined,
+              '不显示通知栏媒体卡片',
+              '播放时不在通知栏显示媒体卡片',
               app.lsCover,
               (v) {
                 app.lsCover = v;
@@ -569,9 +610,9 @@ class _SettingsPageState extends State<SettingsPage> {
               },
             ),
             _switchRow(
-              Icons.notifications_none,
-              '通知栏隐藏封面',
-              '播放通知不显示封面缩略图',
+              Icons.branding_watermark_outlined,
+              '通知栏封面显示项目 logo',
+              '开启后封面位置显示项目 logo，不显示真实封面（暂无 logo，暂用占位图）',
               app.notifCover,
               (v) {
                 app.notifCover = v;
@@ -599,8 +640,8 @@ class _SettingsPageState extends State<SettingsPage> {
                     app.themeMode == ThemeMode.system
                         ? Icons.brightness_auto_outlined
                         : app.themeMode == ThemeMode.light
-                            ? Icons.light_mode_outlined
-                            : Icons.dark_mode_outlined,
+                        ? Icons.light_mode_outlined
+                        : Icons.dark_mode_outlined,
                     size: 17,
                     color: p.accent,
                   ),
@@ -612,47 +653,47 @@ class _SettingsPageState extends State<SettingsPage> {
                   const Spacer(),
                   // 三段按钮按内容自适应宽度，不撑满整行
                   SegmentedButton<ThemeMode>(
-                      segments: const [
-                        ButtonSegment(
-                          value: ThemeMode.system,
-                          label: Text('跟随系统', style: TextStyle(fontSize: 12)),
-                        ),
-                        ButtonSegment(
-                          value: ThemeMode.light,
-                          label: Text('浅色', style: TextStyle(fontSize: 12)),
-                        ),
-                        ButtonSegment(
-                          value: ThemeMode.dark,
-                          label: Text('深色', style: TextStyle(fontSize: 12)),
-                        ),
-                      ],
-                      selected: {app.themeMode},
-                      showSelectedIcon: false,
-                      style: ButtonStyle(
-                        backgroundColor: WidgetStateProperty.resolveWith(
-                          (states) => states.contains(WidgetState.selected)
-                              ? p.accent.withValues(alpha: .12)
-                              : p.surface2,
-                        ),
-                        foregroundColor: WidgetStateProperty.resolveWith(
-                          (states) => states.contains(WidgetState.selected)
-                              ? p.accent
-                              : p.muted,
-                        ),
-                        // 边框粗细与设置页其他选项一致（p.line 1px）
-                        side: WidgetStatePropertyAll(
-                          BorderSide(color: p.line, width: 1),
-                        ),
-                        textStyle: WidgetStatePropertyAll(
-                          const TextStyle(fontSize: 11.5),
-                        ),
-                        padding: WidgetStatePropertyAll(
-                          const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        ),
-                        visualDensity: VisualDensity.compact,
+                    segments: const [
+                      ButtonSegment(
+                        value: ThemeMode.system,
+                        label: Text('跟随系统', style: TextStyle(fontSize: 12)),
                       ),
-                      onSelectionChanged: (s) => app.setThemeMode(s.first),
+                      ButtonSegment(
+                        value: ThemeMode.light,
+                        label: Text('浅色', style: TextStyle(fontSize: 12)),
+                      ),
+                      ButtonSegment(
+                        value: ThemeMode.dark,
+                        label: Text('深色', style: TextStyle(fontSize: 12)),
+                      ),
+                    ],
+                    selected: {app.themeMode},
+                    showSelectedIcon: false,
+                    style: ButtonStyle(
+                      backgroundColor: WidgetStateProperty.resolveWith(
+                        (states) => states.contains(WidgetState.selected)
+                            ? p.accent.withValues(alpha: .12)
+                            : p.surface2,
+                      ),
+                      foregroundColor: WidgetStateProperty.resolveWith(
+                        (states) => states.contains(WidgetState.selected)
+                            ? p.accent
+                            : p.muted,
+                      ),
+                      // 边框粗细与设置页其他选项一致（p.line 1px）
+                      side: WidgetStatePropertyAll(
+                        BorderSide(color: p.line, width: 1),
+                      ),
+                      textStyle: WidgetStatePropertyAll(
+                        const TextStyle(fontSize: 11.5),
+                      ),
+                      padding: WidgetStatePropertyAll(
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      ),
+                      visualDensity: VisualDensity.compact,
                     ),
+                    onSelectionChanged: (s) => app.setThemeMode(s.first),
+                  ),
                 ],
               ),
             ),
@@ -796,10 +837,7 @@ class _SettingsPageState extends State<SettingsPage> {
             '开发者模式',
             style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
           ),
-          content: const Text(
-            '你不会真以为有开发者模式吧？',
-            style: TextStyle(fontSize: 13),
-          ),
+          content: const Text('你不会真以为有开发者模式吧？', style: TextStyle(fontSize: 13)),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
@@ -861,8 +899,10 @@ class _SettingsPageState extends State<SettingsPage> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDlg) => AlertDialog(
           backgroundColor: p.surface,
-          title: const Text('音频类型偏好',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+          title: const Text(
+            '音频类型偏好',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+          ),
           content: SizedBox(
             width: 280,
             height: 260,
@@ -874,16 +914,20 @@ class _SettingsPageState extends State<SettingsPage> {
                 });
               },
               buildDefaultDragHandles: false,
-              children: order.map((t) => ListTile(
-                key: ValueKey(t),
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                leading: ReorderableDragStartListener(
-                  index: order.indexOf(t),
-                  child: Icon(Icons.drag_handle, size: 20, color: p.dim),
-                ),
-                title: Text(t, style: const TextStyle(fontSize: 13.5)),
-              )).toList(),
+              children: order
+                  .map(
+                    (t) => ListTile(
+                      key: ValueKey(t),
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: ReorderableDragStartListener(
+                        index: order.indexOf(t),
+                        child: Icon(Icons.drag_handle, size: 20, color: p.dim),
+                      ),
+                      title: Text(t, style: const TextStyle(fontSize: 13.5)),
+                    ),
+                  )
+                  .toList(),
             ),
           ),
           actions: [
@@ -941,10 +985,12 @@ class _SettingsPageState extends State<SettingsPage> {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(
-        content: Text('已重置：账号与全部本地数据已清除'),
-        behavior: SnackBarBehavior.floating,
-      ));
+      ..showSnackBar(
+        const SnackBar(
+          content: Text('已重置：账号与全部本地数据已清除'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
   }
 
   Widget _engineDropdown() {
@@ -962,10 +1008,7 @@ class _SettingsPageState extends State<SettingsPage> {
           (e) => PopupMenuItem(
             value: e.key,
             height: 44,
-            child: MenuItem(
-              label: e.value,
-              selected: app.engine == e.key,
-            ),
+            child: MenuItem(label: e.value, selected: app.engine == e.key),
           ),
         ),
       ],
@@ -976,11 +1019,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Widget _convDropdown() {
-    const labels = {
-      'orig': '关闭',
-      'tw': '简 → 繁',
-      'zh': '繁 → 简',
-    };
+    const labels = {'orig': '关闭', 'tw': '简 → 繁', 'zh': '繁 → 简'};
     return _selectPill(
       labels[app.conv]!,
       (ctx) => [
@@ -989,10 +1028,7 @@ class _SettingsPageState extends State<SettingsPage> {
           (e) => PopupMenuItem(
             value: e.key,
             height: 44,
-            child: MenuItem(
-              label: e.value,
-              selected: app.conv == e.key,
-            ),
+            child: MenuItem(label: e.value, selected: app.conv == e.key),
           ),
         ),
       ],
@@ -1063,7 +1099,8 @@ class _SettingsPageState extends State<SettingsPage> {
         controller: ctrl,
         obscureText: obscure,
         style: TextStyle(fontSize: 13, color: p.text),
-        onChanged: onChanged ??
+        onChanged:
+            onChanged ??
             (_) {
               app.setAiConfig(_aiBase.text, _aiModel.text, _aiKey.text);
             },
@@ -1129,9 +1166,13 @@ class _SettingsPageState extends State<SettingsPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label,
-                    style: const TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w600)),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 const SizedBox(height: 8),
                 // 色块 + hex 用 Wrap：窄屏（竖屏）下自动换行，不截断
                 Wrap(
@@ -1158,11 +1199,13 @@ class _SettingsPageState extends State<SettingsPage> {
                             ),
                           ),
                           child: selected
-                              ? Icon(Icons.check,
+                              ? Icon(
+                                  Icons.check,
                                   size: 14,
                                   color: c == 0xFFFFFFFF || c == 0xFFFFEB3B
                                       ? Colors.black54
-                                      : Colors.white)
+                                      : Colors.white,
+                                )
                               : null,
                         ),
                       );
@@ -1183,8 +1226,9 @@ class _SettingsPageState extends State<SettingsPage> {
                             borderRadius: BorderRadius.circular(8),
                             borderSide: BorderSide(color: p.line),
                           ),
-                          contentPadding:
-                              const EdgeInsets.symmetric(horizontal: 6),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                          ),
                         ),
                         onChanged: (s) {
                           final v = _parseHex(s);
@@ -1221,15 +1265,19 @@ class _SettingsPageState extends State<SettingsPage> {
           ? GestureDetector(
               onTap: onUnlock,
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: p.surface2,
                   border: Border.all(color: p.line),
                   borderRadius: BorderRadius.circular(999),
                 ),
-                child: Text('解锁',
-                    style: TextStyle(fontSize: 11.5, color: p.accent)),
+                child: Text(
+                  '解锁',
+                  style: TextStyle(fontSize: 11.5, color: p.accent),
+                ),
               ),
             )
           : null,

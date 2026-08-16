@@ -57,10 +57,9 @@ class _LoginPageState extends State<LoginPage> {
   void _toast(String s) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(
-        content: Text(s),
-        behavior: SnackBarBehavior.floating,
-      ));
+      ..showSnackBar(
+        SnackBar(content: Text(s), behavior: SnackBarBehavior.floating),
+      );
   }
 
   // ---------------- one 站登录 ----------------
@@ -148,7 +147,10 @@ class _LoginPageState extends State<LoginPage> {
           children: [
             Center(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 32,
+                  vertical: 24,
+                ),
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 360),
                   child: Column(
@@ -184,7 +186,10 @@ class _LoginPageState extends State<LoginPage> {
                       const Center(
                         child: Text(
                           'Kikoeta',
-                          style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800),
+                          style: TextStyle(
+                            fontSize: 21,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -208,7 +213,9 @@ class _LoginPageState extends State<LoginPage> {
                         obscure: _obscure,
                         suffix: IconButton(
                           icon: Icon(
-                            _obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                            _obscure
+                                ? Icons.visibility_off_outlined
+                                : Icons.visibility_outlined,
                             size: 19,
                             color: p.dim,
                           ),
@@ -223,7 +230,10 @@ class _LoginPageState extends State<LoginPage> {
                           onPressed: _showNoAccount,
                           style: TextButton.styleFrom(
                             foregroundColor: p.dim,
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 6,
+                            ),
                             minimumSize: const Size(0, 30),
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
@@ -242,7 +252,9 @@ class _LoginPageState extends State<LoginPage> {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: p.accent,
                             foregroundColor: Colors.white,
-                            disabledBackgroundColor: p.accent.withValues(alpha: .5),
+                            disabledBackgroundColor: p.accent.withValues(
+                              alpha: .5,
+                            ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(13),
                             ),
@@ -258,7 +270,10 @@ class _LoginPageState extends State<LoginPage> {
                                 )
                               : const Text(
                                   '登 录',
-                                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
                         ),
                       ),
@@ -281,7 +296,10 @@ class _LoginPageState extends State<LoginPage> {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
                 ),
               ),
             ),
@@ -308,7 +326,10 @@ class _LoginPageState extends State<LoginPage> {
             ),
             Center(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 32,
+                  vertical: 24,
+                ),
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 360),
                   child: Column(
@@ -329,7 +350,11 @@ class _LoginPageState extends State<LoginPage> {
                             borderRadius: BorderRadius.circular(18),
                           ),
                           child: const Center(
-                            child: Icon(Icons.dns_outlined, size: 26, color: Colors.white),
+                            child: Icon(
+                              Icons.dns_outlined,
+                              size: 26,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
                       ),
@@ -337,7 +362,10 @@ class _LoginPageState extends State<LoginPage> {
                       const Center(
                         child: Text(
                           '配置自建站点',
-                          style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800),
+                          style: TextStyle(
+                            fontSize: 21,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -351,7 +379,11 @@ class _LoginPageState extends State<LoginPage> {
                         const SizedBox(height: 24),
                         Text(
                           '已有站点',
-                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: p.muted),
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            color: p.muted,
+                          ),
                         ),
                         const SizedBox(height: 8),
                         ...app.customSites.asMap().entries.map((e) {
@@ -362,31 +394,52 @@ class _LoginPageState extends State<LoginPage> {
                             onTap: () => setState(() => _selSite = on ? -1 : i),
                             child: Container(
                               margin: const EdgeInsets.only(bottom: 8),
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 11,
+                              ),
                               decoration: BoxDecoration(
-                                color: on ? p.accent.withValues(alpha: .08) : p.surface2,
-                                border: Border.all(color: on ? p.accent : p.line),
+                                color: on
+                                    ? p.accent.withValues(alpha: .08)
+                                    : p.surface2,
+                                border: Border.all(
+                                  color: on ? p.accent : p.line,
+                                ),
                                 borderRadius: BorderRadius.circular(11),
                               ),
                               child: Row(
                                 children: [
                                   Icon(
-                                    on ? Icons.radio_button_checked : Icons.radio_button_off,
+                                    on
+                                        ? Icons.radio_button_checked
+                                        : Icons.radio_button_off,
                                     size: 18,
                                     color: on ? p.accent : p.dim,
                                   ),
                                   const SizedBox(width: 10),
                                   Expanded(
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
-                                        Text(s.alias,
-                                            style: TextStyle(fontSize: 13, color: p.text, fontWeight: FontWeight.w600)),
+                                        Text(
+                                          s.alias,
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: p.text,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
                                         const SizedBox(height: 2),
-                                        Text(s.url,
-                                            style: TextStyle(fontSize: 11, color: p.dim),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis),
+                                        Text(
+                                          s.url,
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: p.dim,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                       ],
                                     ),
                                   ),
@@ -405,13 +458,20 @@ class _LoginPageState extends State<LoginPage> {
                             style: ElevatedButton.styleFrom(
                               backgroundColor: p.accent,
                               foregroundColor: Colors.white,
-                              disabledBackgroundColor: p.accent.withValues(alpha: .5),
+                              disabledBackgroundColor: p.accent.withValues(
+                                alpha: .5,
+                              ),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(13),
                               ),
                             ),
-                            child: const Text('使用该站点',
-                                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+                            child: const Text(
+                              '使用该站点',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                           ),
                         ),
                         const SizedBox(height: 22),
@@ -419,9 +479,13 @@ class _LoginPageState extends State<LoginPage> {
                           children: [
                             Expanded(child: Divider(color: p.line)),
                             Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 10),
-                              child: Text('添加新站点',
-                                  style: TextStyle(fontSize: 12, color: p.dim)),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                              ),
+                              child: Text(
+                                '添加新站点',
+                                style: TextStyle(fontSize: 12, color: p.dim),
+                              ),
                             ),
                             Expanded(child: Divider(color: p.line)),
                           ],
@@ -430,9 +494,21 @@ class _LoginPageState extends State<LoginPage> {
                       ] else ...[
                         const SizedBox(height: 24),
                       ],
-                      _field(_aliasCtrl, hint: '别名，如：家庭 NAS', icon: Icons.label_outline),
-                      _field(_urlCtrl, hint: 'http://192.168.1.100:3000', icon: Icons.dns_outlined),
-                      _field(_siteUserCtrl, hint: '站点登录账号', icon: Icons.person_outline),
+                      _field(
+                        _aliasCtrl,
+                        hint: '别名，如：家庭 NAS',
+                        icon: Icons.label_outline,
+                      ),
+                      _field(
+                        _urlCtrl,
+                        hint: 'http://192.168.1.100:3000',
+                        icon: Icons.dns_outlined,
+                      ),
+                      _field(
+                        _siteUserCtrl,
+                        hint: '站点登录账号',
+                        icon: Icons.person_outline,
+                      ),
                       _field(
                         _sitePassCtrl,
                         hint: '站点密码',
@@ -440,11 +516,15 @@ class _LoginPageState extends State<LoginPage> {
                         obscure: _sitePassObscure,
                         suffix: IconButton(
                           icon: Icon(
-                            _sitePassObscure ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                            _sitePassObscure
+                                ? Icons.visibility_off_outlined
+                                : Icons.visibility_outlined,
                             size: 19,
                             color: p.dim,
                           ),
-                          onPressed: () => setState(() => _sitePassObscure = !_sitePassObscure),
+                          onPressed: () => setState(
+                            () => _sitePassObscure = !_sitePassObscure,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 10),
@@ -456,7 +536,9 @@ class _LoginPageState extends State<LoginPage> {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: p.accent,
                             foregroundColor: Colors.white,
-                            disabledBackgroundColor: p.accent.withValues(alpha: .5),
+                            disabledBackgroundColor: p.accent.withValues(
+                              alpha: .5,
+                            ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(13),
                             ),
@@ -472,7 +554,10 @@ class _LoginPageState extends State<LoginPage> {
                                 )
                               : const Text(
                                   '保存并进入',
-                                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
                         ),
                       ),
@@ -523,7 +608,10 @@ class _LoginPageState extends State<LoginPage> {
             borderRadius: BorderRadius.circular(13),
             borderSide: BorderSide(color: p.accent, width: 1.4),
           ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 14,
+          ),
         ),
       ),
     );

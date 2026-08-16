@@ -86,8 +86,10 @@ class AppPlayer {
   Future<void> openMediaUrl(String url, {bool autoplay = true}) async {
     await stop();
     final mediaUrl = Platform.isAndroid ? url : apiStreamProxyUrl(url: url);
-    await open(Media(mediaUrl), autoplay: autoplay)
-        .timeout(const Duration(seconds: 20));
+    await open(
+      Media(mediaUrl),
+      autoplay: autoplay,
+    ).timeout(const Duration(seconds: 20));
   }
 
   /// 停止播放（抑制 stop 触发的 completed，避免被误判为播放完成）

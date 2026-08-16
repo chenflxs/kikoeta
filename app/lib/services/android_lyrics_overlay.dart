@@ -85,17 +85,19 @@ class AndroidLyricsOverlay {
   }
 
   Future<void> setStyle(
-      double fontSize, int color, int outlineColor, double outlineWidth) async {
+    double fontSize,
+    int color,
+    int outlineColor,
+    double outlineWidth,
+  ) async {
     if (!_available) return;
     try {
-      await _ch.invokeMethod(
-          'setStyle',
-          {
-            'fontSize': fontSize,
-            'color': color,
-            'outlineColor': outlineColor,
-            'outlineWidth': outlineWidth,
-          });
+      await _ch.invokeMethod('setStyle', {
+        'fontSize': fontSize,
+        'color': color,
+        'outlineColor': outlineColor,
+        'outlineWidth': outlineWidth,
+      });
     } catch (_) {}
   }
 

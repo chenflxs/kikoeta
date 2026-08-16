@@ -181,22 +181,24 @@ class MainActivity : FlutterActivity() {
                     val artist = a["artist"] as String? ?: ""
                     val artwork = a["artworkUrl"] as String?
                     val mediaId = a["mediaId"] as String? ?: ""
+                    val hideCard = a["hideCard"] == true
+                    val logoCover = a["logoCover"] == true
                     val p = Media3Bridge.player
                     if (p != null) {
                         p.updateState(playing, pos, dur, title, artist, artwork, mediaId)
                     } else {
                         Media3Bridge.pendingState = Media3Bridge.PendingState(
-                            playing, pos, dur, title, artist, artwork, mediaId,
+                            playing, pos, dur, title, artist, artwork, mediaId, hideCard, logoCover,
                         )
                     }
                     // 通知（Service 注册的 onStateChanged 会更新/隐藏媒体通知）
-                    Media3Bridge.onStateChanged?.invoke(playing, title, artist, artwork)
+                    Media3Bridge.onStateChanged?.invoke(playing, title, artist, artwork, hideCard, logoCover)
                     result.success(null)
                 }
                 "clearSession" -> {
                     Media3Bridge.player?.clearSession()
                     Media3Bridge.pendingState = null
-                    Media3Bridge.onStateChanged?.invoke(false, "", "", null)
+                    Media3Bridge.onStateChanged?.invoke(false, "", "", null, false, false)
                     result.success(null)
                 }
                 else -> result.notImplemented()

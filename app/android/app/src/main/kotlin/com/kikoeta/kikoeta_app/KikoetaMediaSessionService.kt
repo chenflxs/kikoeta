@@ -18,6 +18,8 @@ import androidx.media3.session.MediaSessionService
 class KikoetaMediaSessionService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private var lastTitle = ""
+    // 「通知栏封面显示项目 logo」开关的上次状态（异步封面加载完成时据此放弃替换）
+    private var lastLogoCover = false
 
     companion object {
         private const val NOTIF_ID = 1001
@@ -50,12 +52,12 @@ class KikoetaMediaSessionService : MediaSessionService() {
             mediaSession = null
         }
         // Dart 状态上报 → 更新/隐藏通知
-        Media3Bridge.onStateChanged = { playing, title, artist, artworkUrl ->
+        Media3Bridge.onStateChanged = { playing, title, artist, artworkUrl, hideCard, logoCover ->
             android.os.Handler(android.os.Looper.getMainLooper()).post {
-                if (title.isEmpty()) {
+                if (title.isEmpty() || hideCard) {
                     hideMediaNotification()
                 } else {
-                    showMediaNotification(playing, title, artist, artworkUrl)
+                    showMediaNotification(playing, title, artist, artworkUrl, logoCover)
                 }
             }
         }
@@ -91,8 +93,10 @@ class KikoetaMediaSessionService : MediaSessionService() {
         title: String,
         artist: String,
         artworkUrl: String?,
+        logoCover: Boolean,
     ) {
         lastTitle = title
+        lastLogoCover = logoCover
         val contentIntent = PendingIntent.getActivity(
             this, 0,
             packageManager.getLaunchIntentForPackage(packageName)
@@ -124,10 +128,18 @@ class KikoetaMediaSessionService : MediaSessionService() {
             .addAction(prev)
             .addAction(pp)
             .addAction(next)
-        // 封面（异步加载，加载完更新通知）
-        if (artworkUrl != null && artworkUrl.isNotEmpty()) {
+        // 封面：开启「通知栏封面显示项目 logo」时封面位置固定显示项目 logo
+        //（项目暂无 logo，暂用 ic_launcher 占位图代替）；
+        // 关闭时显示真实封面——先以 logo 占位保证必定显示，
+        // 真实封面异步加载成功后替换（加载失败则保留占位）
+        val logo = runCatching {
+            android.graphics.BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher)
+        }.getOrNull()
+        if (logo != null) builder.setLargeIcon(logo)
+        if (!logoCover && artworkUrl != null && artworkUrl.isNotEmpty()) {
+            // 真实封面（异步加载，加载完更新通知；期间开关若被打开则放弃替换）
             loadArtwork(artworkUrl) { bmp ->
-                if (bmp != null && lastTitle == title) {
+                if (bmp != null && lastTitle == title && !lastLogoCover) {
                     val updated = builder.setLargeIcon(bmp).build()
                     (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
                         .notify(NOTIF_ID, updated)
@@ -203,7 +215,8 @@ object Media3Bridge {
 
     /** 状态上报回调（Service 注册：更新/隐藏媒体通知） */
     var onStateChanged:
-        ((playing: Boolean, title: String, artist: String, artworkUrl: String?) -> Unit)? = null
+        ((playing: Boolean, title: String, artist: String, artworkUrl: String?, hideCard: Boolean, logoCover: Boolean) -> Unit)? =
+        null
 
     /** Service 尚未创建时的待同步状态（Dart 先于 Service 上报） */
     data class PendingState(
@@ -214,6 +227,8 @@ object Media3Bridge {
         val artist: String,
         val artworkUrl: String?,
         val mediaId: String,
+        val hideCard: Boolean,
+        val logoCover: Boolean,
     )
 
     var pendingState: PendingState? = null

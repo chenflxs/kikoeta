@@ -151,7 +151,8 @@ class AppState extends ChangeNotifier {
   final Map<String, List<PlaylistEntry>> playlists = {};
   final List<Map<String, dynamic>> playHistory = []; // {rj,title,circle,at}
   final List<Map<String, dynamic>> blacklist = []; // {type,value}
-  final Map<String, Map<String, dynamic>> translated = {}; // rj -> {title, tracks}
+  final Map<String, Map<String, dynamic>> translated =
+      {}; // rj -> {title, tracks}
 
   bool eqOn = true;
   final List<double> eqGains = List.filled(10, 0);
@@ -164,8 +165,8 @@ class AppState extends ChangeNotifier {
 
   // 设置开关
   bool clipboardDetect = true;
-  bool lsCover = false;
-  bool notifCover = false;
+  bool lsCover = false; // 不显示通知栏媒体卡片（隐私）
+  bool notifCover = false; // 通知栏封面显示项目 logo（隐私，暂无 logo 用占位图）
   bool releaseInterface = true;
   // 安卓音频（默认关闭）
   bool earPause = false; // 拔出耳机自动暂停
@@ -175,7 +176,12 @@ class AppState extends ChangeNotifier {
   String initialPathBehavior = 'auto'; // auto / root
   bool sePreference = true; // 效果音偏好
   final List<String> audioTypePreference = [
-    'mp3', 'flac', 'wav', 'opus', 'm4a', 'aac',
+    'mp3',
+    'flac',
+    'wav',
+    'opus',
+    'm4a',
+    'aac',
   ];
 
   // 网络代理（仅 HTTP）
@@ -278,7 +284,8 @@ class AppState extends ChangeNotifier {
 
   /// 是否已收藏（服务器收藏 + 历史本地收藏兜底）
   bool isFavorited(Work w) =>
-      favoriteRjs.contains(w.rj) || (w.apiId != null && favIds.contains(w.apiId));
+      favoriteRjs.contains(w.rj) ||
+      (w.apiId != null && favIds.contains(w.apiId));
 
   /// 收藏成功后记录（本地镜像，保持界面即时一致）
   void addFavorite(Work w) {
@@ -327,25 +334,28 @@ class AppState extends ChangeNotifier {
       SettingsStore.set('play_state', '');
       return;
     }
-    SettingsStore.set('play_state', jsonEncode({
-      'work': {
-        'rj': w.rj,
-        'title': w.title,
-        'circle': w.circle,
-        'va': w.va,
-        'age': w.age.index,
-        'dur': w.dur,
-        'tags': w.tags,
-        'grayTags': w.grayTags,
-        'grad': w.grad,
-        'coverUrl': w.coverUrl,
-        'hasSubtitle': w.hasSubtitle,
-        'apiId': w.apiId,
-      },
-      'queue': queue.map(_nodeToJson).toList(),
-      'trackIdx': trackIdx,
-      'position': resumePosition,
-    }));
+    SettingsStore.set(
+      'play_state',
+      jsonEncode({
+        'work': {
+          'rj': w.rj,
+          'title': w.title,
+          'circle': w.circle,
+          'va': w.va,
+          'age': w.age.index,
+          'dur': w.dur,
+          'tags': w.tags,
+          'grayTags': w.grayTags,
+          'grad': w.grad,
+          'coverUrl': w.coverUrl,
+          'hasSubtitle': w.hasSubtitle,
+          'apiId': w.apiId,
+        },
+        'queue': queue.map(_nodeToJson).toList(),
+        'trackIdx': trackIdx,
+        'position': resumePosition,
+      }),
+    );
   }
 
   /// 清空播放状态记忆（重置/播放完成时）
@@ -355,24 +365,24 @@ class AppState extends ChangeNotifier {
   }
 
   Map<String, dynamic> _nodeToJson(MediaNode n) => {
-        'title': n.title,
-        'type': n.type,
-        'path': n.path,
-        'children': n.children.map(_nodeToJson).toList(),
-        if (n.url != null) 'url': n.url,
-        if (n.duration > 0) 'duration': n.duration,
-      };
+    'title': n.title,
+    'type': n.type,
+    'path': n.path,
+    'children': n.children.map(_nodeToJson).toList(),
+    if (n.url != null) 'url': n.url,
+    if (n.duration > 0) 'duration': n.duration,
+  };
 
   MediaNode _nodeFromJson(Map<String, dynamic> m) => MediaNode(
-        title: m['title'] as String,
-        type: m['type'] as String,
-        path: m['path'] as String,
-        children: ((m['children'] as List?) ?? const [])
-            .map((e) => _nodeFromJson(e as Map<String, dynamic>))
-            .toList(),
-        url: m['url'] as String?,
-        duration: (m['duration'] as num?)?.toInt() ?? 0,
-      );
+    title: m['title'] as String,
+    type: m['type'] as String,
+    path: m['path'] as String,
+    children: ((m['children'] as List?) ?? const [])
+        .map((e) => _nodeFromJson(e as Map<String, dynamic>))
+        .toList(),
+    url: m['url'] as String?,
+    duration: (m['duration'] as num?)?.toInt() ?? 0,
+  );
 
   void addToPlaylist(String name, List<String> titles) {
     // 兼容旧调用：无作品上下文时仅存标题
@@ -449,7 +459,9 @@ class AppState extends ChangeNotifier {
       'grayTags': w.grayTags,
       'at': DateTime.now().millisecondsSinceEpoch,
     });
-    if (playHistory.length > 50) playHistory.removeRange(50, playHistory.length);
+    if (playHistory.length > 50) {
+      playHistory.removeRange(50, playHistory.length);
+    }
     _persistPlayHistory();
     notifyListeners();
   }
@@ -475,7 +487,8 @@ class AppState extends ChangeNotifier {
 
   void toggleBlacklist(String type, String value) {
     final idx = blacklist.indexWhere(
-        (e) => e['type'] == type && e['value'] == value);
+      (e) => e['type'] == type && e['value'] == value,
+    );
     if (idx >= 0) {
       blacklist.removeAt(idx);
     } else {
@@ -502,8 +515,8 @@ class AppState extends ChangeNotifier {
 
   String? translatedTitle(String rj) =>
       (translated[rj]?['title'] as String?)?.isNotEmpty == true
-          ? translated[rj]!['title'] as String
-          : null;
+      ? translated[rj]!['title'] as String
+      : null;
 
   String? translatedTrack(String rj, String path) =>
       (translated[rj]?['tracks'] as Map<String, dynamic>?)?[path] as String?;
@@ -530,12 +543,16 @@ class AppState extends ChangeNotifier {
         final list = jsonDecode(sites) as List;
         customSites
           ..clear()
-          ..addAll(list.map((e) => CustomSite(
+          ..addAll(
+            list.map(
+              (e) => CustomSite(
                 alias: e['alias'] as String,
                 url: e['url'] as String,
                 user: (e['user'] as String?) ?? '',
                 pass: (e['pass'] as String?) ?? '',
-              )));
+              ),
+            ),
+          );
       } catch (_) {}
     }
     // 服务器选择持久化恢复（容错：无站点时回退 one 站）
@@ -580,7 +597,9 @@ class AppState extends ChangeNotifier {
     final dl = SettingsStore.get('desktop_lyrics');
     if (dl != null) desktopLyricsOn = dl == '1';
     final lfs = SettingsStore.get('lyrics_font_size');
-    if (lfs != null) lyricsFontSize = (double.tryParse(lfs) ?? 20).clamp(12, 64);
+    if (lfs != null) {
+      lyricsFontSize = (double.tryParse(lfs) ?? 20).clamp(12, 64);
+    }
     final lc = SettingsStore.get('lyrics_color');
     if (lc != null) lyricsColor = int.tryParse(lc) ?? 0xFFFFFFFF;
     final loc = SettingsStore.get('lyrics_outline_color');
@@ -639,13 +658,14 @@ class AppState extends ChangeNotifier {
         playlists.clear();
         raw.forEach((name, entries) {
           playlists[name] = (entries as List)
-              .map((e) => PlaylistEntry(
-                    rj: (e as Map<String, dynamic>)['rj'] as String? ?? '',
-                    title: e['title'] as String? ?? '',
-                    circle: e['circle'] as String? ?? '',
-                    tracks: ((e['tracks'] as List?) ?? const [])
-                        .cast<String>(),
-                  ))
+              .map(
+                (e) => PlaylistEntry(
+                  rj: (e as Map<String, dynamic>)['rj'] as String? ?? '',
+                  title: e['title'] as String? ?? '',
+                  circle: e['circle'] as String? ?? '',
+                  tracks: ((e['tracks'] as List?) ?? const []).cast<String>(),
+                ),
+              )
               .toList();
         });
       } catch (_) {}
@@ -710,8 +730,11 @@ class AppState extends ChangeNotifier {
         );
         queue
           ..clear()
-          ..addAll(((m['queue'] as List?) ?? const [])
-              .map((e) => _nodeFromJson(e as Map<String, dynamic>)));
+          ..addAll(
+            ((m['queue'] as List?) ?? const []).map(
+              (e) => _nodeFromJson(e as Map<String, dynamic>),
+            ),
+          );
         trackIdx = ((m['trackIdx'] as int?) ?? 0).clamp(0, queue.length - 1);
         resumePosition = (m['position'] as int?) ?? 0;
         if (queue.isEmpty) {
@@ -731,7 +754,13 @@ class AppState extends ChangeNotifier {
   void setThemeMode(ThemeMode m) {
     themeMode = m;
     SettingsStore.set(
-        'theme', m == ThemeMode.dark ? 'dark' : m == ThemeMode.light ? 'light' : 'system');
+      'theme',
+      m == ThemeMode.dark
+          ? 'dark'
+          : m == ThemeMode.light
+          ? 'light'
+          : 'system',
+    );
     notifyListeners();
   }
 
@@ -773,7 +802,9 @@ class AppState extends ChangeNotifier {
     aiConfig['model'] = model;
     aiConfig['key'] = key;
     SettingsStore.set(
-        'ai_config', jsonEncode({'base': base, 'model': model, 'key': key}));
+      'ai_config',
+      jsonEncode({'base': base, 'model': model, 'key': key}),
+    );
     notifyListeners();
   }
 
@@ -815,7 +846,10 @@ class AppState extends ChangeNotifier {
 
   void setLyricsOutlineWidth(double v) {
     lyricsOutlineWidth = v.clamp(0, 4);
-    SettingsStore.set('lyrics_outline_width', lyricsOutlineWidth.toStringAsFixed(1));
+    SettingsStore.set(
+      'lyrics_outline_width',
+      lyricsOutlineWidth.toStringAsFixed(1),
+    );
     notifyListeners();
   }
 
@@ -1072,14 +1106,22 @@ class AppState extends ChangeNotifier {
   void _persistSites() {
     SettingsStore.set(
       'sites',
-      jsonEncode(customSites
-          .map((s) => {'alias': s.alias, 'url': s.url, 'user': s.user, 'pass': s.pass})
-          .toList()),
+      jsonEncode(
+        customSites
+            .map(
+              (s) => {
+                'alias': s.alias,
+                'url': s.url,
+                'user': s.user,
+                'pass': s.pass,
+              },
+            )
+            .toList(),
+      ),
     );
   }
 
-  void _persistFavs() =>
-      SettingsStore.set('favs', jsonEncode(favoriteRjs));
+  void _persistFavs() => SettingsStore.set('favs', jsonEncode(favoriteRjs));
 
   void _persistSearchHistory() =>
       SettingsStore.set('search_history', jsonEncode(history));
@@ -1088,19 +1130,26 @@ class AppState extends ChangeNotifier {
       SettingsStore.set('play_history', jsonEncode(playHistory));
 
   void _persistPlaylists() => SettingsStore.set(
-      'playlists',
-      jsonEncode(playlists.map((name, entries) => MapEntry(
+    'playlists',
+    jsonEncode(
+      playlists.map(
+        (name, entries) => MapEntry(
           name,
           entries
-              .map((e) => {
-                    'rj': e.rj,
-                    'title': e.title,
-                    'circle': e.circle,
-                    'tracks': e.tracks,
-                  })
-              .toList()))));
+              .map(
+                (e) => {
+                  'rj': e.rj,
+                  'title': e.title,
+                  'circle': e.circle,
+                  'tracks': e.tracks,
+                },
+              )
+              .toList(),
+        ),
+      ),
+    ),
+  );
 
   void _persistBlacklist() =>
       SettingsStore.set('blacklist', jsonEncode(blacklist));
-
 }

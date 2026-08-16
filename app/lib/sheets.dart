@@ -70,8 +70,9 @@ class _ServerSheetState extends State<_ServerSheet> {
   late int _idx;
 
   AppState get app => widget.app;
-  Palette get p =>
-      Theme.of(context).brightness == Brightness.dark ? AppColors.dark : AppColors.light;
+  Palette get p => Theme.of(context).brightness == Brightness.dark
+      ? AppColors.dark
+      : AppColors.light;
 
   @override
   void initState() {
@@ -107,7 +108,11 @@ class _ServerSheetState extends State<_ServerSheet> {
         if (_custom) ...[
           Text(
             '选择自建站点',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: p.dim),
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: p.dim,
+            ),
           ),
           const SizedBox(height: 8),
           if (app.customSites.isEmpty)
@@ -142,7 +147,10 @@ class _ServerSheetState extends State<_ServerSheet> {
                 onTap: () => setState(() => _idx = i),
                 child: Container(
                   margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 11,
+                  ),
                   decoration: BoxDecoration(
                     color: on ? p.accent.withValues(alpha: .08) : p.surface2,
                     border: Border.all(color: on ? p.accent : p.line),
@@ -151,7 +159,9 @@ class _ServerSheetState extends State<_ServerSheet> {
                   child: Row(
                     children: [
                       Icon(
-                        on ? Icons.radio_button_checked : Icons.radio_button_off,
+                        on
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_off,
                         size: 18,
                         color: on ? p.accent : p.dim,
                       ),
@@ -160,13 +170,21 @@ class _ServerSheetState extends State<_ServerSheet> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(s.alias,
-                                style: TextStyle(fontSize: 13, color: p.text, fontWeight: FontWeight.w600)),
+                            Text(
+                              s.alias,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: p.text,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                             const SizedBox(height: 2),
-                            Text(s.url,
-                                style: TextStyle(fontSize: 11, color: p.dim),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis),
+                            Text(
+                              s.url,
+                              style: TextStyle(fontSize: 11, color: p.dim),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ],
                         ),
                       ),
@@ -183,7 +201,9 @@ class _ServerSheetState extends State<_ServerSheet> {
             style: OutlinedButton.styleFrom(
               foregroundColor: p.muted,
               side: BorderSide(color: p.line),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             child: const Text('管理自建站点', style: TextStyle(fontSize: 13)),
           ),
@@ -192,8 +212,9 @@ class _ServerSheetState extends State<_ServerSheet> {
         ElevatedButton(
           onPressed: () {
             if (_custom && app.customSites.isEmpty) {
-              ScaffoldMessenger.of(context)
-                  .showSnackBar(const SnackBar(content: Text('请先添加自建站点')));
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('请先添加自建站点')));
               return;
             }
             app.applyServer(_custom, _idx);
@@ -202,10 +223,15 @@ class _ServerSheetState extends State<_ServerSheet> {
           style: ElevatedButton.styleFrom(
             backgroundColor: p.accent,
             foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
             padding: const EdgeInsets.symmetric(vertical: 12),
           ),
-          child: const Text('应用', style: TextStyle(fontWeight: FontWeight.w600)),
+          child: const Text(
+            '应用',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
         ),
       ],
     );
@@ -252,7 +278,10 @@ Future<void> showSiteSheet(
               final url = urlCtrl.text.trim();
               final user = userCtrl.text.trim();
               final pass = passCtrl.text;
-              if (alias.isEmpty || url.isEmpty || user.isEmpty || pass.isEmpty) {
+              if (alias.isEmpty ||
+                  url.isEmpty ||
+                  user.isEmpty ||
+                  pass.isEmpty) {
                 ScaffoldMessenger.of(
                   ctx,
                 ).showSnackBar(const SnackBar(content: Text('请填写别名、地址、账号和密码')));
@@ -365,16 +394,20 @@ Future<void> showEqSheet(BuildContext context, AppState app) {
               Icon(Icons.graphic_eq, size: 17, color: p.accent),
               const SizedBox(width: 8),
               const Expanded(
-                child: Text('启用均衡器',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                child: Text(
+                  '启用均衡器',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
               ),
               Switch(
                 value: app.eqOn,
                 activeTrackColor: p.accent,
                 onChanged: (v) {
                   app.setEqOn(v);
-                  AppPlayer.instance
-                      .applyEqualizer(enabled: app.eqOn, gains: app.eqGains);
+                  AppPlayer.instance.applyEqualizer(
+                    enabled: app.eqOn,
+                    gains: app.eqGains,
+                  );
                   setSheet(() {});
                 },
               ),
@@ -388,9 +421,12 @@ Future<void> showEqSheet(BuildContext context, AppState app) {
                 label: Text(e.key, style: const TextStyle(fontSize: 12)),
                 onPressed: () {
                   app.setEqGains(
-                      List.generate(10, (i) => e.value[i].toDouble()));
-                  AppPlayer.instance
-                      .applyEqualizer(enabled: app.eqOn, gains: app.eqGains);
+                    List.generate(10, (i) => e.value[i].toDouble()),
+                  );
+                  AppPlayer.instance.applyEqualizer(
+                    enabled: app.eqOn,
+                    gains: app.eqGains,
+                  );
                   setSheet(() {});
                 },
                 backgroundColor: p.surface2,
@@ -427,7 +463,9 @@ Future<void> showEqSheet(BuildContext context, AppState app) {
                               app.eqGains[i] = v;
                               app.notify();
                               AppPlayer.instance.applyEqualizer(
-                                  enabled: app.eqOn, gains: app.eqGains);
+                                enabled: app.eqOn,
+                                gains: app.eqGains,
+                              );
                               setSheet(() {});
                             },
                             onChangeEnd: (_) => app.setEqGains(app.eqGains),
@@ -591,7 +629,9 @@ Future<void> showSleepSheet(BuildContext context, AppState app) {
                           borderSide: BorderSide(color: p.line),
                         ),
                         contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 8),
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
                       ),
                       onSubmitted: (_) {
                         final v = int.tryParse(minCtrl.text.trim());
@@ -618,8 +658,7 @@ Future<void> showSleepSheet(BuildContext context, AppState app) {
                         borderRadius: BorderRadius.circular(10),
                       ),
                     ),
-                    child:
-                        const Text('确定', style: TextStyle(fontSize: 12.5)),
+                    child: const Text('确定', style: TextStyle(fontSize: 12.5)),
                   ),
                 ],
               ),

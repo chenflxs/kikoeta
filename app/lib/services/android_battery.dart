@@ -19,7 +19,8 @@ class AndroidBattery {
   /// 请求关闭省电优化（拉起系统授权页），返回请求后的白名单状态
   Future<bool?> requestIgnore() async {
     try {
-      return await _ch.invokeMethod('requestIgnoreBatteryOptimizations') == true;
+      return await _ch.invokeMethod('requestIgnoreBatteryOptimizations') ==
+          true;
     } catch (_) {
       return null;
     }

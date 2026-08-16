@@ -153,39 +153,45 @@ class _WorkPageState extends State<WorkPage> {
             final ext = _ext(n.title);
             hit.byExt[ext] = (hit.byExt[ext] ?? 0) + 1;
           } else {
-            stats.add(_DirStat(
-              path: List.of(folderPath),
-              duration: n.duration,
-              byExt: {_ext(n.title): 1},
-              se: _notNoSe(folderPath.join('/')),
-            ));
+            stats.add(
+              _DirStat(
+                path: List.of(folderPath),
+                duration: n.duration,
+                byExt: {_ext(n.title): 1},
+                se: _notNoSe(folderPath.join('/')),
+              ),
+            );
           }
         }
       }
     }
+
     walk(cur, path);
 
     // 3) 过滤附带/杂谈类目录
     const excludeWords = ['おまけ', '特典', '附赠', '杂谈', 'freetalk'];
-    stats.removeWhere((x) => excludeWords.any((w) => x.path.join('/').contains(w)));
+    stats.removeWhere(
+      (x) => excludeWords.any((w) => x.path.join('/').contains(w)),
+    );
 
     if (stats.isEmpty || stats.length > 6) return path;
 
     // 4) 时长最长 → 300 秒容差
     stats.sort((a, b) => b.duration - a.duration);
     var chosen = stats.first;
-    final candidates =
-        stats.where((x) => x.duration >= chosen.duration - 300).toList();
+    final candidates = stats
+        .where((x) => x.duration >= chosen.duration - 300)
+        .toList();
 
     // 5) 效果音偏好过滤
-    final seMatched = candidates.where((x) => x.se == app.sePreference).toList();
+    final seMatched = candidates
+        .where((x) => x.se == app.sePreference)
+        .toList();
     if (seMatched.isNotEmpty) {
       // 6) 按音频类型偏好顺序 + 文件数排序
       final byType = <_DirStat>[];
       for (final t in app.audioTypePreference) {
-        final list = seMatched
-            .where((x) => (x.byExt[t] ?? 0) > 0)
-            .toList()
+        final list = seMatched.where((x) => (x.byExt[t] ?? 0) > 0).toList()
           ..sort((a, b) => (b.byExt[t] ?? 0) - (a.byExt[t] ?? 0));
         byType.addAll(list);
       }
@@ -205,12 +211,16 @@ class _WorkPageState extends State<WorkPage> {
     const noWords = ['no', 'cut', '无', '無', 'なし', 'less', 'カット'];
     const seWords = ['se', '效果音', '音效', '効果音'];
     final lower = path.toLowerCase();
-    return !noWords.any((w) =>
-        lower.contains(w) && seWords.any((s) => lower.contains(s)));
+    return !noWords.any(
+      (w) => lower.contains(w) && seWords.any((s) => lower.contains(s)),
+    );
   }
 
   bool _isAudio(MediaNode n) =>
-      !n.isDir && n.title.toLowerCase().contains(RegExp(r'\.(mp3|wav|flac|m4a|aac|ogg|opus|wma|ape)$'));
+      !n.isDir &&
+      n.title.toLowerCase().contains(
+        RegExp(r'\.(mp3|wav|flac|m4a|aac|ogg|opus|wma|ape)$'),
+      );
 
   List<MediaNode> _collectAudio(Iterable<MediaNode> nodes) {
     final out = <MediaNode>[];
@@ -223,6 +233,7 @@ class _WorkPageState extends State<WorkPage> {
         }
       }
     }
+
     walk(nodes.toList());
     return out;
   }
@@ -242,14 +253,17 @@ class _WorkPageState extends State<WorkPage> {
     Navigator.of(context).pushNamed('/player');
   }
 
-  bool _isImage(MediaNode n) =>
-      n.title.toLowerCase().contains(RegExp(r'\.(jpg|jpeg|png|webp|gif|bmp|avif)$'));
+  bool _isImage(MediaNode n) => n.title.toLowerCase().contains(
+    RegExp(r'\.(jpg|jpeg|png|webp|gif|bmp|avif)$'),
+  );
 
-  bool _isText(MediaNode n) =>
-      n.title.toLowerCase().contains(RegExp(r'\.(txt|lrc|srt|json|md|log|vtt)$'));
+  bool _isText(MediaNode n) => n.title.toLowerCase().contains(
+    RegExp(r'\.(txt|lrc|srt|json|md|log|vtt)$'),
+  );
 
-  bool _isVideo(MediaNode n) =>
-      n.title.toLowerCase().contains(RegExp(r'\.(mp4|mkv|webm|avi|mov|wmv|flv|ts|m4v)$'));
+  bool _isVideo(MediaNode n) => n.title.toLowerCase().contains(
+    RegExp(r'\.(mp4|mkv|webm|avi|mov|wmv|flv|ts|m4v)$'),
+  );
 
   void _openFile(MediaNode n) {
     if (_isImage(n)) {
@@ -342,10 +356,15 @@ class _WorkPageState extends State<WorkPage> {
                     child: Row(
                       children: [
                         Expanded(
-                          child: Text(n.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                          child: Text(
+                            n.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                         ),
                         const SizedBox(width: 8),
                         PopupMenuButton<String>(
@@ -364,13 +383,22 @@ class _WorkPageState extends State<WorkPage> {
                                     color: active ? p.accent : p.dim,
                                   ),
                                   const SizedBox(width: 8),
-                                  Text(e, style: TextStyle(fontSize: 13, color: p.text)),
+                                  Text(
+                                    e,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: p.text,
+                                    ),
+                                  ),
                                 ],
                               ),
                             );
                           }).toList(),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
                             decoration: BoxDecoration(
                               color: p.surface2,
                               borderRadius: BorderRadius.circular(14),
@@ -379,11 +407,21 @@ class _WorkPageState extends State<WorkPage> {
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.translate, size: 14, color: p.accent),
+                                Icon(
+                                  Icons.translate,
+                                  size: 14,
+                                  color: p.accent,
+                                ),
                                 const SizedBox(width: 5),
-                                Text(encoding,
-                                    style: TextStyle(fontSize: 12, color: p.text)),
-                                Icon(Icons.arrow_drop_down, size: 16, color: p.dim),
+                                Text(
+                                  encoding,
+                                  style: TextStyle(fontSize: 12, color: p.text),
+                                ),
+                                Icon(
+                                  Icons.arrow_drop_down,
+                                  size: 16,
+                                  color: p.dim,
+                                ),
                               ],
                             ),
                           ),
@@ -399,8 +437,10 @@ class _WorkPageState extends State<WorkPage> {
                   Expanded(
                     child: SingleChildScrollView(
                       padding: const EdgeInsets.all(16),
-                      child: SelectableText(text,
-                          style: const TextStyle(fontSize: 13, height: 1.6)),
+                      child: SelectableText(
+                        text,
+                        style: const TextStyle(fontSize: 13, height: 1.6),
+                      ),
                     ),
                   ),
                 ],
@@ -445,7 +485,10 @@ class _WorkPageState extends State<WorkPage> {
       _toast('文件流需登录后可用');
       return;
     }
-    final ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    final ok = await launchUrl(
+      Uri.parse(url),
+      mode: LaunchMode.externalApplication,
+    );
     if (!ok) _toast('打开失败');
   }
 
@@ -470,34 +513,40 @@ class _WorkPageState extends State<WorkPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text('添加到播放列表',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                  const Text(
+                    '添加到播放列表',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                  ),
                   const SizedBox(height: 4),
-                  Text('已选择 ${_selected.length} 个项目',
-                      style: TextStyle(fontSize: 12, color: p.muted)),
+                  Text(
+                    '已选择 ${_selected.length} 个项目',
+                    style: TextStyle(fontSize: 12, color: p.muted),
+                  ),
                   const SizedBox(height: 10),
-                  ...existing.map((pl) => InkWell(
-                        onTap: () => setSheet(() {
-                          newMode = false;
-                          chosen = pl;
-                        }),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          child: Row(
-                            children: [
-                              Icon(
-                                chosen == pl
-                                    ? Icons.radio_button_checked
-                                    : Icons.radio_button_off,
-                                size: 20,
-                                color: chosen == pl ? p.accent : p.dim,
-                              ),
-                              const SizedBox(width: 10),
-                              Text(pl, style: const TextStyle(fontSize: 13.5)),
-                            ],
-                          ),
+                  ...existing.map(
+                    (pl) => InkWell(
+                      onTap: () => setSheet(() {
+                        newMode = false;
+                        chosen = pl;
+                      }),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        child: Row(
+                          children: [
+                            Icon(
+                              chosen == pl
+                                  ? Icons.radio_button_checked
+                                  : Icons.radio_button_off,
+                              size: 20,
+                              color: chosen == pl ? p.accent : p.dim,
+                            ),
+                            const SizedBox(width: 10),
+                            Text(pl, style: const TextStyle(fontSize: 13.5)),
+                          ],
                         ),
-                      )),
+                      ),
+                    ),
+                  ),
                   InkWell(
                     onTap: () => setSheet(() => newMode = true),
                     child: Padding(
@@ -505,12 +554,17 @@ class _WorkPageState extends State<WorkPage> {
                       child: Row(
                         children: [
                           Icon(
-                            newMode ? Icons.radio_button_checked : Icons.radio_button_off,
+                            newMode
+                                ? Icons.radio_button_checked
+                                : Icons.radio_button_off,
                             size: 20,
                             color: newMode ? p.accent : p.dim,
                           ),
                           const SizedBox(width: 10),
-                          const Text('新建播放列表', style: TextStyle(fontSize: 13.5)),
+                          const Text(
+                            '新建播放列表',
+                            style: TextStyle(fontSize: 13.5),
+                          ),
                         ],
                       ),
                     ),
@@ -541,7 +595,8 @@ class _WorkPageState extends State<WorkPage> {
                       final name = newMode ? nameCtrl.text.trim() : chosen;
                       if (name.isEmpty) {
                         ScaffoldMessenger.of(ctx).showSnackBar(
-                            const SnackBar(content: Text('请输入播放列表名称')));
+                          const SnackBar(content: Text('请输入播放列表名称')),
+                        );
                         return;
                       }
                       app.addWorkToPlaylist(name, work, titles);
@@ -553,9 +608,13 @@ class _WorkPageState extends State<WorkPage> {
                     style: FilledButton.styleFrom(
                       backgroundColor: p.accent,
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
-                    child: const Text('确认添加', style: TextStyle(fontWeight: FontWeight.w600)),
+                    child: const Text(
+                      '确认添加',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
                   ),
                 ],
               ),
@@ -627,10 +686,7 @@ class _WorkPageState extends State<WorkPage> {
                           translatedName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 10.5,
-                            color: p.accent,
-                          ),
+                          style: TextStyle(fontSize: 10.5, color: p.accent),
                         ),
                     ],
                   ),
@@ -640,7 +696,9 @@ class _WorkPageState extends State<WorkPage> {
                   activeColor: p.accent,
                   visualDensity: VisualDensity.compact,
                   onChanged: (v) => setState(() {
-                    v == true ? _selected.add(n.path) : _selected.remove(n.path);
+                    v == true
+                        ? _selected.add(n.path)
+                        : _selected.remove(n.path);
                   }),
                 ),
               ],
@@ -665,275 +723,297 @@ class _WorkPageState extends State<WorkPage> {
           ListView(
             padding: EdgeInsets.fromLTRB(16, 4, 16, miniVisible ? 100 : 40),
             children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              GestureDetector(
-                onTap: _showCover,
-                child: SizedBox(
-                  width: 110,
-                  height: 110,
-                  child: CoverArt(work: work, radius: 18, showBadges: false),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      work.title,
-                      style: const TextStyle(
-                        fontSize: 16.5,
-                        fontWeight: FontWeight.w800,
-                        height: 1.35,
-                      ),
-                    ),
-                    if (zhTitle != null && zhTitle != work.title)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(
-                          zhTitle,
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            color: p.accent,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    const SizedBox(height: 7),
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: p.surface2,
-                            borderRadius: BorderRadius.circular(7),
-                          ),
-                          child: Text(
-                            work.rj,
-                            style: TextStyle(fontSize: 11.5, color: p.muted),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        AgeBadge(age: work.age),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        _linkChip(
-                          Icons.storefront_outlined,
-                          work.circle,
-                          () => _searchAndBack(work.circle),
-                        ),
-                        if (work.va.replaceFirst('CV. ', '').isNotEmpty)
-                          _linkChip(
-                            Icons.person_outline,
-                            work.va.replaceFirst('CV. ', ''),
-                            () => _searchAndBack(
-                                work.va.replaceFirst('CV. ', '')),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      '时长 ${work.dur}',
-                      style: TextStyle(fontSize: 11.5, color: p.muted),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () async {
-                    try {
-                      await ApiService.toggleFavorite(app, work);
-                      if (mounted) {
-                        setState(() {});
-                      }
-                    } catch (e) {
-                      if (mounted) _toast('收藏操作失败：$e');
-                    }
-                  },
-                  icon: Icon(
-                    fav ? Icons.favorite : Icons.favorite_border,
-                    size: 17,
-                  ),
-                  label: Text(
-                    fav ? '已收藏' : '收藏',
-                    style: const TextStyle(fontSize: 13),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: p.text,
-                    side: BorderSide(color: p.line),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 9),
-              Expanded(
-                child: GestureDetector(
-                  onLongPress: _pickEngine,
-                  child: OutlinedButton.icon(
-                    onPressed: _translateTitles,
-                    icon: const Icon(Icons.translate, size: 17),
-                    label: Text(
-                      app.translated.containsKey(work.rj) ? '取消翻译' : '翻译',
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: p.text,
-                      side: BorderSide(color: p.line),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 9),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _addToPlaylist,
-                  icon: const Icon(Icons.playlist_add, size: 17),
-                  label: const Text('添加至播放列表', style: TextStyle(fontSize: 13)),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: p.text,
-                    side: BorderSide(color: p.line),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 7,
-            runSpacing: 7,
-            children: [
-              ...work.tags
-                  .map((t) => _tagChip(
-                        t,
-                        gray: work.grayTags.contains(t),
-                        onTap: () => _searchAndBack(t),
-                        onLongPress: () => _blacklistTag(t),
-                      )),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Text(
-            _tree == null ? '曲目列表' : '曲目列表（文件夹结构）',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: p.muted,
-            ),
-          ),
-          const SizedBox(height: 6),
-          if (_tree != null && _tree!.isNotEmpty)
-            Container(
-              decoration: BoxDecoration(
-                color: p.surface,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: p.line),
-              ),
-              child: Column(
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 智能路径自动进入目录后，顶部提供「查看全部文件」占位
-                  if (_smartTarget != null)
-                    InkWell(
-                      onTap: _showAllFiles,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 10),
-                        decoration: BoxDecoration(
-                          border: Border(bottom: BorderSide(color: p.line)),
+                  GestureDetector(
+                    onTap: _showCover,
+                    child: SizedBox(
+                      width: 110,
+                      height: 110,
+                      child: CoverArt(
+                        work: work,
+                        radius: 18,
+                        showBadges: false,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          work.title,
+                          style: const TextStyle(
+                            fontSize: 16.5,
+                            fontWeight: FontWeight.w800,
+                            height: 1.35,
+                          ),
                         ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.arrow_upward, size: 16, color: p.accent),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                '查看全部文件',
-                                style: TextStyle(
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w600,
-                                    color: p.accent),
+                        if (zhTitle != null && zhTitle != work.title)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              zhTitle,
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                color: p.accent,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
-                            Icon(Icons.chevron_right,
-                                size: 16, color: p.dim),
+                          ),
+                        const SizedBox(height: 7),
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: p.surface2,
+                                borderRadius: BorderRadius.circular(7),
+                              ),
+                              child: Text(
+                                work.rj,
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: p.muted,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            AgeBadge(age: work.age),
                           ],
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            _linkChip(
+                              Icons.storefront_outlined,
+                              work.circle,
+                              () => _searchAndBack(work.circle),
+                            ),
+                            if (work.va.replaceFirst('CV. ', '').isNotEmpty)
+                              _linkChip(
+                                Icons.person_outline,
+                                work.va.replaceFirst('CV. ', ''),
+                                () => _searchAndBack(
+                                  work.va.replaceFirst('CV. ', ''),
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '时长 ${work.dur}',
+                          style: TextStyle(fontSize: 11.5, color: p.muted),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        try {
+                          await ApiService.toggleFavorite(app, work);
+                          if (mounted) {
+                            setState(() {});
+                          }
+                        } catch (e) {
+                          if (mounted) _toast('收藏操作失败：$e');
+                        }
+                      },
+                      icon: Icon(
+                        fav ? Icons.favorite : Icons.favorite_border,
+                        size: 17,
+                      ),
+                      label: Text(
+                        fav ? '已收藏' : '收藏',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: p.text,
+                        side: BorderSide(color: p.line),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
                       ),
                     ),
-                  _treeView(_tree!, 0),
+                  ),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: GestureDetector(
+                      onLongPress: _pickEngine,
+                      child: OutlinedButton.icon(
+                        onPressed: _translateTitles,
+                        icon: const Icon(Icons.translate, size: 17),
+                        label: Text(
+                          app.translated.containsKey(work.rj) ? '取消翻译' : '翻译',
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: p.text,
+                          side: BorderSide(color: p.line),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
-            )
-          else if (_tree == null && !_tracksFailed)
-            Pulse(
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: p.surface,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: p.line),
-                ),
-                child: Column(
-                  children: List.generate(6, (i) {
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Row(
-                        children: [
-                          SkeletonBox(width: 20, height: 20, radius: 6),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: SkeletonBox(height: 12, radius: 6),
-                          ),
-                        ],
+              const SizedBox(height: 9),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _addToPlaylist,
+                      icon: const Icon(Icons.playlist_add, size: 17),
+                      label: const Text(
+                        '添加至播放列表',
+                        style: TextStyle(fontSize: 13),
                       ),
-                    );
-                  }),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: p.text,
+                        side: BorderSide(color: p.line),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 7,
+                runSpacing: 7,
+                children: [
+                  ...work.tags.map(
+                    (t) => _tagChip(
+                      t,
+                      gray: work.grayTags.contains(t),
+                      onTap: () => _searchAndBack(t),
+                      onLongPress: () => _blacklistTag(t),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              Text(
+                _tree == null ? '曲目列表' : '曲目列表（文件夹结构）',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: p.muted,
                 ),
               ),
-            )
-          else
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: p.surface,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: p.line),
-              ),
-              child: Center(
-                child: Text(
-                  _tracksFailed ? '无网络连接，无法获取曲目列表' : '该作品暂无曲目',
-                  style: TextStyle(fontSize: 12.5, color: p.dim),
+              const SizedBox(height: 6),
+              if (_tree != null && _tree!.isNotEmpty)
+                Container(
+                  decoration: BoxDecoration(
+                    color: p.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: p.line),
+                  ),
+                  child: Column(
+                    children: [
+                      // 智能路径自动进入目录后，顶部提供「查看全部文件」占位
+                      if (_smartTarget != null)
+                        InkWell(
+                          onTap: _showAllFiles,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              border: Border(bottom: BorderSide(color: p.line)),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.arrow_upward,
+                                  size: 16,
+                                  color: p.accent,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    '查看全部文件',
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: p.accent,
+                                    ),
+                                  ),
+                                ),
+                                Icon(
+                                  Icons.chevron_right,
+                                  size: 16,
+                                  color: p.dim,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      _treeView(_tree!, 0),
+                    ],
+                  ),
+                )
+              else if (_tree == null && !_tracksFailed)
+                Pulse(
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: p.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: p.line),
+                    ),
+                    child: Column(
+                      children: List.generate(6, (i) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Row(
+                            children: [
+                              SkeletonBox(width: 20, height: 20, radius: 6),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: SkeletonBox(height: 12, radius: 6),
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                    ),
+                  ),
+                )
+              else
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: p.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: p.line),
+                  ),
+                  child: Center(
+                    child: Text(
+                      _tracksFailed ? '无网络连接，无法获取曲目列表' : '该作品暂无曲目',
+                      style: TextStyle(fontSize: 12.5, color: p.dim),
+                    ),
+                  ),
                 ),
-              ),
-            ),
             ],
           ),
           // 迷你播放器浮窗（与首页一致），底部预留空白避免遮挡内容
@@ -1049,9 +1129,13 @@ class _WorkPageState extends State<WorkPage> {
                 ),
               ),
               const SizedBox(height: 14),
-              Text('切换翻译引擎',
-                  style: const TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w800)),
+              Text(
+                '切换翻译引擎',
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
               const SizedBox(height: 10),
               ...engines.map((e) {
                 final on = app.engine == e.$1;
@@ -1059,16 +1143,22 @@ class _WorkPageState extends State<WorkPage> {
                   borderRadius: BorderRadius.circular(12),
                   onTap: () => Navigator.pop(ctx, e.$1),
                   child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
                     decoration: BoxDecoration(
-                      color: on ? p.accent.withValues(alpha: .08) : Colors.transparent,
+                      color: on
+                          ? p.accent.withValues(alpha: .08)
+                          : Colors.transparent,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Row(
                       children: [
                         Icon(
-                          on ? Icons.radio_button_checked : Icons.radio_button_off,
+                          on
+                              ? Icons.radio_button_checked
+                              : Icons.radio_button_off,
                           size: 19,
                           color: on ? p.accent : p.dim,
                         ),
@@ -1079,7 +1169,9 @@ class _WorkPageState extends State<WorkPage> {
                             style: TextStyle(
                               fontSize: 13.5,
                               color: on ? p.accent : p.text,
-                              fontWeight: on ? FontWeight.w700 : FontWeight.normal,
+                              fontWeight: on
+                                  ? FontWeight.w700
+                                  : FontWeight.normal,
                             ),
                           ),
                         ),
@@ -1161,21 +1253,28 @@ class _WorkPageState extends State<WorkPage> {
       final joined = lines.join('\n');
       final zh = switch (app.engine) {
         'google' => await apiTranslateGoogle(
-            text: joined, src: 'ja', dst: 'zh-CN'),
+          text: joined,
+          src: 'ja',
+          dst: 'zh-CN',
+        ),
         'microsoft' => await apiTranslateMicrosoft(
-            text: joined, src: 'ja', dst: 'zh-CN'),
+          text: joined,
+          src: 'ja',
+          dst: 'zh-CN',
+        ),
         'deepl' => await apiTranslateDeepl(
-            text: joined,
-            src: 'ja',
-            dst: 'zh-CN',
-            apiKey: app.deeplKey),
+          text: joined,
+          src: 'ja',
+          dst: 'zh-CN',
+          apiKey: app.deeplKey,
+        ),
         _ => await apiTranslateOpenai(
-            baseUrl: app.aiConfig['base']!,
-            model: app.aiConfig['model']!,
-            apiKey: app.aiConfig['key'] ?? '',
-            text: joined,
-            temperature: 0.2,
-          ),
+          baseUrl: app.aiConfig['base']!,
+          model: app.aiConfig['model']!,
+          apiKey: app.aiConfig['key'] ?? '',
+          text: joined,
+          temperature: 0.2,
+        ),
       };
       final parts = zh
           .split('\n')
@@ -1187,7 +1286,10 @@ class _WorkPageState extends State<WorkPage> {
         trackZh[audio[i - 1].path] = parts[i];
       }
       app.saveTranslated(
-          work.rj, parts.isNotEmpty ? parts[0] : work.title, trackZh);
+        work.rj,
+        parts.isNotEmpty ? parts[0] : work.title,
+        trackZh,
+      );
       if (mounted) setState(() {});
       _toast('翻译完成（${parts.length} 行）');
     } catch (e) {

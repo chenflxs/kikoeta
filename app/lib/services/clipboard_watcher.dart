@@ -42,15 +42,17 @@ class ClipboardWatcher {
     if (messenger == null) return;
     messenger
       ..clearSnackBars()
-      ..showSnackBar(SnackBar(
-        content: Text('检测到 $rj，点击搜索', style: const TextStyle(fontSize: 13)),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 6),
-        action: SnackBarAction(
-          label: '搜索',
-          onPressed: () => app.requestSearch(rj),
+      ..showSnackBar(
+        SnackBar(
+          content: Text('检测到 $rj，点击搜索', style: const TextStyle(fontSize: 13)),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 6),
+          action: SnackBarAction(
+            label: '搜索',
+            onPressed: () => app.requestSearch(rj),
+          ),
         ),
-      ));
+      );
   }
 
   static String? _extractRj(String text) {

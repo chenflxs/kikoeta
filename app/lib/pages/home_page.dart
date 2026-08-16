@@ -109,12 +109,18 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _loadMore() async {
-    if (app.worksLoadingMore || !app.worksHasMore || app.remoteWorks.isEmpty) return;
+    if (app.worksLoadingMore || !app.worksHasMore || app.remoteWorks.isEmpty) {
+      return;
+    }
     final gen = _worksGen;
     app.worksLoadingMore = true;
     app.notify();
     try {
-      final page = await ApiService.fetchWorks(app, page: app.worksPage + 1, perPage: 20);
+      final page = await ApiService.fetchWorks(
+        app,
+        page: app.worksPage + 1,
+        perPage: 20,
+      );
       if (gen != _worksGen) return; // 列表已被重置，丢弃过期结果
       if (page.works.isEmpty) {
         app.worksHasMore = false;
@@ -222,7 +228,9 @@ class _HomePageState extends State<HomePage> {
           onPressed: app.toggleSfw,
           tooltip: app.sfwMode ? 'SFW 模式已开启：仅显示全年龄内容' : '开启 SFW 模式（仅显示全年龄内容）',
           icon: Icon(
-            app.sfwMode ? Icons.family_restroom : Icons.family_restroom_outlined,
+            app.sfwMode
+                ? Icons.family_restroom
+                : Icons.family_restroom_outlined,
             size: 20,
             color: app.sfwMode ? p.accent : p.muted,
           ),
@@ -343,10 +351,7 @@ class _HomePageState extends State<HomePage> {
           (e) => PopupMenuItem(
             value: e.key,
             height: 44,
-            child: MenuItem(
-              label: e.value,
-              selected: app.sort == e.key,
-            ),
+            child: MenuItem(label: e.value, selected: app.sort == e.key),
           ),
         ),
       ],
@@ -397,21 +402,19 @@ class _HomePageState extends State<HomePage> {
     final list = app.homeList;
     return order.isEmpty
         ? (app.loadingRemote &&
-                app.remoteWorks.isEmpty &&
-                app.remoteError == null
-            ? _skeletonGrid()
-            : GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () {
-                  // 网络错误时点击空白处重试连接
-                  if (app.remoteError != null && !app.loadingRemote) {
-                    _loadRemote();
-                  }
-                },
-                child: Center(
-                  child: _emptyHint(),
-                ),
-              ))
+                  app.remoteWorks.isEmpty &&
+                  app.remoteError == null
+              ? _skeletonGrid()
+              : GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    // 网络错误时点击空白处重试连接
+                    if (app.remoteError != null && !app.loadingRemote) {
+                      _loadRemote();
+                    }
+                  },
+                  child: Center(child: _emptyHint()),
+                ))
         : Column(
             children: [
               Expanded(
@@ -441,12 +444,18 @@ class _HomePageState extends State<HomePage> {
               if (app.worksLoadingMore)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 10),
-                  child: Text('加载中…', style: TextStyle(fontSize: 12, color: p.dim)),
+                  child: Text(
+                    '加载中…',
+                    style: TextStyle(fontSize: 12, color: p.dim),
+                  ),
                 )
               else if (!app.worksHasMore)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 10),
-                  child: Text('已显示全部作品', style: TextStyle(fontSize: 12, color: p.dim)),
+                  child: Text(
+                    '已显示全部作品',
+                    style: TextStyle(fontSize: 12, color: p.dim),
+                  ),
                 ),
             ],
           );
@@ -562,15 +571,17 @@ class _HomePageState extends State<HomePage> {
       });
     }
     // 年龄分级是客户端过滤：结果不足一页时继续补拉（最多 4 页）
-    if (app.ageFilter != null && _searchHasMore && !_searchLoading && _searchPage < 4) {
+    if (app.ageFilter != null &&
+        _searchHasMore &&
+        !_searchLoading &&
+        _searchPage < 4) {
       final visible = _visibleSearchResults.length;
       if (visible < 20) _runSearch(_searchQuery, reset: false);
     }
   }
 
   List<Work> get _visibleSearchResults {
-    final res =
-        _searchResults.where((w) => !app.isBlacklistedWork(w)).toList();
+    final res = _searchResults.where((w) => !app.isBlacklistedWork(w)).toList();
     if (app.ageFilter == null) return res;
     return res.where((w) => w.age.index == app.ageFilter).toList();
   }
@@ -585,7 +596,10 @@ class _HomePageState extends State<HomePage> {
             SizedBox(
               width: 22,
               height: 22,
-              child: CircularProgressIndicator(strokeWidth: 2.2, color: p.accent),
+              child: CircularProgressIndicator(
+                strokeWidth: 2.2,
+                color: p.accent,
+              ),
             ),
             const SizedBox(height: 10),
             Text('搜索中…', style: TextStyle(fontSize: 13, color: p.dim)),
@@ -605,8 +619,10 @@ class _HomePageState extends State<HomePage> {
             children: [
               Icon(Icons.wifi_off, size: 34, color: p.dim),
               const SizedBox(height: 10),
-              Text('无网络连接，请检查网络或服务器设置',
-                  style: TextStyle(fontSize: 13, color: p.dim)),
+              Text(
+                '无网络连接，请检查网络或服务器设置',
+                style: TextStyle(fontSize: 13, color: p.dim),
+              ),
               const SizedBox(height: 8),
               Text('点击重试', style: TextStyle(fontSize: 11.5, color: p.accent)),
             ],
@@ -647,8 +663,9 @@ class _HomePageState extends State<HomePage> {
                         child: WorkCard(
                           work: w,
                           index: i,
-                          onTap: () =>
-                              Navigator.of(context).push(buildWorkRoute(app, w)),
+                          onTap: () => Navigator.of(
+                            context,
+                          ).push(buildWorkRoute(app, w)),
                         ),
                       );
                     }),
@@ -666,8 +683,10 @@ class _HomePageState extends State<HomePage> {
         else if (!_searchHasMore)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 10),
-            child: Text('已显示全部搜索结果',
-                style: TextStyle(fontSize: 12, color: p.dim)),
+            child: Text(
+              '已显示全部搜索结果',
+              style: TextStyle(fontSize: 12, color: p.dim),
+            ),
           ),
       ],
     );

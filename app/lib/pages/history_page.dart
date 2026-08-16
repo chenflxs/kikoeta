@@ -10,17 +10,17 @@ class HistoryPage extends StatelessWidget {
   const HistoryPage({super.key, required this.app});
 
   Work _entryWork(Map<String, dynamic> e) => Work(
-        rj: e['rj'] as String? ?? '',
-        title: e['title'] as String? ?? '未知作品',
-        circle: e['circle'] as String? ?? '',
-        va: '',
-        age: Age.all,
-        dur: '',
-        tags: List<String>.from((e['tags'] as List?) ?? const []),
-        grayTags: List<String>.from((e['grayTags'] as List?) ?? const []),
-        grad: 0,
-        coverUrl: e['coverUrl'] as String?,
-      );
+    rj: e['rj'] as String? ?? '',
+    title: e['title'] as String? ?? '未知作品',
+    circle: e['circle'] as String? ?? '',
+    va: '',
+    age: Age.all,
+    dur: '',
+    tags: List<String>.from((e['tags'] as List?) ?? const []),
+    grayTags: List<String>.from((e['grayTags'] as List?) ?? const []),
+    grad: 0,
+    coverUrl: e['coverUrl'] as String?,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -38,14 +38,19 @@ class HistoryPage extends StatelessWidget {
               onPressed: () {
                 app.clearPlayHistory();
               },
-              child: Text('清空', style: TextStyle(fontSize: 13, color: p.accent)),
+              child: Text(
+                '清空',
+                style: TextStyle(fontSize: 13, color: p.accent),
+              ),
             ),
         ],
       ),
       body: list.isEmpty
           ? Center(
-              child: Text('暂无播放历史',
-                  style: TextStyle(fontSize: 13, color: p.dim)),
+              child: Text(
+                '暂无播放历史',
+                style: TextStyle(fontSize: 13, color: p.dim),
+              ),
             )
           : ListView.separated(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
@@ -69,12 +74,16 @@ class HistoryPage extends StatelessWidget {
                       }
                     }
                     if (found == null) {
-                      ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-                        content: Text('该作品不在当前列表，请先在首页加载',
-                            style: TextStyle(fontSize: 12.5, color: p.text)),
-                        behavior: SnackBarBehavior.floating,
-                        backgroundColor: p.toast,
-                      ));
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            '该作品不在当前列表，请先在首页加载',
+                            style: TextStyle(fontSize: 12.5, color: p.text),
+                          ),
+                          behavior: SnackBarBehavior.floating,
+                          backgroundColor: p.toast,
+                        ),
+                      );
                       return;
                     }
                     Navigator.of(ctx).push(buildWorkRoute(app, found));
@@ -108,7 +117,9 @@ class HistoryPage extends StatelessWidget {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
-                                    fontSize: 13.5, fontWeight: FontWeight.w600),
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                               const SizedBox(height: 2),
                               Text(
@@ -123,11 +134,13 @@ class HistoryPage extends StatelessWidget {
                                   spacing: 4,
                                   runSpacing: 4,
                                   children: w.tags
-                                      .map((t) => _tagChip(
-                                            ctx,
-                                            t,
-                                            gray: w.grayTags.contains(t),
-                                          ))
+                                      .map(
+                                        (t) => _tagChip(
+                                          ctx,
+                                          t,
+                                          gray: w.grayTags.contains(t),
+                                        ),
+                                      )
                                       .toList(),
                                 ),
                               ],
@@ -137,8 +150,11 @@ class HistoryPage extends StatelessWidget {
                         const SizedBox(width: 4),
                         Padding(
                           padding: const EdgeInsets.only(top: 20),
-                          child: Icon(Icons.chevron_right,
-                              size: 18, color: p.dim),
+                          child: Icon(
+                            Icons.chevron_right,
+                            size: 18,
+                            color: p.dim,
+                          ),
                         ),
                       ],
                     ),
@@ -175,9 +191,8 @@ class HistoryPage extends StatelessWidget {
     if (ms <= 0) return '';
     final t = DateTime.fromMillisecondsSinceEpoch(ms);
     final now = DateTime.now();
-    final sameDay = t.year == now.year &&
-        t.month == now.month &&
-        t.day == now.day;
+    final sameDay =
+        t.year == now.year && t.month == now.month && t.day == now.day;
     if (sameDay) {
       return '今天 ${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
     }

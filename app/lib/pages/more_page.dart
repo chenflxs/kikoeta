@@ -84,33 +84,33 @@ class MorePage extends StatelessWidget {
         ),
         const SizedBox(height: 14),
         _card(context, [
-      _row(
-        context,
-        Icons.history,
-        '播放历史',
-        null,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => HistoryPage(app: app)),
-        ),
-      ),
-      _row(
-        context,
-        Icons.queue_music,
-        '播放列表',
-        null,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => PlaylistsPage(app: app)),
-        ),
-      ),
-      _row(
-        context,
-        Icons.block_outlined,
-        '黑名单',
-        null,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => BlacklistPage(app: app)),
-        ),
-      ),
+          _row(
+            context,
+            Icons.history,
+            '播放历史',
+            null,
+            onTap: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => HistoryPage(app: app))),
+          ),
+          _row(
+            context,
+            Icons.queue_music,
+            '播放列表',
+            null,
+            onTap: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => PlaylistsPage(app: app))),
+          ),
+          _row(
+            context,
+            Icons.block_outlined,
+            '黑名单',
+            null,
+            onTap: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => BlacklistPage(app: app))),
+          ),
           _row(
             context,
             Icons.settings_outlined,

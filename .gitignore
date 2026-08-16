@@ -16,6 +16,7 @@ app/android/**/*.iml
 
 # ---------- Android 签名与密钥（切勿入库） ----------
 app/android/key.properties
+app/android/key_password.txt
 **/*.keystore
 **/*.jks
 

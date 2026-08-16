@@ -124,7 +124,8 @@ void _syncAndroidLyrics() {
       portrait: portrait,
       portraitWidthDp: _portraitWidthDp(),
     );
-  } else {    ov.hide();
+  } else {
+    ov.hide();
   }
 }
 
@@ -146,6 +147,8 @@ double _portraitWidthDp() {
 int _lastMedia3Pos = -1;
 DateTime _lastMedia3Sync = DateTime.fromMillisecondsSinceEpoch(0);
 bool _media3SessionStarted = false;
+// 「不显示通知栏媒体卡片」开关的上次状态（用于切回显示时重新拉起会话服务）
+bool _media3Hidden = false;
 
 /// MediaSession 控制命令（Kotlin → Dart，mpv 执行）
 void _media3Command(String action, int positionMs) {
@@ -182,8 +185,10 @@ Future<void> _mediaNext() async {
   if (url != null) {
     try {
       await AppPlayer.instance.openMediaUrl(url);
-      AppPlayer.instance
-          .applyEqualizer(enabled: appState.eqOn, gains: appState.eqGains);
+      AppPlayer.instance.applyEqualizer(
+        enabled: appState.eqOn,
+        gains: appState.eqGains,
+      );
       appState.savePlayState();
     } catch (_) {}
   }
@@ -201,8 +206,10 @@ Future<void> _mediaPrev() async {
   if (url != null) {
     try {
       await AppPlayer.instance.openMediaUrl(url);
-      AppPlayer.instance
-          .applyEqualizer(enabled: appState.eqOn, gains: appState.eqGains);
+      AppPlayer.instance.applyEqualizer(
+        enabled: appState.eqOn,
+        gains: appState.eqGains,
+      );
       appState.savePlayState();
     } catch (_) {}
   }
@@ -220,11 +227,14 @@ void _syncMedia3State() {
     AndroidMedia3.clearSession();
     return;
   }
-  // 首次有播放内容时才启动媒体会话服务（避免启动即拉前台服务）
-  if (!_media3SessionStarted) {
+  final hideCard = appState.lsCover;
+  // 首次有播放内容时才启动媒体会话服务（避免启动即拉前台服务）；
+  // 从「隐藏卡片」切回显示时若服务已被系统回收，重新拉起
+  if (!_media3SessionStarted || (_media3Hidden && !hideCard)) {
     _media3SessionStarted = true;
     AndroidMedia3.ensureSession();
   }
+  _media3Hidden = hideCard;
   AndroidMedia3.updateState(
     isPlaying: AppPlayer.instance.isNowPlaying,
     positionMs: AppPlayer.instance.currentPosition * 1000,
@@ -233,6 +243,8 @@ void _syncMedia3State() {
     artist: w.title,
     artworkUrl: w.coverUrl,
     mediaId: w.rj,
+    hideCard: hideCard,
+    logoCover: appState.notifCover,
   );
 }
 
@@ -276,7 +288,10 @@ class KikoetaApp extends StatelessWidget {
               ? LoginPage(app: appState)
               : Shell(app: appState),
           routes: {
-            '/work': (ctx) => WorkPage(app: appState, work: ModalRoute.of(ctx)!.settings.arguments as Work),
+            '/work': (ctx) => WorkPage(
+              app: appState,
+              work: ModalRoute.of(ctx)!.settings.arguments as Work,
+            ),
             '/player': (_) => PlayerPage(app: appState),
             '/settings': (_) => SettingsPage(app: appState),
           },
@@ -292,7 +307,9 @@ class Shell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = Theme.of(context).brightness == Brightness.dark ? AppColors.dark : AppColors.light;
+    final p = Theme.of(context).brightness == Brightness.dark
+        ? AppColors.dark
+        : AppColors.light;
     return LayoutBuilder(
       builder: (context, constraints) {
         final wide = constraints.maxWidth >= 700;
@@ -345,24 +362,30 @@ class Shell extends StatelessWidget {
                         selectedIconTheme: IconThemeData(color: p.accent),
                         unselectedIconTheme: IconThemeData(color: p.dim),
                         selectedLabelTextStyle: TextStyle(
-                            color: p.accent,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12),
-                        unselectedLabelTextStyle:
-                            TextStyle(color: p.dim, fontSize: 12),
+                          color: p.accent,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                        unselectedLabelTextStyle: TextStyle(
+                          color: p.dim,
+                          fontSize: 12,
+                        ),
                         labelType: NavigationRailLabelType.all,
                         destinations: const [
                           NavigationRailDestination(
-                              icon: Icon(Icons.home_outlined),
-                              selectedIcon: Icon(Icons.home),
-                              label: Text('首页')),
+                            icon: Icon(Icons.home_outlined),
+                            selectedIcon: Icon(Icons.home),
+                            label: Text('首页'),
+                          ),
                           NavigationRailDestination(
-                              icon: Icon(Icons.favorite_border),
-                              selectedIcon: Icon(Icons.favorite),
-                              label: Text('收藏')),
+                            icon: Icon(Icons.favorite_border),
+                            selectedIcon: Icon(Icons.favorite),
+                            label: Text('收藏'),
+                          ),
                           NavigationRailDestination(
-                              icon: Icon(Icons.more_horiz),
-                              label: Text('更多')),
+                            icon: Icon(Icons.more_horiz),
+                            label: Text('更多'),
+                          ),
                         ],
                       ),
                     ),
@@ -386,15 +409,19 @@ class Shell extends StatelessWidget {
                   type: BottomNavigationBarType.fixed,
                   items: const [
                     BottomNavigationBarItem(
-                        icon: Icon(Icons.home_outlined),
-                        activeIcon: Icon(Icons.home),
-                        label: '首页'),
+                      icon: Icon(Icons.home_outlined),
+                      activeIcon: Icon(Icons.home),
+                      label: '首页',
+                    ),
                     BottomNavigationBarItem(
-                        icon: Icon(Icons.favorite_border),
-                        activeIcon: Icon(Icons.favorite),
-                        label: '收藏'),
+                      icon: Icon(Icons.favorite_border),
+                      activeIcon: Icon(Icons.favorite),
+                      label: '收藏',
+                    ),
                     BottomNavigationBarItem(
-                        icon: Icon(Icons.more_horiz), label: '更多'),
+                      icon: Icon(Icons.more_horiz),
+                      label: '更多',
+                    ),
                   ],
                 ),
               );

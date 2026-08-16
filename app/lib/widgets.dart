@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'data.dart';
+import 'services/app_paths.dart';
 import 'services/player_service.dart';
 import 'src/rust/api/kikoeru_api.dart';
 import 'theme.dart';
@@ -55,8 +56,7 @@ class CoverArt extends StatelessWidget {
                 tween: Tween(begin: 0, end: 1),
                 duration: const Duration(milliseconds: 320),
                 curve: Curves.easeOut,
-                builder: (ctx, v, child) =>
-                    Opacity(opacity: v, child: child),
+                builder: (ctx, v, child) => Opacity(opacity: v, child: child),
                 child: Image(
                   image: RustImageProvider(work.coverUrl!),
                   fit: BoxFit.cover,
@@ -106,15 +106,15 @@ class Pulse extends StatefulWidget {
   State<Pulse> createState() => _PulseState();
 }
 
-class _PulseState extends State<Pulse>
-    with SingleTickerProviderStateMixin {
+class _PulseState extends State<Pulse> with SingleTickerProviderStateMixin {
   late final AnimationController _c = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 900),
   )..repeat(reverse: true);
-  late final Animation<double> _a = Tween(begin: 0.45, end: 1.0).animate(
-    CurvedAnimation(parent: _c, curve: Curves.easeInOut),
-  );
+  late final Animation<double> _a = Tween(
+    begin: 0.45,
+    end: 1.0,
+  ).animate(CurvedAnimation(parent: _c, curve: Curves.easeInOut));
 
   @override
   void dispose() {
@@ -165,7 +165,10 @@ class RustImageProvider extends ImageProvider<RustImageProvider> {
       SynchronousFuture<RustImageProvider>(this);
 
   @override
-  ImageStreamCompleter loadImage(RustImageProvider key, ImageDecoderCallback decode) {
+  ImageStreamCompleter loadImage(
+    RustImageProvider key,
+    ImageDecoderCallback decode,
+  ) {
     return OneFrameImageStreamCompleter(_load(key));
   }
 
@@ -176,7 +179,8 @@ class RustImageProvider extends ImageProvider<RustImageProvider> {
   }
 
   @override
-  bool operator ==(Object other) => other is RustImageProvider && other.url == url;
+  bool operator ==(Object other) =>
+      other is RustImageProvider && other.url == url;
 
   @override
   int get hashCode => url.hashCode;
@@ -184,8 +188,11 @@ class RustImageProvider extends ImageProvider<RustImageProvider> {
 
 void _logImageError(String url, String error) {
   try {
-    final f = File('${Directory.systemTemp.path}/kikoeta_image_error.log');
-    f.writeAsStringSync('$url\n$error\n---\n', mode: FileMode.append);
+    // 写入应用数据目录（Windows 为 exe 旁 data/，不污染 Temp）
+    AppPaths.dataDir().then((dir) {
+      final f = File('$dir${Platform.pathSeparator}kikoeta_image_error.log');
+      f.writeAsStringSync('$url\n$error\n---\n', mode: FileMode.append);
+    });
   } catch (_) {}
 }
 
@@ -435,61 +442,61 @@ class MenuItem extends StatelessWidget {
     return Opacity(
       opacity: enabled ? 1 : 0.38,
       child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(11),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-        decoration: BoxDecoration(
-          color: selected
-              ? p.accent.withValues(alpha: .08)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(11),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: selected ? p.accent : p.muted,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-                ),
-              ),
-            ),
-            if (checkbox)
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                width: 19,
-                height: 19,
-                decoration: BoxDecoration(
-                  color: selected ? p.accent : Colors.transparent,
-                  border: Border.all(
-                    color: selected ? p.accent : p.dim,
-                    width: 1.5,
-                  ),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: selected
-                    ? const Icon(Icons.check, size: 13, color: Colors.white)
-                    : null,
-              )
-            else
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                width: 17,
-                height: 17,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: selected ? p.accent : Colors.transparent,
-                  border: Border.all(
-                    color: selected ? p.accent : p.dim,
-                    width: 1.5,
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(11),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+          decoration: BoxDecoration(
+            color: selected
+                ? p.accent.withValues(alpha: .08)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(11),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: selected ? p.accent : p.muted,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
                   ),
                 ),
               ),
-          ],
-        ),
+              if (checkbox)
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  width: 19,
+                  height: 19,
+                  decoration: BoxDecoration(
+                    color: selected ? p.accent : Colors.transparent,
+                    border: Border.all(
+                      color: selected ? p.accent : p.dim,
+                      width: 1.5,
+                    ),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: selected
+                      ? const Icon(Icons.check, size: 13, color: Colors.white)
+                      : null,
+                )
+              else
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  width: 17,
+                  height: 17,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: selected ? p.accent : Colors.transparent,
+                    border: Border.all(
+                      color: selected ? p.accent : p.dim,
+                      width: 1.5,
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -611,7 +618,9 @@ class MiniPlayer extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w600),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   Text(
                     w.title,
@@ -640,8 +649,11 @@ class MiniPlayer extends StatelessWidget {
                   } catch (_) {}
                 }
               },
-              icon: Icon(app.playing ? Icons.pause_circle : Icons.play_circle,
-                  size: 30, color: p.text),
+              icon: Icon(
+                app.playing ? Icons.pause_circle : Icons.play_circle,
+                size: 30,
+                color: p.text,
+              ),
             ),
             IconButton(
               onPressed: () {
@@ -712,8 +724,10 @@ class _HomeSearchBarState extends State<HomeSearchBar> {
 
   @override
   Widget build(BuildContext context) {
-    final panelMax =
-        (MediaQuery.sizeOf(context).height * 0.72).clamp(180.0, 560.0);
+    final panelMax = (MediaQuery.sizeOf(context).height * 0.72).clamp(
+      180.0,
+      560.0,
+    );
     return Row(
       children: [
         Expanded(child: _searchBar(panelMax)),
@@ -857,11 +871,16 @@ class _HomeSearchBarState extends State<HomeSearchBar> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.search,
-                          size: 36, color: p.dim.withValues(alpha: .6)),
+                      Icon(
+                        Icons.search,
+                        size: 36,
+                        color: p.dim.withValues(alpha: .6),
+                      ),
                       const SizedBox(height: 10),
-                      Text('暂无搜索历史',
-                          style: TextStyle(fontSize: 13, color: p.dim)),
+                      Text(
+                        '暂无搜索历史',
+                        style: TextStyle(fontSize: 13, color: p.dim),
+                      ),
                     ],
                   ),
                 ),
@@ -882,17 +901,23 @@ class _HomeSearchBarState extends State<HomeSearchBar> {
                       app.notify();
                       ScaffoldMessenger.of(context)
                         ..clearSnackBars()
-                        ..showSnackBar(SnackBar(
-                          content: Text('已删除「${e.value}」',
-                              style: TextStyle(fontSize: 12.5, color: p.text)),
-                          behavior: SnackBarBehavior.floating,
-                          duration: const Duration(milliseconds: 1600),
-                          backgroundColor: p.toast,
-                        ));
+                        ..showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              '已删除「${e.value}」',
+                              style: TextStyle(fontSize: 12.5, color: p.text),
+                            ),
+                            behavior: SnackBarBehavior.floating,
+                            duration: const Duration(milliseconds: 1600),
+                            backgroundColor: p.toast,
+                          ),
+                        );
                     },
                     child: Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 13,
+                        vertical: 8,
+                      ),
                       decoration: BoxDecoration(
                         color: p.surface,
                         border: Border.all(color: p.line),
@@ -953,20 +978,13 @@ class _HomeSearchBarState extends State<HomeSearchBar> {
         PopupMenuItem(
           value: 0,
           height: 44,
-          child: MenuItem(
-            label: '全年龄',
-            selected: app.ageFilter == 0,
-          ),
+          child: MenuItem(label: '全年龄', selected: app.ageFilter == 0),
         ),
         const PopupMenuDivider(),
         PopupMenuItem(
           value: 10,
           height: 44,
-          child: MenuItem(
-            label: '仅字幕',
-            selected: app.subOnly,
-            checkbox: true,
-          ),
+          child: MenuItem(label: '仅字幕', selected: app.subOnly, checkbox: true),
         ),
       ],
       child: Container(

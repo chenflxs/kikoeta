@@ -78,7 +78,11 @@ class _FavoritesPageState extends State<FavoritesPage> {
       }
     });
     try {
-      final list = await ApiService.fetchMyReviews(app, page: page, perPage: 20);
+      final list = await ApiService.fetchMyReviews(
+        app,
+        page: page,
+        perPage: 20,
+      );
       if (!mounted || gen != _gen) return;
       setState(() {
         _works.addAll(list.works);
@@ -114,8 +118,12 @@ class _FavoritesPageState extends State<FavoritesPage> {
       }
     });
     try {
-      final list = await ApiService.fetchPlaylistWorks(app, pl.id,
-          page: page, perPage: 20);
+      final list = await ApiService.fetchPlaylistWorks(
+        app,
+        pl.id,
+        page: page,
+        perPage: 20,
+      );
       if (!mounted || gen != _gen) return;
       setState(() {
         _works.addAll(list.works);
@@ -249,7 +257,9 @@ class _FavoritesPageState extends State<FavoritesPage> {
                     Text(
                       title,
                       style: const TextStyle(
-                          fontSize: 20, fontWeight: FontWeight.w800),
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ],
                 ),
@@ -276,7 +286,10 @@ class _FavoritesPageState extends State<FavoritesPage> {
             SizedBox(
               width: 22,
               height: 22,
-              child: CircularProgressIndicator(strokeWidth: 2.2, color: p.accent),
+              child: CircularProgressIndicator(
+                strokeWidth: 2.2,
+                color: p.accent,
+              ),
             ),
             const SizedBox(height: 10),
             Text('加载中…', style: TextStyle(fontSize: 13, color: p.dim)),
@@ -294,8 +307,10 @@ class _FavoritesPageState extends State<FavoritesPage> {
             children: [
               Icon(Icons.wifi_off, size: 34, color: p.dim),
               const SizedBox(height: 10),
-              Text('加载失败，请确认已在设置中登录',
-                  style: TextStyle(fontSize: 13, color: p.dim)),
+              Text(
+                '加载失败，请确认已在设置中登录',
+                style: TextStyle(fontSize: 13, color: p.dim),
+              ),
               const SizedBox(height: 8),
               Text('点击重试', style: TextStyle(fontSize: 11.5, color: p.accent)),
             ],
@@ -305,8 +320,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
     }
     if (_works.isEmpty) {
       return Center(
-        child: Text('还没有收藏的作品',
-            style: TextStyle(fontSize: 13, color: p.dim)),
+        child: Text('还没有收藏的作品', style: TextStyle(fontSize: 13, color: p.dim)),
       );
     }
     return Column(
@@ -342,8 +356,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
         else if (!_hasMore)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 10),
-            child: Text('已显示全部',
-                style: TextStyle(fontSize: 12, color: p.dim)),
+            child: Text('已显示全部', style: TextStyle(fontSize: 12, color: p.dim)),
           ),
       ],
     );
@@ -385,14 +398,17 @@ class _FavoritesPageState extends State<FavoritesPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontSize: 13.5, fontWeight: FontWeight.w600)),
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   const SizedBox(height: 2),
-                  Text(subtitle,
-                      style: TextStyle(fontSize: 11, color: p.dim)),
+                  Text(subtitle, style: TextStyle(fontSize: 11, color: p.dim)),
                 ],
               ),
             ),

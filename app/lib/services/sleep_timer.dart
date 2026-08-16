@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../data.dart';
+import 'android_media3.dart';
 import 'player_service.dart';
 
 /// 定时关闭：到点停止播放；桌面端退出进程，移动端仅释放播放状态。
@@ -29,12 +30,23 @@ class SleepTimer {
     if (!wasPlaying) return; // 手册：到点时若未播放则不动作
     AppPlayer.instance.stop();
     app.notify();
+    _releaseIfEnabled(app);
 
     // 桌面端：停止后退出进程（手册 4.6：Windows/Linux/macOS 到点退出）
     if (!kIsWeb &&
         (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
       Future.delayed(const Duration(milliseconds: 600), () => exit(0));
     }
+  }
+
+  /// 开关「释放系统接口」开启：延迟清除锁屏媒体卡片与通知。
+  /// 延迟执行是为了等停止播放/状态同步产生的 updateState 全部落地，
+  /// 避免卡片被重新拉起来（关闭开关时只暂停播放、保留卡片）。
+  static void _releaseIfEnabled(AppState app) {
+    if (!app.releaseInterface) return;
+    Future.delayed(const Duration(milliseconds: 500), () {
+      AndroidMedia3.clearSession();
+    });
   }
 
   static Timer start(AppState app) =>
@@ -51,6 +63,7 @@ class SleepTimer {
     if (!wasPlaying) return; // 手册：到点时若未播放则不动作
     AppPlayer.instance.stop();
     app.notify();
+    _releaseIfEnabled(app);
 
     if (!kIsWeb &&
         (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {

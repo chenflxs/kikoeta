@@ -57,8 +57,9 @@ class _PlayerPageState extends State<PlayerPage> {
   bool get _opened => AppPlayer.instance.opened;
 
   AppState get app => widget.app;
-  Palette get p =>
-      Theme.of(context).brightness == Brightness.dark ? AppColors.dark : AppColors.light;
+  Palette get p => Theme.of(context).brightness == Brightness.dark
+      ? AppColors.dark
+      : AppColors.light;
   Work get work => app.playWork!;
   MediaNode get track => app.queue[app.trackIdx];
 
@@ -67,49 +68,64 @@ class _PlayerPageState extends State<PlayerPage> {
     super.initState();
     _lastConv = app.conv;
     app.addListener(_onAppStateChanged);
-    _subs.add(AppPlayer.instance.position.listen((d) {
-      if (mounted) {
-        setState(() => _pos = d);
-        _maybeAutoScrollLyric();
-      }
-      // 节流保存播放位置（每 5 秒），供重启恢复
-      if (d - _lastSavedPos >= 5) {
-        _lastSavedPos = d;
-        app.resumePosition = d;
-        app.savePlayState();
-      }
-    }));
-    _subs.add(AppPlayer.instance.duration.listen((d) {
-      if (mounted) setState(() => _dur = d);
-    }));
-    _subs.add(AppPlayer.instance.completed.listen((_) {
-      // 主动 stop/打开媒体时 mpv 会残留触发一次 completed，忽略（否则重启恢复会误跳下一首）
-      if (_opening || _switching) return;
-      _next(auto: true);
-    }));
-    _subs.add(AppPlayer.instance.error.listen((e) {
-      if (!mounted) return;
-      app.playing = false;
-      app.notify();
-      setState(() {});
-      _toast('播放失败：${_friendlyPlayError(e)}');
-    }));
-    _subs.add(AppPlayer.instance.playing.listen((p) {
-      if (p != app.playing) {
-        app.playing = p;
-        app.notify();
-        if (!p) {
-          // 暂停/停止：保存当前位置
-          app.resumePosition = _pos;
+    _subs.add(
+      AppPlayer.instance.position.listen((d) {
+        if (mounted) {
+          setState(() => _pos = d);
+          _maybeAutoScrollLyric();
+        }
+        // 节流保存播放位置（每 5 秒），供重启恢复
+        if (d - _lastSavedPos >= 5) {
+          _lastSavedPos = d;
+          app.resumePosition = d;
           app.savePlayState();
         }
-        if (mounted) setState(() {});
-      }
-    }));
-    _subs.add(AppPlayer.instance.buffering.listen((b) {
-      if (mounted && b != _buffering) setState(() => _buffering = b);
-    }));
-    _sleepTimer = Timer.periodic(const Duration(seconds: 1), (_) => _checkSleep());
+      }),
+    );
+    _subs.add(
+      AppPlayer.instance.duration.listen((d) {
+        if (mounted) setState(() => _dur = d);
+      }),
+    );
+    _subs.add(
+      AppPlayer.instance.completed.listen((_) {
+        // 主动 stop/打开媒体时 mpv 会残留触发一次 completed，忽略（否则重启恢复会误跳下一首）
+        if (_opening || _switching) return;
+        _next(auto: true);
+      }),
+    );
+    _subs.add(
+      AppPlayer.instance.error.listen((e) {
+        if (!mounted) return;
+        app.playing = false;
+        app.notify();
+        setState(() {});
+        _toast('播放失败：${_friendlyPlayError(e)}');
+      }),
+    );
+    _subs.add(
+      AppPlayer.instance.playing.listen((p) {
+        if (p != app.playing) {
+          app.playing = p;
+          app.notify();
+          if (!p) {
+            // 暂停/停止：保存当前位置
+            app.resumePosition = _pos;
+            app.savePlayState();
+          }
+          if (mounted) setState(() {});
+        }
+      }),
+    );
+    _subs.add(
+      AppPlayer.instance.buffering.listen((b) {
+        if (mounted && b != _buffering) setState(() => _buffering = b);
+      }),
+    );
+    _sleepTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _checkSleep(),
+    );
     _applyVolume();
     // 重启恢复：有上次播放记录时打开并停在保存位置（默认暂停，不自动播放）
     if (!app.playing && app.queue.isNotEmpty && !AppPlayer.instance.opened) {
@@ -122,7 +138,9 @@ class _PlayerPageState extends State<PlayerPage> {
           if (mounted) setState(() => _pos = resume);
         }
       });
-    } else if (app.playing && app.queue.isNotEmpty && !AppPlayer.instance.opened) {
+    } else if (app.playing &&
+        app.queue.isNotEmpty &&
+        !AppPlayer.instance.opened) {
       // 播放器已在播放（全局单例，退出页面不销毁）：直接恢复状态，不重新打开
       _openCurrent();
     }
@@ -135,9 +153,11 @@ class _PlayerPageState extends State<PlayerPage> {
     try {
       final l = await ApiService.fetchLrc(app, work, trackTitle: title);
       if (mounted && seq == _lyricSeq && !_sameLyrics(l, _lyrics)) {
-        setState(() => _lyrics
-          ..clear()
-          ..addAll(l));
+        setState(
+          () => _lyrics
+            ..clear()
+            ..addAll(l),
+        );
         LyricsHub.instance.setLyrics(_lyrics, app.conv);
       }
     } catch (_) {}
@@ -197,7 +217,11 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   /// 打开媒体（失败自动重试一次）
-  Future<void> _openMedia(String url, {required bool autoplay, int attempt = 1}) async {
+  Future<void> _openMedia(
+    String url, {
+    required bool autoplay,
+    int attempt = 1,
+  }) async {
     try {
       await AppPlayer.instance.openMediaUrl(url, autoplay: autoplay);
       _applyVolume();
@@ -402,7 +426,10 @@ class _PlayerPageState extends State<PlayerPage> {
                 decoration: BoxDecoration(
                   gradient: RadialGradient(
                     radius: 1.3,
-                    colors: [p.accent.withValues(alpha: .16), Colors.transparent],
+                    colors: [
+                      p.accent.withValues(alpha: .16),
+                      Colors.transparent,
+                    ],
                   ),
                 ),
               ),
@@ -421,9 +448,7 @@ class _PlayerPageState extends State<PlayerPage> {
               child: IgnorePointer(
                 child: Container(
                   color: Colors.black26,
-                  child: const Center(
-                    child: CircularProgressIndicator(),
-                  ),
+                  child: const Center(child: CircularProgressIndicator()),
                 ),
               ),
             ),
@@ -476,7 +501,10 @@ class _PlayerPageState extends State<PlayerPage> {
         ),
         const Expanded(
           child: Center(
-            child: Text('正在播放', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+            child: Text(
+              '正在播放',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+            ),
           ),
         ),
         // 桌面歌词/更多仅出现在歌词页右上（封面页通过左右滑动进入歌词页）
@@ -490,7 +518,10 @@ class _PlayerPageState extends State<PlayerPage> {
               color: app.desktopLyricsOn ? p.accent : null,
             ),
           ),
-          IconButton(onPressed: _showLyricSettings, icon: const Icon(Icons.more_horiz, size: 22)),
+          IconButton(
+            onPressed: _showLyricSettings,
+            icon: const Icon(Icons.more_horiz, size: 22),
+          ),
         ],
       ],
     );
@@ -525,7 +556,8 @@ class _PlayerPageState extends State<PlayerPage> {
                 final minOffset = size * 0.34;
                 // 按钮刚好在封面外侧时需要的偏移
                 final clearOffset = size / 2 + 16;
-                final t = ((edgeOffset - minOffset) / (clearOffset - minOffset)).clamp(0.0, 1.0);
+                final t = ((edgeOffset - minOffset) / (clearOffset - minOffset))
+                    .clamp(0.0, 1.0);
                 final offset = minOffset + (edgeOffset - minOffset) * t;
                 final half = math.max(c.maxWidth / 2, 1.0);
                 final ax = (offset / half).clamp(0.0, 1.0);
@@ -534,8 +566,14 @@ class _PlayerPageState extends State<PlayerPage> {
                   height: size,
                   child: CoverArt(work: work, radius: 14),
                 );
-                final left = _seekCircle(Icons.replay_10, () => _seekRelative(-10));
-                final right = _seekCircle(Icons.forward_30, () => _seekRelative(30));
+                final left = _seekCircle(
+                  Icons.replay_10,
+                  () => _seekRelative(-10),
+                );
+                final right = _seekCircle(
+                  Icons.forward_30,
+                  () => _seekRelative(30),
+                );
                 return SizedBox(
                   width: c.maxWidth,
                   height: size,
@@ -562,7 +600,10 @@ class _PlayerPageState extends State<PlayerPage> {
             ),
           ),
           Text(
-            track.title.replaceAll(RegExp(r'\.(mp3|wav|flac|m4a|aac|ogg|opus)$'), ''),
+            track.title.replaceAll(
+              RegExp(r'\.(mp3|wav|flac|m4a|aac|ogg|opus)$'),
+              '',
+            ),
             textAlign: TextAlign.center,
             style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
           ),
@@ -594,8 +635,10 @@ class _PlayerPageState extends State<PlayerPage> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(_fmt(_pos), style: TextStyle(fontSize: 11, color: p.dim)),
-              Text(_dur > 0 ? _fmt(_dur) : '--:--',
-                  style: TextStyle(fontSize: 11, color: p.dim)),
+              Text(
+                _dur > 0 ? _fmt(_dur) : '--:--',
+                style: TextStyle(fontSize: 11, color: p.dim),
+              ),
             ],
           ),
           const SizedBox(height: 6),
@@ -621,8 +664,8 @@ class _PlayerPageState extends State<PlayerPage> {
             app.playMode == 1
                 ? Icons.repeat
                 : app.playMode == 2
-                    ? Icons.repeat_one
-                    : Icons.playlist_play,
+                ? Icons.repeat_one
+                : Icons.playlist_play,
             size: 20,
           ),
           color: app.playMode == 0 ? p.dim : p.accent,
@@ -639,8 +682,14 @@ class _PlayerPageState extends State<PlayerPage> {
           height: 54,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            gradient: LinearGradient(colors: [p.accent, p.accent2], begin: Alignment.topLeft, end: Alignment.bottomRight),
-            boxShadow: [BoxShadow(color: p.accent.withValues(alpha: .3), blurRadius: 30)],
+            gradient: LinearGradient(
+              colors: [p.accent, p.accent2],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            boxShadow: [
+              BoxShadow(color: p.accent.withValues(alpha: .3), blurRadius: 30),
+            ],
           ),
           child: IconButton(
             onPressed: () {
@@ -658,7 +707,11 @@ class _PlayerPageState extends State<PlayerPage> {
               app.notify();
               setState(() {});
             },
-            icon: Icon(app.playing ? Icons.pause : Icons.play_arrow, size: 30, color: Colors.white),
+            icon: Icon(
+              app.playing ? Icons.pause : Icons.play_arrow,
+              size: 30,
+              color: Colors.white,
+            ),
           ),
         ),
         const SizedBox(width: 6),
@@ -679,10 +732,10 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   String get _playModeLabel => switch (app.playMode) {
-        1 => '循环播放',
-        2 => '单曲循环',
-        _ => '列表播放',
-      };
+    1 => '循环播放',
+    2 => '单曲循环',
+    _ => '列表播放',
+  };
 
   void _cyclePlayMode() {
     app.playMode = (app.playMode + 1) % 3;
@@ -762,7 +815,9 @@ class _PlayerPageState extends State<PlayerPage> {
                                 },
                           child: Padding(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 18, vertical: 11),
+                              horizontal: 18,
+                              vertical: 11,
+                            ),
                             child: Row(
                               children: [
                                 Icon(
@@ -791,7 +846,9 @@ class _PlayerPageState extends State<PlayerPage> {
                                   Text(
                                     '正在播放',
                                     style: TextStyle(
-                                        fontSize: 11, color: p.accent),
+                                      fontSize: 11,
+                                      color: p.accent,
+                                    ),
                                   ),
                               ],
                             ),
@@ -815,8 +872,8 @@ class _PlayerPageState extends State<PlayerPage> {
           app.volume <= 0
               ? Icons.volume_off
               : app.volume < 55
-                  ? Icons.volume_down
-                  : Icons.volume_up,
+              ? Icons.volume_down
+              : Icons.volume_up,
           size: 17,
           color: p.dim,
         ),
@@ -870,13 +927,13 @@ class _PlayerPageState extends State<PlayerPage> {
       color: p.surface2.withValues(alpha: .5),
       shape: const CircleBorder(),
       child: InkWell(
-      onTap: onTap,
-      customBorder: const CircleBorder(),
-      child: SizedBox(
-        width: 44,
-        height: 44,
-        child: Icon(icon, size: 24, color: p.text.withValues(alpha: .75)),
-      ),
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Icon(icon, size: 24, color: p.text.withValues(alpha: .75)),
+        ),
       ),
     );
   }
@@ -891,8 +948,11 @@ class _PlayerPageState extends State<PlayerPage> {
           () => Navigator.of(context).push(buildWorkRoute(app, work)),
         ),
         _util(Icons.equalizer_outlined, '均衡器', () => showEqSheet(context, app)),
-        _util(Icons.timer_outlined, app.sleepEndAt != null ? '定时中' : '定时',
-            () => showSleepSheet(context, app)),
+        _util(
+          Icons.timer_outlined,
+          app.sleepEndAt != null ? '定时中' : '定时',
+          () => showSleepSheet(context, app),
+        ),
       ],
     );
   }
@@ -918,7 +978,10 @@ class _PlayerPageState extends State<PlayerPage> {
         Expanded(
           child: _lyrics.isEmpty
               ? Center(
-                  child: Text('暂无歌词', style: TextStyle(fontSize: 13, color: p.dim)),
+                  child: Text(
+                    '暂无歌词',
+                    style: TextStyle(fontSize: 13, color: p.dim),
+                  ),
                 )
               : LayoutBuilder(
                   builder: (ctx, c) {
@@ -953,7 +1016,8 @@ class _PlayerPageState extends State<PlayerPage> {
                               controller: _lyricScroll,
                               // 上下各留半屏空白，保证第一行与最后一行也能居中
                               padding: EdgeInsets.symmetric(
-                                  vertical: math.max(h * 0.3, 40)),
+                                vertical: math.max(h * 0.3, 40),
+                              ),
                               itemCount: _lyrics.length,
                               itemBuilder: (ctx, i) {
                                 final l = _lyrics[i];
@@ -963,7 +1027,9 @@ class _PlayerPageState extends State<PlayerPage> {
                                   onTap: () => _seekTo(l.t),
                                   child: Padding(
                                     padding: const EdgeInsets.symmetric(
-                                        vertical: 7, horizontal: 20),
+                                      vertical: 7,
+                                      horizontal: 20,
+                                    ),
                                     child: Text(
                                       main,
                                       textAlign: TextAlign.center,
@@ -1187,10 +1253,7 @@ class _PlayerPageState extends State<PlayerPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title,
-                    style: TextStyle(fontSize: 13.5, color: p.text),
-                  ),
+                  Text(title, style: TextStyle(fontSize: 13.5, color: p.text)),
                   const SizedBox(height: 2),
                   Text(
                     sub,
@@ -1211,8 +1274,11 @@ class _PlayerPageState extends State<PlayerPage> {
   Future<void> _pickOnlineLyric(BuildContext rootCtx) async {
     List<LyricCandidate> cands;
     try {
-      cands = await ApiService.lyricCandidates(app, work,
-          trackTitle: app.queue.isEmpty ? null : track.title);
+      cands = await ApiService.lyricCandidates(
+        app,
+        work,
+        trackTitle: app.queue.isEmpty ? null : track.title,
+      );
     } catch (_) {
       cands = const [];
     }
@@ -1236,8 +1302,11 @@ class _PlayerPageState extends State<PlayerPage> {
                 padding: const EdgeInsets.fromLTRB(18, 18, 18, 8),
                 child: Row(
                   children: [
-                    Icon(Icons.cloud_download_outlined,
-                        size: 18, color: p.accent),
+                    Icon(
+                      Icons.cloud_download_outlined,
+                      size: 18,
+                      color: p.accent,
+                    ),
                     const SizedBox(width: 8),
                     Text(
                       '选择在线歌词',
@@ -1315,7 +1384,9 @@ class _PlayerPageState extends State<PlayerPage> {
                     style: TextStyle(
                       fontSize: 13.5,
                       color: selected ? p.accent : p.text,
-                      fontWeight: selected ? FontWeight.w700 : FontWeight.normal,
+                      fontWeight: selected
+                          ? FontWeight.w700
+                          : FontWeight.normal,
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -1328,20 +1399,22 @@ class _PlayerPageState extends State<PlayerPage> {
                 ],
               ),
             ),
-            if (selected)
-              Icon(Icons.check_circle, size: 16, color: p.accent),
+            if (selected) Icon(Icons.check_circle, size: 16, color: p.accent),
           ],
         ),
       ),
     );
   }
 
-  Future<void> _loadOnlineLyric(
-      BuildContext ctx, LyricCandidate? pick) async {
+  Future<void> _loadOnlineLyric(BuildContext ctx, LyricCandidate? pick) async {
     List<LyricLine> l;
     try {
-      l = await ApiService.fetchLrc(app, work,
-          trackTitle: app.queue.isEmpty ? null : track.title, pick: pick);
+      l = await ApiService.fetchLrc(
+        app,
+        work,
+        trackTitle: app.queue.isEmpty ? null : track.title,
+        pick: pick,
+      );
     } catch (_) {
       l = const [];
     }
@@ -1406,7 +1479,9 @@ class _PlayerPageState extends State<PlayerPage> {
 
   /// 播放位置变化时：若处于自动跟随状态，把当前行滚到中间
   void _maybeAutoScrollLyric() {
-    if (!_lyricAutoFollow || _lyrics.isEmpty || !_lyricScroll.hasClients) return;
+    if (!_lyricAutoFollow || _lyrics.isEmpty || !_lyricScroll.hasClients) {
+      return;
+    }
     final idx = _currentLyricIdx();
     if (idx != _lastAutoIdx) {
       _lastAutoIdx = idx;
@@ -1431,12 +1506,14 @@ class _PlayerPageState extends State<PlayerPage> {
     _lyricProgrammatic = true;
     if (animated) {
       _lyricScroll
-          .animateTo(target,
-              duration: const Duration(milliseconds: 320),
-              curve: Curves.easeOutCubic)
+          .animateTo(
+            target,
+            duration: const Duration(milliseconds: 320),
+            curve: Curves.easeOutCubic,
+          )
           .whenComplete(() {
-        if (token == _lyricScrollToken) _lyricProgrammatic = false;
-      });
+            if (token == _lyricScrollToken) _lyricProgrammatic = false;
+          });
     } else {
       _lyricScroll.jumpTo(target);
       _lyricProgrammatic = false;
@@ -1497,12 +1574,16 @@ class _PlayerPageState extends State<PlayerPage> {
   void _toast(String msg) {
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
-      ..showSnackBar(SnackBar(
-        content: Text(msg, style: TextStyle(fontSize: 12.5, color: p.text)),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(milliseconds: 1600),
-        backgroundColor: p.toast,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ));
+      ..showSnackBar(
+        SnackBar(
+          content: Text(msg, style: TextStyle(fontSize: 12.5, color: p.text)),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(milliseconds: 1600),
+          backgroundColor: p.toast,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
   }
 }

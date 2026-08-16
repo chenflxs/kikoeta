@@ -40,9 +40,13 @@ class AndroidMedia3 {
     required String artist,
     String? artworkUrl,
     required String mediaId,
+    bool hideCard = false,
+    bool logoCover = false,
   }) async {
     // ignore: avoid_print
-    print('[media3] updateState playing=$isPlaying pos=$positionMs title=$title');
+    print(
+      '[media3] updateState playing=$isPlaying pos=$positionMs title=$title',
+    );
     try {
       await _ch.invokeMethod('updateState', {
         'isPlaying': isPlaying,
@@ -52,6 +56,8 @@ class AndroidMedia3 {
         'artist': artist,
         'artworkUrl': artworkUrl,
         'mediaId': mediaId,
+        'hideCard': hideCard,
+        'logoCover': logoCover,
       });
     } catch (e) {
       // ignore: avoid_print

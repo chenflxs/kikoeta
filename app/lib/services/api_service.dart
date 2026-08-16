@@ -30,8 +30,11 @@ class ApiService {
     return 'https://api.asmr.one';
   }
 
-  static Future<WorksPage> fetchWorks(AppState app,
-      {int page = 1, int perPage = 20}) async {
+  static Future<WorksPage> fetchWorks(
+    AppState app, {
+    int page = 1,
+    int perPage = 20,
+  }) async {
     final base = resolveBase(app);
     if (app.customServer) {
       // kikoeru-express：分页大小由服务器配置决定，年龄用 nsfw、字幕用 lyric
@@ -73,8 +76,12 @@ class ApiService {
     return parseWorks(json, base: base, perPage: perPage);
   }
 
-  static Future<WorksPage> searchWorks(AppState app, String query,
-      {int page = 1, int perPage = 20}) async {
+  static Future<WorksPage> searchWorks(
+    AppState app,
+    String query, {
+    int page = 1,
+    int perPage = 20,
+  }) async {
     final base = resolveBase(app);
     if (app.customServer) {
       // kikoeru-express：搜索走 /api/search?keyword=，年龄用 nsfw 过滤
@@ -170,8 +177,12 @@ class ApiService {
   }
 
   /// 歌单作品（需登录），结构与作品列表一致
-  static Future<WorksPage> fetchPlaylistWorks(AppState app, String id,
-      {int page = 1, int perPage = 20}) async {
+  static Future<WorksPage> fetchPlaylistWorks(
+    AppState app,
+    String id, {
+    int page = 1,
+    int perPage = 20,
+  }) async {
     final json = await apiGetPlaylistWorks(
       base: resolveBase(app),
       id: id,
@@ -182,8 +193,11 @@ class ApiService {
   }
 
   /// 我的评价/收藏列表（GET /api/review，需登录）
-  static Future<WorksPage> fetchMyReviews(AppState app,
-      {int page = 1, int perPage = 20}) async {
+  static Future<WorksPage> fetchMyReviews(
+    AppState app, {
+    int page = 1,
+    int perPage = 20,
+  }) async {
     final json = await apiGetMyReviews(
       base: resolveBase(app),
       page: page,
@@ -239,14 +253,22 @@ class ApiService {
   }
 
   static Future<String> login(
-      AppState app, String base, String name, String password) {
+    AppState app,
+    String base,
+    String name,
+    String password,
+  ) {
     return apiLogin(base: base, name: name, password: password);
   }
 
   static String? tokenFor(AppState app, String base) => getToken(base: base);
 
-  static Future<List<LyricLine>> fetchLrc(AppState app, Work w,
-      {String? trackTitle, LyricCandidate? pick}) async {
+  static Future<List<LyricLine>> fetchLrc(
+    AppState app,
+    Work w, {
+    String? trackTitle,
+    LyricCandidate? pick,
+  }) async {
     final apiId = w.apiId;
     if (apiId == null) return const [];
     final nodes = await fetchTracks(app, apiId);
@@ -281,8 +303,11 @@ class ApiService {
   }
 
   /// 歌词候选列表（供「选择在线歌词」使用，已按分数排序）
-  static Future<List<LyricCandidate>> lyricCandidates(AppState app, Work w,
-      {String? trackTitle}) async {
+  static Future<List<LyricCandidate>> lyricCandidates(
+    AppState app,
+    Work w, {
+    String? trackTitle,
+  }) async {
     final apiId = w.apiId;
     if (apiId == null) return const [];
     final nodes = await fetchTracks(app, apiId);
@@ -295,12 +320,14 @@ class ApiService {
     }
     candidates.sort((a, b) => b.score.compareTo(a.score));
     return candidates
-        .map((c) => LyricCandidate(
-              title: c.title,
-              path: c.path,
-              url: c.url,
-              score: c.score,
-            ))
+        .map(
+          (c) => LyricCandidate(
+            title: c.title,
+            path: c.path,
+            url: c.url,
+            score: c.score,
+          ),
+        )
         .toList();
   }
 
@@ -318,7 +345,9 @@ class ApiService {
 
   /// 歌词候选：收集曲目树中的 .lrc / .txt 文件并按中文优先打分
   static List<_LyricCandidate> _findLyricCandidates(
-      List<MediaNode> nodes, [String folder = '']) {
+    List<MediaNode> nodes, [
+    String folder = '',
+  ]) {
     final out = <_LyricCandidate>[];
     for (final n in nodes) {
       final path = folder.isEmpty ? n.title : '$folder/${n.title}';
@@ -354,31 +383,53 @@ class ApiService {
           break;
         }
       }
-      out.add(_LyricCandidate(
-        title: n.title,
-        path: path,
-        url: n.url,
-        score: score,
-      ));
+      out.add(
+        _LyricCandidate(title: n.title, path: path, url: n.url, score: score),
+      );
     }
     return out;
   }
 
   static const _zhLyricHints = [
-    '简体', '繁体', '简中', '繁中', '中文', '中字', '汉化', '汉',
-    '简', '繁', 'zh', 'sc', 'tc',
+    '简体',
+    '繁体',
+    '简中',
+    '繁中',
+    '中文',
+    '中字',
+    '汉化',
+    '汉',
+    '简',
+    '繁',
+    'zh',
+    'sc',
+    'tc',
   ];
   static const _otherLangHints = [
-    '日本語', '日语', '日文', '日', 'jp', 'ja',
-    '英语', '英文', 'en', 'eng', 'english',
-    '韓国', '韩语', '한국어', 'ko', 'kr',
+    '日本語',
+    '日语',
+    '日文',
+    '日',
+    'jp',
+    'ja',
+    '英语',
+    '英文',
+    'en',
+    'eng',
+    'english',
+    '韓国',
+    '韩语',
+    '한국어',
+    'ko',
+    'kr',
   ];
 
   /// 拉丁语种码按整词匹配，避免误伤（如 en 不匹配 special/English 以外的单词）
   static bool _pathHas(String s, String hint) {
     if (RegExp(r'^[a-z][a-z0-9-]*$').hasMatch(hint)) {
-      return RegExp('(?<![a-z0-9])${RegExp.escape(hint)}(?![a-z0-9])')
-          .hasMatch(s);
+      return RegExp(
+        '(?<![a-z0-9])${RegExp.escape(hint)}(?![a-z0-9])',
+      ).hasMatch(s);
     }
     return s.contains(hint);
   }
@@ -407,7 +458,10 @@ class ApiService {
     return lines;
   }
 
-  static Future<List<MediaNode>> fetchTracks(AppState app, int workApiId) async {
+  static Future<List<MediaNode>> fetchTracks(
+    AppState app,
+    int workApiId,
+  ) async {
     final key = _tracksKey(app, workApiId);
     final cached = _tracksCache[key];
     if (cached != null) return cached;
@@ -421,7 +475,11 @@ class ApiService {
   static final Map<String, List<MediaNode>> _tracksCache = {};
   static String _tracksKey(AppState app, int id) => '${resolveBase(app)}|$id';
 
-  static List<MediaNode> _parseNodes(dynamic list, String parentPath, String base) {
+  static List<MediaNode> _parseNodes(
+    dynamic list,
+    String parentPath,
+    String base,
+  ) {
     if (list is! List) return const [];
     final nodes = list.map((e) {
       final m = e as Map<String, dynamic>;
@@ -430,7 +488,8 @@ class ApiService {
       final path = parentPath.isEmpty ? title : '$parentPath/$title';
       final raw = m['children'];
       final hash = m['hash'] as String?;
-      final url = m['mediaUrl'] as String? ??
+      final url =
+          m['mediaUrl'] as String? ??
           m['streamUrl'] as String? ??
           m['url'] as String? ??
           (hash != null ? '$base/api/media/stream/$hash' : null);
@@ -452,14 +511,12 @@ class ApiService {
   }
 
   static int _naturalCompare(String a, String b) {
-    final pa = RegExp(r'\d+|\D+')
-        .allMatches(a.toLowerCase())
-        .map((m) => m.group(0)!)
-        .toList();
-    final pb = RegExp(r'\d+|\D+')
-        .allMatches(b.toLowerCase())
-        .map((m) => m.group(0)!)
-        .toList();
+    final pa = RegExp(
+      r'\d+|\D+',
+    ).allMatches(a.toLowerCase()).map((m) => m.group(0)!).toList();
+    final pb = RegExp(
+      r'\d+|\D+',
+    ).allMatches(b.toLowerCase()).map((m) => m.group(0)!).toList();
     final n = pa.length < pb.length ? pa.length : pb.length;
     for (var i = 0; i < n; i++) {
       final x = pa[i];
@@ -494,8 +551,9 @@ class ApiService {
       pageSize = (pag['pageSize'] as num?)?.toInt() ?? pageSize;
       total = (pag['totalCount'] as num?)?.toInt() ?? -1;
     }
-    final hasMore =
-        total >= 0 ? page * pageSize < total : works.length == perPage;
+    final hasMore = total >= 0
+        ? page * pageSize < total
+        : works.length == perPage;
     return WorksPage(
       works: works,
       page: page,
@@ -531,17 +589,21 @@ class ApiService {
       // 0=低愿力（需投票，显示灰色，默认不在列表展示）
       // 1=普通（作品自带或已获认同，实心；字段缺失时默认 1）
       // >=2=否决（完全不展示，服务端通常已过滤）
-      final status = (t['voteStatus'] as num?)?.toInt() ??
+      final status =
+          (t['voteStatus'] as num?)?.toInt() ??
           (t['vote_status'] as num?)?.toInt() ??
           1;
       if (status >= 2) continue;
       tags.add(name);
       if (status == 0) grayTags.add(name);
     }
-    final circle = (m['circle'] as Map?)?['name'] as String? ?? (m['name'] as String? ?? '');
+    final circle =
+        (m['circle'] as Map?)?['name'] as String? ??
+        (m['name'] as String? ?? '');
     final lyricStatus = m['lyric_status'];
     return Work(
-      rj: m['source_id'] as String? ??
+      rj:
+          m['source_id'] as String? ??
           (apiId != null ? 'RJ$apiId' : 'RJ00000000'),
       title: m['title'] as String? ?? '未知作品',
       circle: circle,
@@ -551,13 +613,15 @@ class ApiService {
       tags: tags,
       grayTags: grayTags,
       grad: i % 8,
-      coverUrl: m['mainCoverUrl'] as String? ??
+      coverUrl:
+          m['mainCoverUrl'] as String? ??
           m['thumbnailCoverUrl'] as String? ??
           // kikoeru-express 不返回封面 URL，按 {base}/api/cover/{id} 构造
           (base != null && apiId != null
               ? '${base.replaceAll(RegExp(r'/+$'), '')}/api/cover/$apiId'
               : null),
-      hasSubtitle: m['has_subtitle'] as bool? ??
+      hasSubtitle:
+          m['has_subtitle'] as bool? ??
           (lyricStatus is String && lyricStatus.isNotEmpty),
       apiId: apiId,
     );
@@ -568,7 +632,9 @@ class ApiService {
     final h = seconds ~/ 3600;
     final m = (seconds % 3600) ~/ 60;
     final s = seconds % 60;
-    if (h > 0) return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    if (h > 0) {
+      return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    }
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 }

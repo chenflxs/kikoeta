@@ -8,10 +8,10 @@ import 'package:ffi/ffi.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:win32/win32.dart';
 
+import 'app_paths.dart';
 import 'settings_store.dart';
 
-typedef _WndProcNative =
-    IntPtr Function(IntPtr, Uint32, IntPtr, IntPtr);
+typedef _WndProcNative = IntPtr Function(IntPtr, Uint32, IntPtr, IntPtr);
 
 /// 桌面歌词悬浮窗（Windows）：
 /// - 最顶层、无边框、透明背景（洋红色键，GDI 渲染文字与按钮）
@@ -147,9 +147,13 @@ class DesktopLyricsOverlay {
     );
     if (_hwnd == 0) return;
     _pump = Timer.periodic(
-        const Duration(milliseconds: 16), (_) => _pumpOnce());
+      const Duration(milliseconds: 16),
+      (_) => _pumpOnce(),
+    );
     _hoverPoll = Timer.periodic(
-        const Duration(milliseconds: 100), (_) => _pollHover());
+      const Duration(milliseconds: 100),
+      (_) => _pollHover(),
+    );
   }
 
   void _saveWindowState() {
@@ -170,10 +174,12 @@ class DesktopLyricsOverlay {
   Future<void> init() async {
     if (!Platform.isWindows) return;
     try {
-      final data = await rootBundle
-          .load('assets/fonts/sarasa-ui-sc-regular.ttf');
-      final tmp =
-          File('${Directory.systemTemp.path}/kikoeta_sarasa_ui_sc.ttf');
+      final data = await rootBundle.load(
+        'assets/fonts/sarasa-ui-sc-regular.ttf',
+      );
+      // 写入应用数据目录（Windows 为 exe 旁 data/，不污染 Temp）
+      final dir = await AppPaths.dataDir();
+      final tmp = File('$dir${Platform.pathSeparator}kikoeta_sarasa_ui_sc.ttf');
       await tmp.writeAsBytes(
         data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
         flush: true,
@@ -211,7 +217,8 @@ class DesktopLyricsOverlay {
     try {
       GetCursorPos(pt);
       GetWindowRect(_hwnd, rc);
-      final inside = pt.ref.x >= rc.ref.left &&
+      final inside =
+          pt.ref.x >= rc.ref.left &&
           pt.ref.x <= rc.ref.right &&
           pt.ref.y >= rc.ref.top &&
           pt.ref.y <= rc.ref.bottom;
@@ -402,8 +409,13 @@ class DesktopLyricsOverlay {
                   r2.ref.top = textRect.ref.top + dy;
                   r2.ref.right = textRect.ref.right + dx;
                   r2.ref.bottom = textRect.ref.bottom + dy;
-                  DrawText(hdc, textPtr, -1, r2,
-                      DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+                  DrawText(
+                    hdc,
+                    textPtr,
+                    -1,
+                    r2,
+                    DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+                  );
                 } finally {
                   calloc.free(r2);
                 }
@@ -411,8 +423,13 @@ class DesktopLyricsOverlay {
             }
           }
           SetTextColor(hdc, _colorRef(_textColor));
-          DrawText(hdc, textPtr, -1, textRect,
-              DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+          DrawText(
+            hdc,
+            textPtr,
+            -1,
+            textRect,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+          );
         } finally {
           calloc.free(textRect);
           calloc.free(textPtr);
@@ -463,7 +480,13 @@ class DesktopLyricsOverlay {
       final ppv = calloc<Pointer<Uint8>>();
       try {
         _dib = CreateDIBSection(
-            _memDc, bmi, DIB_RGB_COLORS, ppv.cast<Pointer>(), 0, 0);
+          _memDc,
+          bmi,
+          DIB_RGB_COLORS,
+          ppv.cast<Pointer>(),
+          0,
+          0,
+        );
         _bits = ppv.value;
       } finally {
         calloc.free(ppv);
@@ -501,7 +524,16 @@ class DesktopLyricsOverlay {
   }
 
   void _fillRounded(
-      int x0, int y0, int x1, int y1, int radius, int a, int r, int g, int b) {
+    int x0,
+    int y0,
+    int x1,
+    int y1,
+    int radius,
+    int a,
+    int r,
+    int g,
+    int b,
+  ) {
     for (var y = y0; y < y1; y++) {
       for (var x = x0; x < x1; x++) {
         if (_inRounded(x, y, x0, y0, x1, y1, radius)) {
@@ -533,30 +565,64 @@ class DesktopLyricsOverlay {
     if (_locked) {
       // 锁定态：仅悬停时在顶部居中显示解锁按钮
       if (_hover) {
-        final r = ui.Rect.fromLTWH(((w - bs) / 2).toDouble(),
-            top.toDouble(), bs.toDouble(), bs.toDouble());
+        final r = ui.Rect.fromLTWH(
+          ((w - bs) / 2).toDouble(),
+          top.toDouble(),
+          bs.toDouble(),
+          bs.toDouble(),
+        );
         _unlockRect = r;
-        _fillRounded(r.left.round(), r.top.round(), r.right.round(),
-            r.bottom.round(), 5, 102, 51, 51, 51);
+        _fillRounded(
+          r.left.round(),
+          r.top.round(),
+          r.right.round(),
+          r.bottom.round(),
+          5,
+          102,
+          51,
+          51,
+          51,
+        );
       }
     } else if (_hover) {
       // 解锁态悬停：顶部居中显示 减号 / 加号 / 锁定
       final total = bs * 3 + gap * 2;
       var x = (w - total) / 2;
-      final minus = ui.Rect.fromLTWH(x.toDouble(), top.toDouble(),
-          bs.toDouble(), bs.toDouble());
+      final minus = ui.Rect.fromLTWH(
+        x.toDouble(),
+        top.toDouble(),
+        bs.toDouble(),
+        bs.toDouble(),
+      );
       x += bs + gap;
-      final plus = ui.Rect.fromLTWH(x.toDouble(), top.toDouble(),
-          bs.toDouble(), bs.toDouble());
+      final plus = ui.Rect.fromLTWH(
+        x.toDouble(),
+        top.toDouble(),
+        bs.toDouble(),
+        bs.toDouble(),
+      );
       x += bs + gap;
-      final lock = ui.Rect.fromLTWH(x.toDouble(), top.toDouble(),
-          bs.toDouble(), bs.toDouble());
+      final lock = ui.Rect.fromLTWH(
+        x.toDouble(),
+        top.toDouble(),
+        bs.toDouble(),
+        bs.toDouble(),
+      );
       _minusRect = minus;
       _plusRect = plus;
       _lockRect = lock;
       for (final r in [minus, plus, lock]) {
-        _fillRounded(r.left.round(), r.top.round(), r.right.round(),
-            r.bottom.round(), 5, 102, 51, 51, 51);
+        _fillRounded(
+          r.left.round(),
+          r.top.round(),
+          r.right.round(),
+          r.bottom.round(),
+          5,
+          102,
+          51,
+          51,
+          51,
+        );
       }
     }
   }
@@ -617,7 +683,8 @@ class DesktopLyricsOverlay {
         paths = [
           _roundedRect(6, 22, 42, 44, 2),
           ..._parsePath(
-              'M14 22V14C14 8.47715 18.4772 4 24 4C29.5228 4 34 8.47715 34 14V22'),
+            'M14 22V14C14 8.47715 18.4772 4 24 4C29.5228 4 34 8.47715 34 14V22',
+          ),
           ..._parsePath('M24 30V36'),
         ];
         break;
@@ -625,7 +692,8 @@ class DesktopLyricsOverlay {
         paths = [
           _roundedRect(7, 22.0476, 41, 44.0476, 2),
           ..._parsePath(
-              'M14 22V14.0047C13.9948 8.87022 17.9227 4.56718 23.0859 4.05117C28.249 3.53516 32.9673 6.97408 34 12.0059'),
+            'M14 22V14.0047C13.9948 8.87022 17.9227 4.56718 23.0859 4.05117C28.249 3.53516 32.9673 6.97408 34 12.0059',
+          ),
           ..._parsePath('M24 30V36'),
         ];
         break;
@@ -638,8 +706,8 @@ class DesktopLyricsOverlay {
     final tx = r.center.dx;
     final ty = r.center.dy;
     final w = math.max(1.5, 4 * scale);
-    ui.Offset tr(ui.Offset p) => ui.Offset(tx + (p.dx - 24) * scale,
-        ty + (p.dy - 24) * scale);
+    ui.Offset tr(ui.Offset p) =>
+        ui.Offset(tx + (p.dx - 24) * scale, ty + (p.dy - 24) * scale);
 
     for (final pl in paths) {
       for (var i = 1; i < pl.length; i++) {
@@ -666,7 +734,13 @@ class DesktopLyricsOverlay {
   }
 
   double _segDist(
-      double px, double py, double x0, double y0, double x1, double y1) {
+    double px,
+    double py,
+    double x0,
+    double y0,
+    double x1,
+    double y1,
+  ) {
     final vx = x1 - x0;
     final vy = y1 - y0;
     final wx = px - x0;
@@ -687,12 +761,7 @@ class DesktopLyricsOverlay {
 
   void _blendPx(int x, int y, int a, int r, int g, int b) {
     final bits = _bits;
-    if (bits == null ||
-        x < 0 ||
-        y < 0 ||
-        x >= _dibW ||
-        y >= _dibH ||
-        a <= 0) {
+    if (bits == null || x < 0 || y < 0 || x >= _dibW || y >= _dibH || a <= 0) {
       return;
     }
     final i = ((_dibH - 1 - y) * _dibW + x) * 4;
@@ -780,18 +849,19 @@ class DesktopLyricsOverlay {
           cur.add(ui.Offset(x, y));
           break;
         case 'C':
-        case 'c': {
-          final c1x = nextNum();
-          final c1y = nextNum();
-          final c2x = nextNum();
-          final c2y = nextNum();
-          final ex = nextNum();
-          final ey = nextNum();
-          _sampleCubic(cur, x, y, c1x, c1y, c2x, c2y, ex, ey);
-          x = ex;
-          y = ey;
-          break;
-        }
+        case 'c':
+          {
+            final c1x = nextNum();
+            final c1y = nextNum();
+            final c2x = nextNum();
+            final c2y = nextNum();
+            final ex = nextNum();
+            final ey = nextNum();
+            _sampleCubic(cur, x, y, c1x, c1y, c2x, c2y, ex, ey);
+            x = ex;
+            y = ey;
+            break;
+          }
         case 'Z':
         case 'z':
           closePoly();
@@ -802,17 +872,28 @@ class DesktopLyricsOverlay {
     return out;
   }
 
-  void _sampleCubic(List<ui.Offset> pts, double x0, double y0, double c1x,
-      double c1y, double c2x, double c2y, double x1, double y1) {
+  void _sampleCubic(
+    List<ui.Offset> pts,
+    double x0,
+    double y0,
+    double c1x,
+    double c1y,
+    double c2x,
+    double c2y,
+    double x1,
+    double y1,
+  ) {
     const steps = 24;
     for (var i = 1; i <= steps; i++) {
       final t = i / steps;
       final u = 1 - t;
-      final x = u * u * u * x0 +
+      final x =
+          u * u * u * x0 +
           3 * u * u * t * c1x +
           3 * u * t * t * c2x +
           t * t * t * x1;
-      final y = u * u * u * y0 +
+      final y =
+          u * u * u * y0 +
           3 * u * u * t * c1y +
           3 * u * t * t * c2y +
           t * t * t * y1;
@@ -821,7 +902,12 @@ class DesktopLyricsOverlay {
   }
 
   List<ui.Offset> _roundedRect(
-      double x0, double y0, double x1, double y1, double radius) {
+    double x0,
+    double y0,
+    double x1,
+    double y1,
+    double radius,
+  ) {
     final r = math.min(radius, math.min((x1 - x0) / 2, (y1 - y0) / 2));
     final pts = <ui.Offset>[];
     void arc(double cx, double cy, double a0, double a1) {
