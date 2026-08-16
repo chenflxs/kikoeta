@@ -13,6 +13,7 @@ import 'pages/settings_page.dart';
 import 'pages/work_page.dart';
 import 'services/player_service.dart';
 import 'services/settings_store.dart';
+import 'services/shortcut_service.dart';
 import 'services/sleep_timer.dart';
 import 'services/clipboard_watcher.dart';
 import 'services/desktop_lyrics_overlay.dart';
@@ -31,6 +32,8 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SettingsStore.init();
   await appState.loadFromRust();
+  // Windows 首次运行：自动创建桌面/开始菜单快捷方式（仅 release，幂等）
+  ShortcutService.ensureShortcuts();
   // 安卓音频控制：耳机拔出/焦点丢失 → 暂停播放
   AndroidAudio.init();
   AndroidAudio.onPauseRequested = () {
