@@ -204,18 +204,14 @@ class _HomePageState extends State<HomePage> {
   Widget _header() {
     return Row(
       children: [
-        Container(
-          width: 30,
-          height: 30,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [p.accent, p.accent2],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(10),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: Image.asset(
+            'assets/logo.png',
+            width: 30,
+            height: 30,
+            fit: BoxFit.cover,
           ),
-          child: const Icon(Icons.music_note, size: 17, color: Colors.white),
         ),
         const SizedBox(width: 9),
         const Expanded(

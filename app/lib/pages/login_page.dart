@@ -159,26 +159,13 @@ class _LoginPageState extends State<LoginPage> {
                     children: [
                       // Logo
                       Center(
-                        child: Container(
-                          width: 62,
-                          height: 62,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [p.accent, p.accent2],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            borderRadius: BorderRadius.circular(18),
-                          ),
-                          child: const Center(
-                            child: Text(
-                              'K',
-                              style: TextStyle(
-                                fontSize: 26,
-                                fontWeight: FontWeight.w800,
-                                color: Colors.white,
-                              ),
-                            ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(18),
+                          child: Image.asset(
+                            'assets/logo.png',
+                            width: 62,
+                            height: 62,
+                            fit: BoxFit.cover,
                           ),
                         ),
                       ),

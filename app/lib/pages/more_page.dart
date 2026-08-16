@@ -37,26 +37,12 @@ class MorePage extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [p.accent, p.accent2],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  shape: BoxShape.circle,
-                ),
-                child: const Center(
-                  child: Text(
-                    'K',
-                    style: TextStyle(
-                      fontSize: 19,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                    ),
-                  ),
+              ClipOval(
+                child: Image.asset(
+                  'assets/logo.png',
+                  width: 52,
+                  height: 52,
+                  fit: BoxFit.cover,
                 ),
               ),
               const SizedBox(width: 13),
@@ -65,7 +51,7 @@ class MorePage extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Kikoeta 本地客户端',
+                      'Kikoeta',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
