@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -51,20 +52,35 @@ class CoverArt extends StatelessWidget {
         children: [
           if (work.coverUrl != null)
             Positioned.fill(
-              child: TweenAnimationBuilder<double>(
-                key: ValueKey(work.coverUrl),
-                tween: Tween(begin: 0, end: 1),
-                duration: const Duration(milliseconds: 320),
-                curve: Curves.easeOut,
-                builder: (ctx, v, child) => Opacity(opacity: v, child: child),
-                child: Image(
-                  image: RustImageProvider(work.coverUrl!),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, error, _) {
-                    _logImageError(work.coverUrl!, error.toString());
-                    return const SizedBox.shrink();
-                  },
-                ),
+              child: LayoutBuilder(
+                builder: (ctx, c) {
+                  // 按实际显示尺寸（含设备像素比）解码封面，上限 720px：
+                  // 网格小图不再全尺寸解码，显著降低内存占用与栅格上传开销
+                  final cacheWidth = (c.maxWidth *
+                          MediaQuery.devicePixelRatioOf(ctx))
+                      .round()
+                      .clamp(128, 720);
+                  return TweenAnimationBuilder<double>(
+                    key: ValueKey(work.coverUrl),
+                    tween: Tween(begin: 0, end: 1),
+                    duration: const Duration(milliseconds: 320),
+                    curve: Curves.easeOut,
+                    builder: (ctx, v, child) =>
+                        Opacity(opacity: v, child: child),
+                    child: Image(
+                      image: ResizeImage.resizeIfNeeded(
+                        cacheWidth,
+                        null,
+                        RustImageProvider(work.coverUrl!),
+                      ),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, error, _) {
+                        _logImageError(work.coverUrl!, error.toString());
+                        return const SizedBox.shrink();
+                      },
+                    ),
+                  );
+                },
               ),
             ),
           if (showBadges)
@@ -169,13 +185,20 @@ class RustImageProvider extends ImageProvider<RustImageProvider> {
     RustImageProvider key,
     ImageDecoderCallback decode,
   ) {
-    return OneFrameImageStreamCompleter(_load(key));
+    return OneFrameImageStreamCompleter(_load(key, decode));
   }
 
-  Future<ImageInfo> _load(RustImageProvider key) async {
+  Future<ImageInfo> _load(
+    RustImageProvider key,
+    ImageDecoderCallback decode,
+  ) async {
     final bytes = await apiGetBytes(url: key.url);
-    final image = await decodeImageFromList(bytes);
-    return ImageInfo(image: image);
+    // 使用传入的 decode 回调（而非直接解码），使 ResizeImage 的按尺寸解码能真正生效：
+    // 封面按实际显示尺寸解码，避免全尺寸解码造成的内存与栅格压力。
+    final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+    final codec = await decode(buffer);
+    final frame = await codec.getNextFrame();
+    return ImageInfo(image: frame.image);
   }
 
   @override
@@ -379,7 +402,9 @@ class Pill extends StatelessWidget {
   }
 }
 
-/// 按可用宽度自适应列数的网格（竖屏约 2 列，横屏/宽窗自动增加）
+/// 按可用宽度自适应列数的网格（竖屏约 2 列，横屏/宽窗自动增加）。
+/// 行式懒加载：仅构建可视行，滚出视口的卡片会被回收，
+/// 每张卡片包一层 RepaintBoundary 隔离重绘。
 class ResponsiveGrid extends StatelessWidget {
   final int itemCount;
   final IndexedWidgetBuilder itemBuilder;
@@ -402,16 +427,29 @@ class ResponsiveGrid extends StatelessWidget {
         final cols = (c.maxWidth / maxTileWidth).floor().clamp(2, 8);
         const gap = 13.0;
         final tile = (c.maxWidth - gap * (cols - 1)) / cols;
-        return SingleChildScrollView(
+        final rows = (itemCount + cols - 1) ~/ cols;
+        return ListView.builder(
           padding: padding,
-          child: Wrap(
-            spacing: gap,
-            runSpacing: gap,
-            children: List.generate(
-              itemCount,
-              (i) => SizedBox(width: tile, child: itemBuilder(ctx, i)),
-            ),
-          ),
+          itemCount: rows,
+          itemBuilder: (ctx, r) {
+            final start = r * cols;
+            final end = start + cols > itemCount ? itemCount : start + cols;
+            return Padding(
+              padding: EdgeInsets.only(top: r == 0 ? 0 : gap),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (var i = start; i < end; i++) ...[
+                    if (i > start) const SizedBox(width: gap),
+                    SizedBox(
+                      width: tile,
+                      child: RepaintBoundary(child: itemBuilder(ctx, i)),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          },
         );
       },
     );

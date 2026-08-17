@@ -383,7 +383,11 @@ class _FavoritesPageState extends State<FavoritesPage> {
                 height: 40,
                 child: coverUrl != null
                     ? Image(
-                        image: RustImageProvider(coverUrl),
+                        image: ResizeImage.resizeIfNeeded(
+                          128,
+                          null,
+                          RustImageProvider(coverUrl),
+                        ),
                         fit: BoxFit.cover,
                         errorBuilder: (_, _, _) => _plIcon(p),
                       )

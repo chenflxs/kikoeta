@@ -7,6 +7,11 @@ import '../src/rust/api/proxy.dart';
 
 const _eqHz = ['31', '62', '125', '250', '500', '1k', '2k', '4k', '8k', '16k'];
 
+/// stop()/open() 后残留 completed 事件的抑制窗口：
+/// mpv 卸载旧文件/加载新文件产生的伪 completed=true 会在这段时间内到达，
+/// 而真正的“播完”（EOF）只会在媒体实际播放结束后发生，远晚于该窗口。
+const _suppressWindow = Duration(seconds: 2);
+
 /// 全局媒体播放器单例。
 ///
 /// 播放器随应用生命周期常驻，退出播放器页面时不会销毁，
@@ -27,10 +32,16 @@ class AppPlayer {
         _playingCtrl.add(p);
       }),
       player.stream.buffering.listen((b) => _bufferingCtrl.add(b)),
-      player.stream.completed.listen((_) {
-        // 主动 stop()（切歌/重开媒体）会残留触发一次 completed，抑制避免误判播放完成
-        if (_suppressCompleted) {
-          _suppressCompleted = false;
+      player.stream.completed.listen((completed) {
+        // completed 流是去重流：stop()/open()/seek() 会把它复位为 false，
+        // 只有 mpv 真正播到结尾（EOF）才会置为 true，仅此时才算播放完成。
+        if (!completed) return;
+        // 主动 stop()/open()（切歌、重开媒体、手动停止）后短时间内 mpv 会残留
+        // 触发一次 completed=true，需要抑制避免误判播放完成。
+        // 用时间窗口而不是等事件复位：去重流可能吞掉复位用的 false 事件，
+        // 导致标志卡死、播完不自动切下一首。
+        if (_suppressCompletedUntil != null &&
+            DateTime.now().isBefore(_suppressCompletedUntil!)) {
           return;
         }
         _completedCtrl.add(null);
@@ -46,7 +57,8 @@ class AppPlayer {
   /// 当前是否已打开媒体（页面可据此判断是否需要重新打开）
   bool opened = false;
 
-  bool _suppressCompleted = false;
+  /// stop()/open() 后的 completed 抑制截止时间；到点自动失效，避免被去重流卡死
+  DateTime? _suppressCompletedUntil;
 
   int _lastPos = 0;
   int _lastDur = 0;
@@ -78,6 +90,7 @@ class AppPlayer {
   bool get isNowPlaying => _nowPlaying;
 
   Future<void> open(Media media, {bool autoplay = true}) async {
+    _suppressCompletedUntil = DateTime.now().add(_suppressWindow);
     await player.open(media, play: autoplay);
     opened = true;
   }
@@ -92,9 +105,9 @@ class AppPlayer {
     ).timeout(const Duration(seconds: 20));
   }
 
-  /// 停止播放（抑制 stop 触发的 completed，避免被误判为播放完成）
+  /// 停止播放（抑制 stop 后短时间内残留的 completed，避免被误判为播放完成）
   Future<void> stop() async {
-    _suppressCompleted = true;
+    _suppressCompletedUntil = DateTime.now().add(_suppressWindow);
     try {
       await player.stop();
     } catch (_) {}

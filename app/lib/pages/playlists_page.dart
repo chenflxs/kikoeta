@@ -10,10 +10,13 @@ class PlaylistsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = Theme.of(context).brightness == Brightness.dark
-        ? AppColors.dark
-        : AppColors.light;
-    return Scaffold(
+    return ListenableBuilder(
+      listenable: app,
+      builder: (context, _) {
+        final p = Theme.of(context).brightness == Brightness.dark
+            ? AppColors.dark
+            : AppColors.light;
+        return Scaffold(
       appBar: AppBar(title: const Text('播放列表'), leading: const BackButton()),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _createPlaylist(context),
@@ -107,6 +110,8 @@ class PlaylistsPage extends StatelessWidget {
                 );
               },
             ),
+        );
+      },
     );
   }
 
@@ -194,11 +199,14 @@ class PlaylistDetailPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = Theme.of(context).brightness == Brightness.dark
-        ? AppColors.dark
-        : AppColors.light;
-    final entries = app.playlists[name] ?? const [];
-    return Scaffold(
+    return ListenableBuilder(
+      listenable: app,
+      builder: (context, _) {
+        final p = Theme.of(context).brightness == Brightness.dark
+            ? AppColors.dark
+            : AppColors.light;
+        final entries = app.playlists[name] ?? const [];
+        return Scaffold(
       appBar: AppBar(title: Text(name), leading: const BackButton()),
       body: entries.isEmpty
           ? Center(
@@ -276,6 +284,8 @@ class PlaylistDetailPage extends StatelessWidget {
                 );
               },
             ),
+        );
+      },
     );
   }
 }

@@ -54,6 +54,9 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   void initState() {
     super.initState();
+    // 设置页大量控件直接渲染 AppState 字段（开关、分段按钮等），
+    // 自行监听以在状态变化时刷新（此前依赖根级全树重建）
+    app.addListener(_onAppChanged);
     _aiBase = TextEditingController(text: app.aiConfig['base']);
     _aiModel = TextEditingController(text: app.aiConfig['model']);
     _aiKey = TextEditingController(text: app.aiConfig['key']);
@@ -73,6 +76,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   void dispose() {
+    app.removeListener(_onAppChanged);
     _devTimer?.cancel();
     _aiBase.dispose();
     _aiModel.dispose();
@@ -87,6 +91,10 @@ class _SettingsPageState extends State<SettingsPage> {
   Palette get p => Theme.of(context).brightness == Brightness.dark
       ? AppColors.dark
       : AppColors.light;
+
+  void _onAppChanged() {
+    if (mounted) setState(() {});
+  }
 
   Widget? _healthBadge(String key) {
     final s = _health[key];

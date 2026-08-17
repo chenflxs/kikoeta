@@ -12,15 +12,18 @@ class MorePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = Theme.of(context).brightness == Brightness.dark
-        ? AppColors.dark
-        : AppColors.light;
-    final server = app.customServer
-        ? (app.customSites.isNotEmpty
-              ? app.customSites[app.customServerIdx].alias
-              : '自建')
-        : 'asmr.one';
-    return ListView(
+    return ListenableBuilder(
+      listenable: app,
+      builder: (context, _) {
+        final p = Theme.of(context).brightness == Brightness.dark
+            ? AppColors.dark
+            : AppColors.light;
+        final server = app.customServer
+            ? (app.customSites.isNotEmpty
+                  ? app.customSites[app.customServerIdx].alias
+                  : '自建')
+            : 'asmr.one';
+        return ListView(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 90),
       children: [
         const Text(
@@ -105,7 +108,9 @@ class MorePage extends StatelessWidget {
             onTap: () => Navigator.of(context).pushNamed('/settings'),
           ),
         ]),
-      ],
+        ],
+        );
+      },
     );
   }
 

@@ -71,7 +71,8 @@ class _PlayerPageState extends State<PlayerPage> {
     _subs.add(
       AppPlayer.instance.position.listen((d) {
         if (mounted) {
-          setState(() => _pos = d);
+          // 值未变化时跳过重建（同一秒内重复 tick 不重绘整页）
+          if (d != _pos) setState(() => _pos = d);
           _maybeAutoScrollLyric();
         }
         // 节流保存播放位置（每 5 秒），供重启恢复

@@ -19,6 +19,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   String _loadedSig = '';
+  String _loadedDataSig = ''; // 已渲染的列表数据签名（补页/加载状态变化时刷新）
 
   // 真实搜索状态
   final List<Work> _searchResults = [];
@@ -41,14 +42,21 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _seenEpoch = app.serverEpoch;
     _loadedSig = _filterSig;
+    _loadedDataSig = _dataSig;
     app.addListener(_onAppChanged);
     // 首帧后再加载，避免 initState 阶段同步 notify 触发 build 期 setState 断言
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadRemote());
   }
 
+  /// 首页网格渲染依赖的列表数据/加载状态签名
+  String get _dataSig =>
+      '${app.remoteWorks.length}|${app.loadingRemote}|${app.worksLoadingMore}|'
+      '${app.remoteError}|${app.worksHasMore}';
+
   void _onAppChanged() {
     if (app.takePendingClear()) {
       _clearSearchState();
+      if (mounted) setState(() {});
       return;
     }
     final pending = app.peekPendingSearch();
@@ -70,6 +78,14 @@ class _HomePageState extends State<HomePage> {
       } else {
         _loadRemote();
       }
+      return;
+    }
+    // 列表数据/加载状态变化（补页、加载中提示等）时刷新。
+    // 此前依赖根级 ListenableBuilder 的全树重建，现已改为仅首页按需重建。
+    final sig = _dataSig;
+    if (sig != _loadedDataSig) {
+      _loadedDataSig = sig;
+      if (mounted) setState(() {});
     }
   }
 
@@ -642,30 +658,16 @@ class _HomePageState extends State<HomePage> {
               }
               return false;
             },
-            child: LayoutBuilder(
-              builder: (ctx, c) {
-                const gap = 13.0;
-                final cols = (c.maxWidth / 210).floor().clamp(2, 8);
-                final tile = (c.maxWidth - gap * (cols - 1)) / cols;
-                return SingleChildScrollView(
-                  padding: const EdgeInsets.only(top: 10, bottom: 30),
-                  child: Wrap(
-                    spacing: gap,
-                    runSpacing: gap,
-                    children: List.generate(res.length, (i) {
-                      final w = res[i];
-                      return SizedBox(
-                        width: tile,
-                        child: WorkCard(
-                          work: w,
-                          index: i,
-                          onTap: () => Navigator.of(
-                            context,
-                          ).push(buildWorkRoute(app, w)),
-                        ),
-                      );
-                    }),
-                  ),
+            child: ResponsiveGrid(
+              padding: const EdgeInsets.only(top: 10, bottom: 30),
+              itemCount: res.length,
+              itemBuilder: (ctx, i) {
+                final w = res[i];
+                return WorkCard(
+                  work: w,
+                  index: i,
+                  onTap: () =>
+                      Navigator.of(context).push(buildWorkRoute(app, w)),
                 );
               },
             ),

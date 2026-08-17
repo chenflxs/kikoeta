@@ -24,11 +24,14 @@ class HistoryPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = Theme.of(context).brightness == Brightness.dark
-        ? AppColors.dark
-        : AppColors.light;
-    final list = app.playHistory;
-    return Scaffold(
+    return ListenableBuilder(
+      listenable: app,
+      builder: (context, _) {
+        final p = Theme.of(context).brightness == Brightness.dark
+            ? AppColors.dark
+            : AppColors.light;
+        final list = app.playHistory;
+        return Scaffold(
       appBar: AppBar(
         title: const Text('播放历史'),
         leading: const BackButton(),
@@ -162,6 +165,8 @@ class HistoryPage extends StatelessWidget {
                 );
               },
             ),
+        );
+      },
     );
   }
 

@@ -271,42 +271,106 @@ void _bindMedia3Sync() {
 
 final AppState appState = AppState();
 
-class KikoetaApp extends StatelessWidget {
+class KikoetaApp extends StatefulWidget {
   const KikoetaApp({super.key});
 
   @override
+  State<KikoetaApp> createState() => _KikoetaAppState();
+}
+
+/// 仅监听 MaterialApp 自身依赖的状态（主题模式 / 登录态）。
+/// 其余状态变化由各页面自行监听并局部重建，
+/// 避免每次 notify()（音量拖动、播放/暂停、收藏等）都重建整棵应用树导致掉帧。
+class _KikoetaAppState extends State<KikoetaApp> {
+  late ThemeMode _themeMode;
+  late bool _loginRequired;
+
+  @override
+  void initState() {
+    super.initState();
+    _themeMode = appState.themeMode;
+    _loginRequired = appState.loginRequired;
+    appState.addListener(_onChanged);
+  }
+
+  @override
+  void dispose() {
+    appState.removeListener(_onChanged);
+    super.dispose();
+  }
+
+  void _onChanged() {
+    if (_themeMode == appState.themeMode &&
+        _loginRequired == appState.loginRequired) {
+      return;
+    }
+    _themeMode = appState.themeMode;
+    _loginRequired = appState.loginRequired;
+    setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: appState,
-      builder: (context, _) {
-        return MaterialApp(
-          title: 'Kikoeta',
-          debugShowCheckedModeBanner: false,
-          scaffoldMessengerKey: appMessengerKey,
-          theme: buildTheme(Brightness.light),
-          darkTheme: buildTheme(Brightness.dark),
-          themeMode: appState.themeMode,
-          // 未登录 one 站且未配置自建服务器时，只显示登录页
-          home: appState.loginRequired
-              ? LoginPage(app: appState)
-              : Shell(app: appState),
-          routes: {
-            '/work': (ctx) => WorkPage(
-              app: appState,
-              work: ModalRoute.of(ctx)!.settings.arguments as Work,
-            ),
-            '/player': (_) => PlayerPage(app: appState),
-            '/settings': (_) => SettingsPage(app: appState),
-          },
-        );
+    return MaterialApp(
+      title: 'Kikoeta',
+      debugShowCheckedModeBanner: false,
+      scaffoldMessengerKey: appMessengerKey,
+      theme: buildTheme(Brightness.light),
+      darkTheme: buildTheme(Brightness.dark),
+      themeMode: _themeMode,
+      // 未登录 one 站且未配置自建服务器时，只显示登录页
+      home: _loginRequired ? LoginPage(app: appState) : Shell(app: appState),
+      routes: {
+        '/work': (ctx) => WorkPage(
+          app: appState,
+          work: ModalRoute.of(ctx)!.settings.arguments as Work,
+        ),
+        '/player': (_) => PlayerPage(app: appState),
+        '/settings': (_) => SettingsPage(app: appState),
       },
     );
   }
 }
 
-class Shell extends StatelessWidget {
+class Shell extends StatefulWidget {
   final AppState app;
   const Shell({super.key, required this.app});
+
+  @override
+  State<Shell> createState() => _ShellState();
+}
+
+/// Shell 只在自己的渲染依赖变化时重建（tab、搜索遮罩、迷你播放器内容），
+/// 其余 notify（音量、收藏、首页数据加载等）不再触发整个 Shell/页面子树重建。
+class _ShellState extends State<Shell> {
+  late String _sig;
+
+  AppState get app => widget.app;
+
+  @override
+  void initState() {
+    super.initState();
+    _sig = _computeSig();
+    app.addListener(_onChanged);
+  }
+
+  @override
+  void dispose() {
+    app.removeListener(_onChanged);
+    super.dispose();
+  }
+
+  String _computeSig() =>
+      '${app.tab}|${app.searchExpanded}|${app.playing}|${app.hasQueue}|'
+      '${app.trackIdx}|${app.queue.length}|${app.playWork?.rj ?? ''}';
+
+  void _onChanged() {
+    final s = _computeSig();
+    if (s != _sig) {
+      _sig = s;
+      setState(() {});
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

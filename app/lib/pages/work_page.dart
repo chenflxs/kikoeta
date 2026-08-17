@@ -291,7 +291,15 @@ class _WorkPageState extends State<WorkPage> {
           children: [
             Positioned.fill(
               child: Image(
-                image: RustImageProvider(url),
+                image: ResizeImage.resizeIfNeeded(
+                  // 按屏幕宽度解码，上限 1600px：避免超大图片全尺寸解码（内存/卡顿）
+                  (MediaQuery.sizeOf(ctx).width *
+                          MediaQuery.devicePixelRatioOf(ctx))
+                      .round()
+                      .clamp(128, 1600),
+                  null,
+                  RustImageProvider(url),
+                ),
                 fit: BoxFit.contain,
                 errorBuilder: (_, _, _) => const SizedBox.shrink(),
               ),

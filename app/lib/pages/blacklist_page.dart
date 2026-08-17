@@ -11,10 +11,13 @@ class BlacklistPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = Theme.of(context).brightness == Brightness.dark
-        ? AppColors.dark
-        : AppColors.light;
-    return Scaffold(
+    return ListenableBuilder(
+      listenable: app,
+      builder: (context, _) {
+        final p = Theme.of(context).brightness == Brightness.dark
+            ? AppColors.dark
+            : AppColors.light;
+        return Scaffold(
       appBar: AppBar(
         title: const Text('黑名单'),
         leading: const BackButton(),
@@ -90,6 +93,8 @@ class BlacklistPage extends StatelessWidget {
                 );
               },
             ),
+        );
+      },
     );
   }
 
