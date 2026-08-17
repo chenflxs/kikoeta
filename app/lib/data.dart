@@ -97,11 +97,13 @@ class PlaylistInfo {
   final String name;
   final int worksCount;
   final String? coverUrl;
+  final bool isSystemLiked;
   const PlaylistInfo({
     required this.id,
     required this.name,
     required this.worksCount,
     this.coverUrl,
+    this.isSystemLiked = false,
   });
 }
 

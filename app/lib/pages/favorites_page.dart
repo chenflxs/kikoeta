@@ -333,18 +333,22 @@ class _FavoritesPageState extends State<FavoritesPage> {
               }
               return false;
             },
-            child: ResponsiveGrid(
-              padding: const EdgeInsets.only(top: 12, bottom: 30),
-              itemCount: _works.length,
-              itemBuilder: (ctx, i) {
-                final w = _works[i];
-                return WorkCard(
-                  work: w,
-                  index: i,
-                  onTap: () =>
-                      Navigator.of(context).push(buildWorkRoute(app, w)),
-                );
-              },
+            child: RefreshIndicator(
+              onRefresh: () => _loadData(reset: true),
+              child: ResponsiveGrid(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.only(top: 12, bottom: 30),
+                itemCount: _works.length,
+                itemBuilder: (ctx, i) {
+                  final w = _works[i];
+                  return WorkCard(
+                    work: w,
+                    index: i,
+                    onTap: () =>
+                        Navigator.of(context).push(buildWorkRoute(app, w)),
+                  );
+                },
+              ),
             ),
           ),
         ),

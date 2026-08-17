@@ -165,11 +165,20 @@ class ApiService {
     return list
         .map((e) {
           final m = e as Map<String, dynamic>;
+          final id = m['id']?.toString() ?? '';
+          final name = m['name'] as String? ?? '未命名歌单';
+          final type = m['type']?.toString().toLowerCase() ?? '';
           return PlaylistInfo(
-            id: m['id'] as String? ?? '',
-            name: m['name'] as String? ?? '未命名歌单',
+            id: id,
+            name: name,
             worksCount: (m['works_count'] as num?)?.toInt() ?? 0,
             coverUrl: m['mainCoverUrl'] as String?,
+            isSystemLiked:
+                m['is_sys'] == true ||
+                m['isSystem'] == true ||
+                m['is_system'] == true ||
+                type == 'liked' ||
+                id == '__SYS_PLAYLIST_LIKED',
           );
         })
         .where((p) => p.id.isNotEmpty)
@@ -207,23 +216,33 @@ class ApiService {
   }
 
   static String? _likedPlaylistId;
+  static String? _likedPlaylistBase;
 
-  /// 系统「收藏」歌单 id（缓存在内存）
+  /// 系统「收藏」歌单 id（按服务端缓存，避免切换站点后误用旧 id）
   static Future<String> likedPlaylistId(AppState app) async {
-    if (_likedPlaylistId != null) return _likedPlaylistId!;
+    final base = resolveBase(app);
+    if (_likedPlaylistId != null && _likedPlaylistBase == base) {
+      return _likedPlaylistId!;
+    }
     final pls = await fetchPlaylists(app);
-    if (pls.isEmpty) {
-      throw Exception('未获取到歌单，请确认已登录');
+    final liked =
+        pls.where((p) => p.isSystemLiked).firstOrNull ??
+        pls.where((p) {
+          final label = '${p.id} ${p.name}'.toLowerCase();
+          return label.contains('__sys_playlist_liked') ||
+              label.contains('收藏') ||
+              label.contains('喜欢') ||
+              label.contains('喜爱') ||
+              label.contains('favorite') ||
+              label.contains('favourite') ||
+              label.contains('liked');
+        }).firstOrNull;
+    if (liked == null) {
+      throw Exception('未找到系统收藏歌单，请确认已登录');
     }
-    PlaylistInfo? liked;
-    for (final p in pls) {
-      if (p.name == '收藏' || p.name == '__SYS_PLAYLIST_LIKED') {
-        liked = p;
-        break;
-      }
-    }
-    _likedPlaylistId = (liked ?? pls.first).id;
-    return _likedPlaylistId!;
+    _likedPlaylistId = liked.id;
+    _likedPlaylistBase = base;
+    return liked.id;
   }
 
   /// 切换作品的收藏状态（服务器系统「收藏」歌单），返回切换后的状态
@@ -337,13 +356,13 @@ class ApiService {
     try {
       final bytes = await apiGetBytes(url: url);
       final decoded = apiDecodeText(bytes: bytes, encoding: '');
-      return parseLrc(decoded.text);
+      return parseLyrics(decoded.text);
     } catch (_) {
       return const [];
     }
   }
 
-  /// 歌词候选：收集曲目树中的 .lrc / .txt 文件并按中文优先打分
+  /// 歌词候选：收集歌词/字幕文件并按中文优先打分
   static List<_LyricCandidate> _findLyricCandidates(
     List<MediaNode> nodes, [
     String folder = '',
@@ -356,7 +375,16 @@ class ApiService {
         continue;
       }
       final lower = n.title.toLowerCase();
-      if (!lower.endsWith('.lrc') && !lower.endsWith('.txt')) continue;
+      if (!const {
+        '.lrc',
+        '.txt',
+        '.vtt',
+        '.srt',
+        '.ass',
+        '.ssa',
+      }.any(lower.endsWith)) {
+        continue;
+      }
       final pathLower = path.toLowerCase();
       var score = 0;
       if (lower.endsWith('.lrc')) score += 20;
@@ -439,6 +467,24 @@ class ApiService {
     return i > 0 ? name.substring(0, i).toLowerCase() : name.toLowerCase();
   }
 
+  /// Parses LRC and common subtitle formats into timestamped lyric lines.
+  static List<LyricLine> parseLyrics(String text) {
+    final normalized = text.replaceFirst('\uFEFF', '').replaceAll('\r\n', '\n');
+    final trimmed = normalized.trimLeft();
+    if (trimmed.startsWith('WEBVTT')) return _parseTimedSubtitles(normalized);
+    if (RegExp(r'^\s*\[Events\]', multiLine: true).hasMatch(normalized) ||
+        RegExp(r'^\s*Dialogue\s*:', multiLine: true).hasMatch(normalized)) {
+      return _parseAss(normalized);
+    }
+    if (RegExp(
+      r'^\s*(?:\d+\s*\n)?\d{1,2}:\d{2}:\d{2}[,.]\d{1,3}\s*-->',
+      multiLine: true,
+    ).hasMatch(normalized)) {
+      return _parseTimedSubtitles(normalized);
+    }
+    return parseLrc(normalized);
+  }
+
   static List<LyricLine> parseLrc(String text) {
     final lines = <LyricLine>[];
     final re = RegExp(r'\[(\d{1,2}):(\d{1,2})(?:[.:](\d{1,3}))?\]');
@@ -454,8 +500,89 @@ class ApiService {
         lines.add(LyricLine(mm * 60 + ss, content, content));
       }
     }
+    return _sortedLyrics(lines);
+  }
+
+  static List<LyricLine> _parseTimedSubtitles(String text) {
+    final lines = <LyricLine>[];
+    final blocks = text.replaceAll('\r\n', '\n').split(RegExp(r'\n\s*\n'));
+    final timing = RegExp(
+      r'^\s*(\d{1,2}:\d{2}:\d{2}[,.]\d{1,3}|\d{1,2}:\d{2}[,.]\d{1,3})\s*-->.*$',
+    );
+    for (final block in blocks) {
+      final blockLines = block.split('\n');
+      var timingIndex = -1;
+      RegExpMatch? match;
+      for (var i = 0; i < blockLines.length; i++) {
+        final candidate = timing.firstMatch(blockLines[i]);
+        if (candidate != null) {
+          timingIndex = i;
+          match = candidate;
+          break;
+        }
+      }
+      if (match == null) continue;
+      final content = _cleanSubtitleText(
+        blockLines.skip(timingIndex + 1).join('\n'),
+      );
+      if (content.isEmpty) continue;
+      final seconds = _parseSubtitleTime(match.group(1)!);
+      if (seconds != null) lines.add(LyricLine(seconds, content, content));
+    }
+    return _sortedLyrics(lines);
+  }
+
+  static List<LyricLine> _parseAss(String text) {
+    final lines = <LyricLine>[];
+    for (final raw in text.replaceAll('\r\n', '\n').split('\n')) {
+      final line = raw.trim();
+      if (!line.toLowerCase().startsWith('dialogue:')) continue;
+      final fields = line.substring(line.indexOf(':') + 1).split(',');
+      if (fields.length < 10) continue;
+      final seconds = _parseAssTime(fields[1].trim());
+      if (seconds == null) continue;
+      final content = _cleanSubtitleText(fields.sublist(9).join(','));
+      if (content.isNotEmpty) lines.add(LyricLine(seconds, content, content));
+    }
+    return _sortedLyrics(lines);
+  }
+
+  static List<LyricLine> _sortedLyrics(List<LyricLine> lines) {
     lines.sort((a, b) => a.t.compareTo(b.t));
     return lines;
+  }
+
+  static int? _parseSubtitleTime(String value) {
+    final parts = value.trim().replaceAll(',', '.').split(':');
+    if (parts.length == 2) parts.insert(0, '0');
+    if (parts.length != 3) return null;
+    final hours = int.tryParse(parts[0]);
+    final minutes = int.tryParse(parts[1]);
+    final seconds = double.tryParse(parts[2]);
+    if (hours == null || minutes == null || seconds == null) return null;
+    return (hours * 3600 + minutes * 60 + seconds).floor();
+  }
+
+  static int? _parseAssTime(String value) {
+    final parts = value.trim().split(':');
+    if (parts.length != 3) return null;
+    final hours = int.tryParse(parts[0]);
+    final minutes = int.tryParse(parts[1]);
+    final seconds = double.tryParse(parts[2]);
+    if (hours == null || minutes == null || seconds == null) return null;
+    return (hours * 3600 + minutes * 60 + seconds).floor();
+  }
+
+  static String _cleanSubtitleText(String value) {
+    return value
+        .replaceAll(r'\N', '\n')
+        .replaceAll(r'\n', '\n')
+        .replaceAll(RegExp(r'\{[^}]*\}'), '')
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .split('\n')
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .join('\n');
   }
 
   static Future<List<MediaNode>> fetchTracks(
@@ -565,7 +692,11 @@ class ApiService {
 
   static Work _mapWork(Map<String, dynamic> m, int i, [String? base]) {
     final rawId = m['id'];
-    final apiId = rawId is num ? rawId.toInt() : null;
+    final apiId = rawId is num
+        ? rawId.toInt()
+        : rawId is String
+        ? int.tryParse(rawId)
+        : null;
     final ageStr = m['age_category_string'] as String?;
     final Age age;
     if (ageStr == 'adult') {

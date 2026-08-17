@@ -89,13 +89,6 @@ class _PlayerPageState extends State<PlayerPage> {
       }),
     );
     _subs.add(
-      AppPlayer.instance.completed.listen((_) {
-        // 主动 stop/打开媒体时 mpv 会残留触发一次 completed，忽略（否则重启恢复会误跳下一首）
-        if (_opening || _switching) return;
-        _next(auto: true);
-      }),
-    );
-    _subs.add(
       AppPlayer.instance.error.listen((e) {
         if (!mounted) return;
         app.playing = false;
@@ -1165,7 +1158,7 @@ class _PlayerPageState extends State<PlayerPage> {
                 _lyricSettingTile(
                   icon: Icons.folder_open_outlined,
                   title: '选择离线歌词',
-                  sub: _lyricSourceName != null ? '本地文件' : '从本地选择 .lrc 文件',
+                  sub: _lyricSourceName != null ? '本地文件' : '从本地选择歌词或字幕文件',
                   onTap: _pickOfflineLyric,
                 ),
                 const SizedBox(height: 4),
@@ -1439,7 +1432,7 @@ class _PlayerPageState extends State<PlayerPage> {
     final res = await FilePicker.pickFiles(
       dialogTitle: '选择歌词文件',
       type: FileType.custom,
-      allowedExtensions: ['lrc', 'txt'],
+      allowedExtensions: ['lrc', 'txt', 'vtt', 'srt', 'ass', 'ssa'],
     );
     if (res == null || res.files.isEmpty) return;
     final f = res.files.single;
@@ -1448,7 +1441,7 @@ class _PlayerPageState extends State<PlayerPage> {
     try {
       final bytes = await File(path).readAsBytes();
       final decoded = apiDecodeText(bytes: bytes, encoding: '');
-      final l = ApiService.parseLrc(decoded.text);
+      final l = ApiService.parseLyrics(decoded.text);
       if (!mounted) return;
       if (l.isEmpty) {
         _toast('文件中没有带时间轴的歌词');

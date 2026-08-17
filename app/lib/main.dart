@@ -58,6 +58,8 @@ Future<void> main() async {
       appState.notify();
     }
   });
+  // 播放器页面可随时关闭，自动续播必须由应用常驻层处理。
+  AppPlayer.instance.completed.listen((_) => _advanceAfterCompletion());
   // 定时关闭：全局计时（播放器页关闭时也生效）
   SleepTimer.start(appState);
   runApp(const KikoetaApp());
@@ -143,6 +145,54 @@ double _portraitWidthDp() {
   final size = view.physicalSize;
   final min = size.width < size.height ? size.width : size.height;
   return min / view.devicePixelRatio;
+}
+
+bool _autoAdvancing = false;
+
+Future<void> _advanceAfterCompletion() async {
+  final queue = appState.queue;
+  if (_autoAdvancing || queue.isEmpty) return;
+  _autoAdvancing = true;
+  try {
+    if (appState.playMode == 2) {
+      await AppPlayer.instance.player.seek(Duration.zero);
+      await AppPlayer.instance.player.play();
+      return;
+    }
+    if (appState.playMode == 0 && appState.trackIdx == queue.length - 1) {
+      if (appState.sleepMode == 'end' && appState.sleepPlayEndArmed) {
+        SleepTimer.triggerNow(appState);
+      } else {
+        appState.playing = false;
+        appState.resumePosition = 0;
+        appState.savePlayState();
+        appState.notify();
+      }
+      return;
+    }
+
+    appState.trackIdx = (appState.trackIdx + 1) % queue.length;
+    appState.playing = true;
+    appState.resumePosition = 0;
+    appState.notify();
+    final url = queue[appState.trackIdx].url;
+    if (url == null) {
+      appState.playing = false;
+      appState.notify();
+      return;
+    }
+    await AppPlayer.instance.openMediaUrl(url);
+    await AppPlayer.instance.applyEqualizer(
+      enabled: appState.eqOn,
+      gains: appState.eqGains,
+    );
+    appState.savePlayState();
+  } catch (_) {
+    appState.playing = false;
+    appState.notify();
+  } finally {
+    _autoAdvancing = false;
+  }
 }
 
 // ---------------- Jetpack Media3 桥接（锁屏/通知媒体控制） ----------------

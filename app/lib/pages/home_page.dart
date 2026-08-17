@@ -437,19 +437,24 @@ class _HomePageState extends State<HomePage> {
                     }
                     return false;
                   },
-                  child: ResponsiveGrid(
-                    padding: const EdgeInsets.only(top: 10, bottom: 30),
-                    itemCount: order.length,
-                    itemBuilder: (ctx, i) {
-                      final idx = order[i];
-                      final w = list[idx];
-                      return WorkCard(
-                        work: w,
-                        index: idx,
-                        onTap: () =>
-                            Navigator.of(context).push(buildWorkRoute(app, w)),
-                      );
-                    },
+                  child: RefreshIndicator(
+                    onRefresh: _loadRemote,
+                    child: ResponsiveGrid(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.only(top: 10, bottom: 30),
+                      itemCount: order.length,
+                      itemBuilder: (ctx, i) {
+                        final idx = order[i];
+                        final w = list[idx];
+                        return WorkCard(
+                          work: w,
+                          index: idx,
+                          onTap: () => Navigator.of(
+                            context,
+                          ).push(buildWorkRoute(app, w)),
+                        );
+                      },
+                    ),
                   ),
                 ),
               ),

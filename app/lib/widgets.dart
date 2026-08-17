@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -21,7 +22,7 @@ final List<List<Color>> coverGrads = [
   [const Color(0xFF0284C7), const Color(0xFF38BDF8)],
 ];
 
-class CoverArt extends StatelessWidget {
+class CoverArt extends StatefulWidget {
   final Work work;
   final double radius;
   final Widget? child;
@@ -33,6 +34,47 @@ class CoverArt extends StatelessWidget {
     this.child,
     this.showBadges = true,
   });
+
+  @override
+  State<CoverArt> createState() => _CoverArtState();
+}
+
+class _CoverArtState extends State<CoverArt> {
+  static const _maxRetryCount = 3;
+  int _attempt = 0;
+  bool _retryPending = false;
+
+  Work get work => widget.work;
+  double get radius => widget.radius;
+  Widget? get child => widget.child;
+  bool get showBadges => widget.showBadges;
+
+  @override
+  void didUpdateWidget(CoverArt oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.work.coverUrl != work.coverUrl) {
+      _attempt = 0;
+      _retryPending = false;
+    }
+  }
+
+  void _retryAfterDelay(Object error) {
+    final url = work.coverUrl;
+    if (url == null) return;
+    if (_attempt >= _maxRetryCount) {
+      _logImageError(url, error.toString());
+      return;
+    }
+    if (_retryPending) return;
+    _retryPending = true;
+    Future<void>.delayed(const Duration(seconds: 1), () {
+      if (!mounted) return;
+      setState(() {
+        _attempt++;
+        _retryPending = false;
+      });
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -56,26 +98,28 @@ class CoverArt extends StatelessWidget {
                 builder: (ctx, c) {
                   // 按实际显示尺寸（含设备像素比）解码封面，上限 720px：
                   // 网格小图不再全尺寸解码，显著降低内存占用与栅格上传开销
-                  final cacheWidth = (c.maxWidth *
-                          MediaQuery.devicePixelRatioOf(ctx))
-                      .round()
-                      .clamp(128, 720);
+                  final cacheWidth =
+                      (c.maxWidth * MediaQuery.devicePixelRatioOf(ctx))
+                          .round()
+                          .clamp(128, 720);
+                  final image = ResizeImage.resizeIfNeeded(
+                    cacheWidth,
+                    null,
+                    RustImageProvider(work.coverUrl!),
+                  );
                   return TweenAnimationBuilder<double>(
-                    key: ValueKey(work.coverUrl),
+                    key: ValueKey('${work.coverUrl}:$_attempt'),
                     tween: Tween(begin: 0, end: 1),
                     duration: const Duration(milliseconds: 320),
                     curve: Curves.easeOut,
                     builder: (ctx, v, child) =>
                         Opacity(opacity: v, child: child),
                     child: Image(
-                      image: ResizeImage.resizeIfNeeded(
-                        cacheWidth,
-                        null,
-                        RustImageProvider(work.coverUrl!),
-                      ),
+                      image: image,
                       fit: BoxFit.cover,
                       errorBuilder: (_, error, _) {
-                        _logImageError(work.coverUrl!, error.toString());
+                        unawaited(image.evict());
+                        _retryAfterDelay(error);
                         return const SizedBox.shrink();
                       },
                     ),
@@ -409,6 +453,7 @@ class ResponsiveGrid extends StatelessWidget {
   final int itemCount;
   final IndexedWidgetBuilder itemBuilder;
   final EdgeInsetsGeometry padding;
+  final ScrollPhysics? physics;
   final double maxTileWidth;
   final double aspect;
   const ResponsiveGrid({
@@ -416,6 +461,7 @@ class ResponsiveGrid extends StatelessWidget {
     required this.itemCount,
     required this.itemBuilder,
     this.padding = EdgeInsets.zero,
+    this.physics,
     this.maxTileWidth = 210,
     this.aspect = .68,
   });
@@ -430,6 +476,7 @@ class ResponsiveGrid extends StatelessWidget {
         final rows = (itemCount + cols - 1) ~/ cols;
         return ListView.builder(
           padding: padding,
+          physics: physics,
           itemCount: rows,
           itemBuilder: (ctx, r) {
             final start = r * cols;
