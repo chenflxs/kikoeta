@@ -66,6 +66,54 @@ async fn http_post_json(
     Ok(text)
 }
 
+async fn http_put_json(
+    client: &reqwest::Client,
+    url: &str,
+    auth: Option<&str>,
+    body: serde_json::Value,
+) -> Result<String, String> {
+    let mut req = client.put(url).header("content-type", "application/json");
+    if let Some(a) = auth {
+        req = req.header("authorization", a);
+    }
+    let resp = req
+        .body(body.to_string())
+        .send()
+        .await
+        .map_err(|e| format!("网络请求失败: {e}"))?;
+    let status = resp.status();
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取响应失败: {e}"))?;
+    if !status.is_success() {
+        let preview: String = text.chars().take(200).collect();
+        return Err(format!("HTTP {}: {}", status.as_u16(), preview));
+    }
+    Ok(text)
+}
+
+async fn http_delete(client: &reqwest::Client, url: &str, auth: Option<&str>) -> Result<String, String> {
+    let mut req = client.delete(url);
+    if let Some(a) = auth {
+        req = req.header("authorization", a);
+    }
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| format!("网络请求失败: {e}"))?;
+    let status = resp.status();
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取响应失败: {e}"))?;
+    if !status.is_success() {
+        let preview: String = text.chars().take(200).collect();
+        return Err(format!("HTTP {}: {}", status.as_u16(), preview));
+    }
+    Ok(text)
+}
+
 fn base_of(base: &str) -> String {
     base.trim_end_matches('/').to_string()
 }
@@ -398,6 +446,36 @@ pub async fn api_playlist_remove_works(
     let auth = auth_header(&base);
     let body = serde_json::json!({ "id": playlist_id, "works": work_ids });
     http_post_json(&client, &url, auth.as_deref(), body).await
+}
+
+/// 收藏作品：创建无评分的 listening 评价。
+#[flutter_rust_bridge::frb]
+pub async fn api_create_favorite_review(
+    base: String,
+    user_name: String,
+    work_id: u64,
+) -> Result<String, String> {
+    let url = format!(
+        "{}/api/review?starOnly=false&progressOnly=true",
+        base_of(&base)
+    );
+    let client = http_client()?;
+    let auth = auth_header(&base);
+    let body = serde_json::json!({
+        "progress": "listening",
+        "user_name": user_name,
+        "work_id": work_id,
+    });
+    http_put_json(&client, &url, auth.as_deref(), body).await
+}
+
+/// 取消收藏：删除该作品的评价。
+#[flutter_rust_bridge::frb]
+pub async fn api_delete_favorite_review(base: String, work_id: u64) -> Result<String, String> {
+    let url = format!("{}/api/review?work_id={}", base_of(&base), work_id);
+    let client = http_client()?;
+    let auth = auth_header(&base);
+    http_delete(&client, &url, auth.as_deref()).await
 }
 
 /// 我的评价/收藏列表：GET /api/review（需登录）

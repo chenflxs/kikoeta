@@ -470,9 +470,8 @@ class _ShellState extends State<Shell> {
                       child: NavigationRail(
                         selectedIndex: app.tab,
                         onDestinationSelected: (i) {
-                          app.tab = i;
+                          app.selectTab(i);
                           app.setSearchExpanded(false);
-                          app.notify();
                         },
                         backgroundColor: p.surface,
                         indicatorColor: p.accent.withValues(alpha: .14),
@@ -516,9 +515,8 @@ class _ShellState extends State<Shell> {
                 bottomNavigationBar: BottomNavigationBar(
                   currentIndex: app.tab,
                   onTap: (i) {
-                    app.tab = i;
+                    app.selectTab(i);
                     app.setSearchExpanded(false);
-                    app.notify();
                   },
                   backgroundColor: p.tabbar,
                   selectedItemColor: p.accent,

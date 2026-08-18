@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `append_custom_params`, `append_filter_params`, `auth_header`, `base_of`, `http_client`, `http_get`, `http_post_json`, `origin_of`, `urlencoding`
+// These functions are ignored because they are not marked as `pub`: `append_custom_params`, `append_filter_params`, `auth_header`, `base_of`, `http_client`, `http_delete`, `http_get`, `http_post_json`, `http_put_json`, `origin_of`, `urlencoding`
 
 /// 作品列表：GET /api/works?page=&per_page=&order=&sort=&subtitle=&seed=
 Future<String> apiGetWorks({
@@ -156,6 +156,26 @@ Future<String> apiPlaylistRemoveWorks({
   base: base,
   playlistId: playlistId,
   workIds: workIds,
+);
+
+/// 收藏作品：创建无评分的 listening 评价。
+Future<String> apiCreateFavoriteReview({
+  required String base,
+  required String userName,
+  required BigInt workId,
+}) => RustLib.instance.api.crateApiKikoeruApiApiCreateFavoriteReview(
+  base: base,
+  userName: userName,
+  workId: workId,
+);
+
+/// 取消收藏：删除该作品的评价。
+Future<String> apiDeleteFavoriteReview({
+  required String base,
+  required BigInt workId,
+}) => RustLib.instance.api.crateApiKikoeruApiApiDeleteFavoriteReview(
+  base: base,
+  workId: workId,
 );
 
 /// 我的评价/收藏列表：GET /api/review（需登录）

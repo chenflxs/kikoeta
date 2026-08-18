@@ -17,8 +17,8 @@ class FavoritesPage extends StatefulWidget {
 }
 
 class _FavoritesPageState extends State<FavoritesPage> {
-  PlaylistInfo? _playlist; // 当前歌单（null = 我的收藏/评价）
-  bool _reviewsMode = true; // 默认展示「收藏」（GET /api/review，所有评价/收藏过的作品）
+  PlaylistInfo? _playlist; // 当前歌单（null = 我的评价/收藏）
+  bool _reviewsMode = true; // 默认展示「收藏」（GET /api/review）
   final List<Work> _works = [];
   bool _loading = false;
   bool _error = false;
@@ -26,6 +26,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
   int _page = 0;
   int _gen = 0;
   late int _seenFavVersion;
+  late int _seenFavoritesEntryVersion;
 
   AppState get app => widget.app;
   Palette get p => Theme.of(context).brightness == Brightness.dark
@@ -36,6 +37,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
   void initState() {
     super.initState();
     _seenFavVersion = app.favVersion;
+    _seenFavoritesEntryVersion = app.favoritesEntryVersion;
     app.addListener(_onAppChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadData(reset: true));
   }
@@ -47,13 +49,14 @@ class _FavoritesPageState extends State<FavoritesPage> {
   }
 
   void _onAppChanged() {
-    if (app.favVersion != _seenFavVersion) {
-      _seenFavVersion = app.favVersion;
-      // 收藏变更后自动刷新「收藏」视图
-      if (_reviewsMode && !_loading) {
-        _loadData(reset: true);
-      }
-    }
+    final favoriteChanged = app.favVersion != _seenFavVersion;
+    final enteredFavorites =
+        app.favoritesEntryVersion != _seenFavoritesEntryVersion;
+    if (!favoriteChanged && !enteredFavorites) return;
+
+    _seenFavVersion = app.favVersion;
+    _seenFavoritesEntryVersion = app.favoritesEntryVersion;
+    _loadData(reset: true);
   }
 
   Future<void> _loadData({bool reset = true}) async {
@@ -91,7 +94,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
         _loading = false;
       });
       if (page == 1) {
-        app.syncFavorites(_works); // 用服务器收藏列表同步收藏状态
+        app.syncFavorites(_works); // 用我的评价列表同步收藏状态
       }
     } catch (_) {
       if (!mounted || gen != _gen) return;

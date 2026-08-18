@@ -149,6 +149,7 @@ class AppState extends ChangeNotifier {
   final List<String> favoriteRjs = [];
   final Set<int> favIds = {}; // 服务器收藏的作品 API id
   int favVersion = 0; // 收藏变更版本（供收藏页刷新）
+  int favoritesEntryVersion = 0; // 进入收藏页版本（每次切入时刷新）
   final List<String> history = [];
   final Map<String, List<PlaylistEntry>> playlists = {};
   final List<Map<String, dynamic>> playHistory = []; // {rj,title,circle,at}
@@ -273,6 +274,12 @@ class AppState extends ChangeNotifier {
 
   List<Work> get favoriteWorks =>
       remoteWorks.where((w) => favoriteRjs.contains(w.rj)).toList();
+
+  void selectTab(int value) {
+    tab = value;
+    if (value == 1) favoritesEntryVersion++;
+    notifyListeners();
+  }
 
   void toggleFav(Work w) {
     if (favoriteRjs.contains(w.rj)) {

@@ -215,56 +215,31 @@ class ApiService {
     return parseWorks(json, base: resolveBase(app), perPage: perPage);
   }
 
-  static String? _likedPlaylistId;
-  static String? _likedPlaylistBase;
-
-  /// 系统「收藏」歌单 id（按服务端缓存，避免切换站点后误用旧 id）
-  static Future<String> likedPlaylistId(AppState app) async {
-    final base = resolveBase(app);
-    if (_likedPlaylistId != null && _likedPlaylistBase == base) {
-      return _likedPlaylistId!;
+  static String _reviewUserName(AppState app) {
+    if (app.customServer && app.customSites.isNotEmpty) {
+      return app.customSites[app.customServerIdx].user;
     }
-    final pls = await fetchPlaylists(app);
-    final liked =
-        pls.where((p) => p.isSystemLiked).firstOrNull ??
-        pls.where((p) {
-          final label = '${p.id} ${p.name}'.toLowerCase();
-          return label.contains('__sys_playlist_liked') ||
-              label.contains('收藏') ||
-              label.contains('喜欢') ||
-              label.contains('喜爱') ||
-              label.contains('favorite') ||
-              label.contains('favourite') ||
-              label.contains('liked');
-        }).firstOrNull;
-    if (liked == null) {
-      throw Exception('未找到系统收藏歌单，请确认已登录');
-    }
-    _likedPlaylistId = liked.id;
-    _likedPlaylistBase = base;
-    return liked.id;
+    return app.asmrUser;
   }
 
-  /// 切换作品的收藏状态（服务器系统「收藏」歌单），返回切换后的状态
+  /// 系统「收藏」实际是我的评价中的无评分 listening 评价。
   static Future<bool> toggleFavorite(AppState app, Work w) async {
     final id = w.apiId;
     if (id == null) {
       throw Exception('该作品缺少编号，无法收藏');
     }
-    final pid = await likedPlaylistId(app);
     final fav = app.isFavorited(w);
     if (fav) {
-      await apiPlaylistRemoveWorks(
+      await apiDeleteFavoriteReview(
         base: resolveBase(app),
-        playlistId: pid,
-        workIds: ['$id'],
+        workId: BigInt.from(id),
       );
       app.removeFavorite(w);
     } else {
-      await apiPlaylistAddWorks(
+      await apiCreateFavoriteReview(
         base: resolveBase(app),
-        playlistId: pid,
-        workIds: ['$id'],
+        userName: _reviewUserName(app),
+        workId: BigInt.from(id),
       );
       app.addFavorite(w);
     }
