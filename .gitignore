@@ -50,3 +50,7 @@ desktop.ini
 TODO.md
 build-docs
 releases
+
+# ---------- 本地构建脚本 ----------
+build.py
+start build.bat
