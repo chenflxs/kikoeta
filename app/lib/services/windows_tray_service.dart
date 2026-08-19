@@ -103,6 +103,8 @@ class WindowsTrayService with TrayListener, WindowListener {
   Future<void> _togglePlayback() async {
     if (_app.playing) {
       await AppPlayer.instance.player.pause();
+      _app.playing = false;
+      _app.notify();
       return;
     }
     if (!AppPlayer.instance.opened) {
@@ -115,9 +117,13 @@ class WindowsTrayService with TrayListener, WindowListener {
         enabled: _app.eqOn,
         gains: _app.eqGains,
       );
+      _app.playing = true;
+      _app.notify();
       return;
     }
     await AppPlayer.instance.player.play();
+    _app.playing = true;
+    _app.notify();
   }
 
   Future<void> _exit() async {

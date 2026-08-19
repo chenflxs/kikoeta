@@ -10,8 +10,10 @@ fn translation_prompt(target_language: &str) -> String {
     };
     format!(
         "你是音频作品标题翻译助手。把输入中的每行日文标题翻译为{language}，\\
-保持行数一致、保留换行，不翻译 RJ 编号和 .mp3/.flac 等扩展名。\\
-只输出翻译结果，不要任何解释。"
+不翻译 RJ 编号和 .mp3/.flac 等扩展名。\\
+每行输入均以 [[KIKOETA_LINE_n]] 开头；每行输出必须保留完全相同的标记，\\
+并在标记后紧接该行译文。不得省略、修改、重排或新增标记。\
+不要输出解释、Markdown 或其他内容。"
     )
 }
 
@@ -44,24 +46,22 @@ pub async fn api_translate_openai(
     if base.is_empty() || model.trim().is_empty() {
         return Err("请先配置 API 地址与模型名".to_string());
     }
-    let (target_language, text) = text
-        .strip_prefix("[[KIKOETA_TARGET:")
-        .and_then(|rest| rest.split_once("]]\\n"))
-        .map(|(target, content)| (target.to_string(), content.to_string()))
-        .unwrap_or_else(|| ("zh-CN".to_string(), text));
+    let (target_language, text) = split_translation_target(text);
     if text.trim().is_empty() {
         return Ok(String::new());
     }
+    let input = indexed_translation_input(&text);
     let url = format!("{base}/chat/completions");
     let client = http_client()?;
-    let body = serde_json::json!({
+    let mut body = serde_json::json!({
         "model": model.trim(),
         "messages": [
             { "role": "system", "content": translation_prompt(&target_language) },
-            { "role": "user", "content": text },
+            { "role": "user", "content": input },
         ],
         "temperature": temperature.clamp(0.0, 2.0),
     });
+    apply_thinking_options(&mut body, &base, &model);
 
     let mut last_err = String::new();
     let mut delay = Duration::from_secs(1);
@@ -82,7 +82,8 @@ pub async fn api_translate_openai(
                     .await
                     .map_err(|e| format!("读取响应失败: {e}"))?;
                 if status.is_success() {
-                    return parse_completion(&text_body);
+                    let content = parse_completion(&text_body)?;
+                    return unpack_indexed_translation(&content, text.lines().count());
                 }
                 last_err = format!("HTTP {}: {}", status.as_u16(), preview(&text_body));
             }
@@ -96,13 +97,160 @@ pub async fn api_translate_openai(
     Err(last_err)
 }
 
+fn indexed_translation_input(text: &str) -> String {
+    text.lines()
+        .enumerate()
+        .map(|(index, line)| format!("[[KIKOETA_LINE_{index}]]{line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// 从 Dart 侧附加的目标语言前缀中取出目标语言。
+/// Windows 文本可能使用 CRLF，不能把换行误当成字面量 `\\n`。
+fn split_translation_target(text: String) -> (String, String) {
+    let Some(rest) = text.strip_prefix("[[KIKOETA_TARGET:") else {
+        return ("zh-CN".to_string(), text);
+    };
+    let Some((target, content)) = rest.split_once("]]") else {
+        return ("zh-CN".to_string(), text);
+    };
+    let Some(content) = content
+        .strip_prefix("\r\n")
+        .or_else(|| content.strip_prefix('\n'))
+    else {
+        return ("zh-CN".to_string(), text);
+    };
+    (target.trim().to_string(), content.to_string())
+}
+
+fn apply_thinking_options(body: &mut serde_json::Value, base: &str, model: &str) {
+    let provider = format!("{} {}", base.to_ascii_lowercase(), model.to_ascii_lowercase());
+    if provider.contains("deepseek") {
+        // DeepSeek-compatible APIs use a nested object instead of Qwen's
+        // enable_thinking boolean.
+        body["thinking"] = serde_json::json!({ "type": "disabled" });
+    } else if provider.contains("qwen") || provider.contains("siliconflow") {
+        // Qwen/SiliconFlow compatible APIs use this extension.
+        body["enable_thinking"] = serde_json::Value::Bool(false);
+    }
+}
+
 fn parse_completion(body: &str) -> Result<String, String> {
     let v: serde_json::Value =
         serde_json::from_str(body).map_err(|e| format!("响应解析失败: {e}"))?;
-    let content = v["choices"][0]["message"]["content"]
-        .as_str()
+    let message = &v["choices"][0]["message"];
+    let content = message_content(&message["content"])
+        .or_else(|| message_content(&message["text"]))
         .ok_or_else(|| "响应中未找到翻译结果".to_string())?;
+    let content = strip_thinking(&content);
+    if content.trim().is_empty() {
+        return Err("响应中未找到翻译结果（模型只返回了思考内容）".to_string());
+    }
     Ok(content.trim().to_string())
+}
+
+fn message_content(value: &serde_json::Value) -> Option<String> {
+    if let Some(text) = value.as_str() {
+        return Some(text.to_string());
+    }
+    let parts = value.as_array()?;
+    let mut out = String::new();
+    for part in parts {
+        if let Some(text) = part.as_str() {
+            out.push_str(text);
+        } else if let Some(text) = part["text"].as_str() {
+            out.push_str(text);
+        }
+    }
+    (!out.is_empty()).then_some(out)
+}
+
+fn strip_thinking(content: &str) -> String {
+    let mut output = content.to_string();
+    if let Some(start) = output.find("<think>") {
+        if let Some(end_rel) = output[start + 7..].find("</think>") {
+            output.replace_range(start..start + 7 + end_rel + 8, "");
+        } else {
+            output.truncate(start);
+        }
+    }
+    output
+        .trim()
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim()
+        .to_string()
+}
+
+fn unpack_indexed_translation(content: &str, line_count: usize) -> Result<String, String> {
+    let mut lines = vec![None; line_count];
+    let markers = indexed_markers(content);
+    if !markers.is_empty() {
+        for (position, content_start, index) in markers.iter().copied() {
+            if index >= line_count {
+                continue;
+            }
+            let content_end = markers
+                .iter()
+                .find(|(next_position, _, _)| *next_position > position)
+                .map(|(next_position, _, _)| *next_position)
+                .unwrap_or(content.len());
+            lines[index] = Some(normalize_marked_translation(
+                &content[content_start..content_end],
+            ));
+        }
+        return Ok(lines
+            .into_iter()
+            .map(|line| line.unwrap_or_default())
+            .collect::<Vec<_>>()
+            .join("\n"));
+    }
+
+    // 有些旧兼容模型会忽略标记。只有严格保留行数时才按顺序接收；
+    // 行数不符直接报错，避免后一行译文被错误显示到上一首曲目下面。
+    let fallback = content.replace("\r\n", "\n");
+    if fallback.lines().count() == line_count {
+        return Ok(fallback);
+    }
+    Err(format!(
+        "兼容模型未按行返回译文（应有 {line_count} 行，实际 {} 行）",
+        fallback.lines().count()
+    ))
+}
+
+/// 返回标记起始位置、译文开始位置和行号。译文允许另起一行，
+/// 兼容部分模型把标记与译文拆开输出的情况。
+fn indexed_markers(content: &str) -> Vec<(usize, usize, usize)> {
+    const PREFIX: &str = "[[KIKOETA_LINE_";
+    let mut markers = Vec::new();
+    let mut offset = 0;
+    while let Some(relative) = content[offset..].find(PREFIX) {
+        let position = offset + relative;
+        let index_start = position + PREFIX.len();
+        let Some(close_relative) = content[index_start..].find("]]") else {
+            offset = index_start;
+            continue;
+        };
+        let close = index_start + close_relative;
+        let Ok(index) = content[index_start..close].trim().parse::<usize>() else {
+            offset = close + 2;
+            continue;
+        };
+        markers.push((position, close + 2, index));
+        offset = close + 2;
+    }
+    markers
+}
+
+fn normalize_marked_translation(segment: &str) -> String {
+    segment
+        .trim()
+        .trim_start_matches(|c: char| c == ':' || c == '-' || c.is_whitespace())
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn preview(s: &str) -> String {
@@ -338,6 +486,66 @@ mod tests {
     fn parse_completion_ok() {
         let body = r#"{"choices":[{"message":{"content":"你好\n世界"}}]}"#;
         assert_eq!(parse_completion(body).unwrap(), "你好\n世界");
+    }
+
+    #[test]
+    fn parse_completion_strips_thinking() {
+        let body = r#"{"choices":[{"message":{"reasoning_content":"ignored","content":"<think>reasoning</think>你好"}}]}"#;
+        assert_eq!(parse_completion(body).unwrap(), "你好");
+    }
+
+    #[test]
+    fn extracts_target_prefix_without_leaking_it_into_the_title() {
+        assert_eq!(
+            split_translation_target("[[KIKOETA_TARGET:zh-CN]]\n作品标题\n曲目".to_string()),
+            ("zh-CN".to_string(), "作品标题\n曲目".to_string())
+        );
+        assert_eq!(
+            split_translation_target("[[KIKOETA_TARGET:en]]\r\nWork title".to_string()),
+            ("en".to_string(), "Work title".to_string())
+        );
+    }
+
+    #[test]
+    fn unpacks_indexed_translation_without_shifting_empty_lines() {
+        let content = "[[KIKOETA_LINE_0]]标题\n[[KIKOETA_LINE_2]]曲目";
+        assert_eq!(
+            unpack_indexed_translation(content, 3).unwrap(),
+            "标题\n\n曲目"
+        );
+    }
+
+    #[test]
+    fn unpacks_translation_when_marker_and_text_are_on_separate_lines() {
+        let content = "[[KIKOETA_LINE_0]]\n作品标题\n[[KIKOETA_LINE_1]]\n第一首\n[[KIKOETA_LINE_2]]\n第二首";
+        assert_eq!(
+            unpack_indexed_translation(content, 3).unwrap(),
+            "作品标题\n第一首\n第二首"
+        );
+    }
+
+    #[test]
+    fn rejects_unmarked_translation_with_wrong_line_count() {
+        assert!(unpack_indexed_translation("作品标题\n第一首", 3).is_err());
+    }
+
+    #[test]
+    fn configures_provider_specific_thinking_options() {
+        let mut deepseek = serde_json::json!({});
+        apply_thinking_options(
+            &mut deepseek,
+            "https://api.deepseek.com/v1",
+            "deepseek-chat",
+        );
+        assert_eq!(deepseek["thinking"]["type"], "disabled");
+
+        let mut qwen = serde_json::json!({});
+        apply_thinking_options(
+            &mut qwen,
+            "https://api.siliconflow.cn/v1",
+            "Qwen/Qwen3.5-4B",
+        );
+        assert_eq!(qwen["enable_thinking"], false);
     }
 
     #[test]

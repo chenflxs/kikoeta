@@ -47,6 +47,7 @@ class _WorkPageState extends State<WorkPage> {
   final Map<String, String> _titleByPath = {};
   List<String>? _smartTarget; // 智能路径自动进入的目录（标题链），用于「查看全部文件」
   late int _seenLoginEpoch;
+  bool _translating = false;
 
   @override
   void initState() {
@@ -877,10 +878,22 @@ class _WorkPageState extends State<WorkPage> {
                     child: GestureDetector(
                       onLongPress: _pickEngine,
                       child: OutlinedButton.icon(
-                        onPressed: _translateTitles,
-                        icon: const Icon(Icons.translate, size: 17),
+                        onPressed: _translating ? null : _translateTitles,
+                        icon: _translating
+                            ? const SizedBox(
+                                width: 17,
+                                height: 17,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.translate, size: 17),
                         label: Text(
-                          app.translated.containsKey(work.rj) ? '取消翻译' : '翻译',
+                          _translating
+                              ? '翻译中'
+                              : app.translated.containsKey(work.rj)
+                              ? '取消翻译'
+                              : '翻译',
                           style: const TextStyle(fontSize: 13),
                         ),
                         style: OutlinedButton.styleFrom(
@@ -1271,6 +1284,7 @@ class _WorkPageState extends State<WorkPage> {
     final audio = _collectAudio(_tree!);
     final lines = [work.title, ...audio.map((n) => n.title)];
     _toast('正在翻译 ${lines.length} 行标题…');
+    setState(() => _translating = true);
     try {
       final joined = lines.join('\n');
       final zh = switch (app.engine) {
@@ -1298,24 +1312,29 @@ class _WorkPageState extends State<WorkPage> {
           temperature: 0.2,
         ),
       };
-      final parts = zh
-          .split('\n')
-          .map((s) => s.trim())
-          .where((s) => s.isNotEmpty)
-          .toList();
+      // 保留空行位置，避免兼容模型漏译某一行后把后续曲目错位映射。
+      final parts = zh.replaceAll('\r\n', '\n').split('\n');
+      if (parts.every((part) => part.trim().isEmpty)) {
+        throw const FormatException('翻译结果为空');
+      }
       final trackZh = <String, String>{};
-      for (var i = 1; i < parts.length && i - 1 < audio.length; i++) {
-        trackZh[audio[i - 1].path] = parts[i];
+      for (var i = 0; i < audio.length; i++) {
+        final translation = i + 1 < parts.length ? parts[i + 1].trim() : '';
+        if (translation.isNotEmpty) {
+          trackZh[audio[i].path] = translation;
+        }
       }
       app.saveTranslated(
         work.rj,
-        parts.isNotEmpty ? parts[0] : work.title,
+        parts.first.trim().isNotEmpty ? parts.first.trim() : work.title,
         trackZh,
       );
       if (mounted) setState(() {});
-      _toast('翻译完成（${parts.length} 行）');
+      _toast('翻译完成（标题 + ${trackZh.length} 个曲目）');
     } catch (e) {
       _toast('翻译失败：$e');
+    } finally {
+      if (mounted) setState(() => _translating = false);
     }
   }
 

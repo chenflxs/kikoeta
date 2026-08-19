@@ -49,6 +49,7 @@ class _PlayerPageState extends State<PlayerPage> {
   DateTime? _lastAutoNext; // completed 自动跳转去重
   final Map<String, String> _convCache = {};
   late String _lastConv;
+  late bool _lastAppPlaying;
   bool _opening = false; // 正在打开媒体
   bool _buffering = false; // 缓冲中
   int _lastSavedPos = 0; // 上次保存播放位置（节流）
@@ -67,6 +68,7 @@ class _PlayerPageState extends State<PlayerPage> {
   void initState() {
     super.initState();
     _lastConv = app.conv;
+    _lastAppPlaying = app.playing;
     _syncPlayerSnapshot();
     app.addListener(_onAppStateChanged);
     _subs.add(
@@ -187,12 +189,16 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   void _onAppStateChanged() {
+    final playingChanged = app.playing != _lastAppPlaying;
+    _lastAppPlaying = app.playing;
+    var needsRebuild = playingChanged;
     if (app.conv != _lastConv) {
       _lastConv = app.conv;
       _convCache.clear();
-      if (mounted) setState(() {});
       LyricsHub.instance.setConv(app.conv);
+      needsRebuild = true;
     }
+    if (needsRebuild && mounted) setState(() {});
   }
 
   void _syncPlayerSnapshot({bool rebuild = false}) {

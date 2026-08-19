@@ -60,6 +60,15 @@ class DesktopLyricsOverlay {
   int _dibW = 0;
   int _dibH = 0;
 
+  // 文字以更高分辨率绘制为灰阶遮罩，再下采样到分层窗口。
+  // GDI 直接绘制到透明 DIB 会丢失边缘覆盖率，导致明显锯齿。
+  static const _textScale = 3;
+  int _textMemDc = 0;
+  int _textDib = 0;
+  Pointer<Uint8>? _textBits;
+  int _textDibW = 0;
+  int _textDibH = 0;
+
   bool get isVisible => _visible;
   String get text => _text;
 
@@ -375,90 +384,18 @@ class DesktopLyricsOverlay {
       // 3) 按钮背景（半透明灰）并更新命中区
       _drawButtonBgs(w, h);
 
-      // 4) GDI 绘制文字与 icon（RGB 写入 DIB，alpha 后处理）
-      final hdc = _memDc;
-      final fontH =
-          -((_fontSize.round() * GetDeviceCaps(hdc, LOGPIXELSY)) ~/ 72);
-      final lf = calloc<LOGFONT>();
-      try {
-        lf.ref.lfHeight = fontH;
-        lf.ref.lfWeight = 400;
-        lf.ref.lfQuality = ANTIALIASED_QUALITY;
-        lf.ref.lfFaceName = _fontFace;
-        final font = CreateFontIndirect(lf);
-        final oldFont = SelectObject(hdc, font);
-        SetBkMode(hdc, TRANSPARENT);
+      // 4) 高分辨率文字遮罩保留边缘覆盖率，避免分层窗口中的锯齿。
+      _drawText(w, h);
 
-        final text = _text.isEmpty ? '暂无歌词' : _text;
-        final textPtr = text.toNativeUtf16();
-        final textRect = calloc<RECT>();
-        try {
-          textRect.ref.left = 8;
-          textRect.ref.top = 4;
-          textRect.ref.right = w - 8;
-          textRect.ref.bottom = h - 4;
-          final ow = _outlineWidth.round();
-          if (ow > 0) {
-            SetTextColor(hdc, _colorRef(_outlineColor));
-            for (var dy = -ow; dy <= ow; dy++) {
-              for (var dx = -ow; dx <= ow; dx++) {
-                if (dx == 0 && dy == 0) continue;
-                final r2 = calloc<RECT>();
-                try {
-                  r2.ref.left = textRect.ref.left + dx;
-                  r2.ref.top = textRect.ref.top + dy;
-                  r2.ref.right = textRect.ref.right + dx;
-                  r2.ref.bottom = textRect.ref.bottom + dy;
-                  DrawText(
-                    hdc,
-                    textPtr,
-                    -1,
-                    r2,
-                    DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
-                  );
-                } finally {
-                  calloc.free(r2);
-                }
-              }
-            }
-          }
-          SetTextColor(hdc, _colorRef(_textColor));
-          DrawText(
-            hdc,
-            textPtr,
-            -1,
-            textRect,
-            DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
-          );
-        } finally {
-          calloc.free(textRect);
-          calloc.free(textPtr);
-        }
-
-        if (_locked) {
-          if (_hover) _drawSvgIcon(_unlockRect, 'unlock');
-        } else if (_hover) {
-          _drawSvgIcon(_minusRect, 'minus');
-          _drawSvgIcon(_plusRect, 'plus');
-          _drawSvgIcon(_lockRect, 'lock');
-        }
-
-        SelectObject(hdc, oldFont);
-        DeleteObject(font);
-      } finally {
-        calloc.free(lf);
+      if (_locked) {
+        if (_hover) _drawSvgIcon(_unlockRect, 'unlock');
+      } else if (_hover) {
+        _drawSvgIcon(_minusRect, 'minus');
+        _drawSvgIcon(_plusRect, 'plus');
+        _drawSvgIcon(_lockRect, 'lock');
       }
 
-      // 5) alpha 后处理：非哨兵的 GDI 绘制内容置为不透明
-      for (var i = 0; i < n; i++) {
-        final p = i * 4;
-        if (bits[p + 3] != 0) continue;
-        if (bits[p] != 1 || bits[p + 1] != 1 || bits[p + 2] != 1) {
-          bits[p + 3] = 255;
-        }
-      }
-
-      // 6) 提交到分层窗口
+      // 5) 提交到分层窗口
       _updateLayered(w, h);
     } finally {
       calloc.free(rc);
@@ -511,6 +448,164 @@ class DesktopLyricsOverlay {
     _bits = null;
     _dibW = 0;
     _dibH = 0;
+  }
+
+  void _ensureTextTarget(int w, int h) {
+    final scaledW = w * _textScale;
+    final scaledH = h * _textScale;
+    if (_textMemDc != 0 &&
+        _textDib != 0 &&
+        _textDibW == scaledW &&
+        _textDibH == scaledH) {
+      return;
+    }
+    _freeTextTarget();
+    _textMemDc = CreateCompatibleDC(0);
+    final bmi = calloc<BITMAPINFO>();
+    try {
+      bmi.ref.bmiHeader.biSize = sizeOf<BITMAPINFOHEADER>();
+      bmi.ref.bmiHeader.biWidth = scaledW;
+      bmi.ref.bmiHeader.biHeight = scaledH;
+      bmi.ref.bmiHeader.biPlanes = 1;
+      bmi.ref.bmiHeader.biBitCount = 32;
+      bmi.ref.bmiHeader.biCompression = 0;
+      final ppv = calloc<Pointer<Uint8>>();
+      try {
+        _textDib = CreateDIBSection(
+          _textMemDc,
+          bmi,
+          DIB_RGB_COLORS,
+          ppv.cast<Pointer>(),
+          0,
+          0,
+        );
+        _textBits = ppv.value;
+      } finally {
+        calloc.free(ppv);
+      }
+      if (_textDib != 0) SelectObject(_textMemDc, _textDib);
+      _textDibW = scaledW;
+      _textDibH = scaledH;
+    } finally {
+      calloc.free(bmi);
+    }
+  }
+
+  void _freeTextTarget() {
+    if (_textDib != 0) {
+      DeleteObject(_textDib);
+      _textDib = 0;
+    }
+    if (_textMemDc != 0) {
+      DeleteDC(_textMemDc);
+      _textMemDc = 0;
+    }
+    _textBits = null;
+    _textDibW = 0;
+    _textDibH = 0;
+  }
+
+  void _drawText(int w, int h) {
+    _ensureTextTarget(w, h);
+    final mask = _textBits;
+    if (mask == null || _textDib == 0) return;
+    final n = _textDibW * _textDibH;
+    for (var i = 0; i < n * 4; i++) {
+      mask[i] = 0;
+    }
+
+    final lf = calloc<LOGFONT>();
+    final textPtr = (_text.isEmpty ? '暂无歌词' : _text).toNativeUtf16();
+    try {
+      final dpi = GetDeviceCaps(_textMemDc, LOGPIXELSY);
+      lf.ref.lfHeight = -((_fontSize * _textScale * dpi / 72).round());
+      lf.ref.lfWeight = 400;
+      lf.ref.lfQuality = ANTIALIASED_QUALITY;
+      lf.ref.lfFaceName = _fontFace;
+      final font = CreateFontIndirect(lf);
+      final oldFont = SelectObject(_textMemDc, font);
+      try {
+        SetBkMode(_textMemDc, TRANSPARENT);
+        SetTextColor(_textMemDc, 0x00FFFFFF);
+        final rect = calloc<RECT>();
+        try {
+          rect.ref.left = 8 * _textScale;
+          rect.ref.top = 4 * _textScale;
+          rect.ref.right = (w - 8) * _textScale;
+          rect.ref.bottom = (h - 4) * _textScale;
+          final ow = (_outlineWidth * _textScale).round();
+          if (ow > 0) {
+            for (var dy = -ow; dy <= ow; dy++) {
+              for (var dx = -ow; dx <= ow; dx++) {
+                if (dx == 0 && dy == 0) continue;
+                final shifted = calloc<RECT>();
+                try {
+                  shifted.ref.left = rect.ref.left + dx;
+                  shifted.ref.top = rect.ref.top + dy;
+                  shifted.ref.right = rect.ref.right + dx;
+                  shifted.ref.bottom = rect.ref.bottom + dy;
+                  DrawText(
+                    _textMemDc,
+                    textPtr,
+                    -1,
+                    shifted,
+                    DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+                  );
+                } finally {
+                  calloc.free(shifted);
+                }
+              }
+            }
+            _blendTextMask(w, h, _outlineColor);
+          }
+
+          for (var i = 0; i < n * 4; i++) {
+            mask[i] = 0;
+          }
+          DrawText(
+            _textMemDc,
+            textPtr,
+            -1,
+            rect,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+          );
+          _blendTextMask(w, h, _textColor);
+        } finally {
+          calloc.free(rect);
+        }
+      } finally {
+        SelectObject(_textMemDc, oldFont);
+        DeleteObject(font);
+      }
+    } finally {
+      calloc.free(lf);
+      calloc.free(textPtr);
+    }
+  }
+
+  void _blendTextMask(int w, int h, int color) {
+    final mask = _textBits;
+    if (mask == null) return;
+    final sourceAlpha = (color >> 24) & 0xFF;
+    if (sourceAlpha == 0) return;
+    final r = (color >> 16) & 0xFF;
+    final g = (color >> 8) & 0xFF;
+    final b = color & 0xFF;
+    final samples = _textScale * _textScale;
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        var coverage = 0;
+        for (var sy = 0; sy < _textScale; sy++) {
+          final row = (_textDibH - 1 - (y * _textScale + sy)) * _textDibW;
+          for (var sx = 0; sx < _textScale; sx++) {
+            // 遮罩为白色，任一 RGB 分量均代表 GDI 的灰阶覆盖率。
+            coverage += mask[(row + x * _textScale + sx) * 4];
+          }
+        }
+        final alpha = (coverage * sourceAlpha / (255 * samples)).round();
+        if (alpha > 0) _blendPx(x, y, alpha, r, g, b);
+      }
+    }
   }
 
   void _setPx(int x, int y, int a, int r, int g, int b) {
@@ -930,13 +1025,6 @@ class DesktopLyricsOverlay {
     return pts;
   }
 
-  static int _colorRef(int argb) {
-    final r = (argb >> 16) & 0xFF;
-    final g = (argb >> 8) & 0xFF;
-    final b = argb & 0xFF;
-    return (b << 16) | (g << 8) | r;
-  }
-
   // ---------- 对外接口 ----------
 
   void Function(bool locked)? _syncLockCallback;
@@ -1009,6 +1097,7 @@ class DesktopLyricsOverlay {
     _pump?.cancel();
     _hoverPoll?.cancel();
     _freeTarget();
+    _freeTextTarget();
     if (_hwnd != 0) {
       DestroyWindow(_hwnd);
       _hwnd = 0;
