@@ -91,6 +91,10 @@ class AppPlayer {
 
   Future<void> open(Media media, {bool autoplay = true}) async {
     _suppressCompletedUntil = DateTime.now().add(_suppressWindow);
+    _lastPos = 0;
+    _lastDur = 0;
+    _posCtrl.add(_lastPos);
+    _durCtrl.add(_lastDur);
     await player.open(media, play: autoplay);
     opened = true;
   }

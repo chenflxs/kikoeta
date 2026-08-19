@@ -49,6 +49,20 @@ class ApiService {
       );
       return parseWorks(json, base: base, perPage: perPage);
     }
+    final category = switch (app.category) {
+      'hot' => 'popular',
+      'rec' => 'recommend',
+      _ => null,
+    };
+    if (category != null) {
+      final json = await _fetchOneCategoryWorks(
+        app,
+        category: category,
+        page: page,
+        perPage: perPage,
+      );
+      return parseWorks(json, base: base, perPage: perPage);
+    }
     // asmr.one：年龄筛选改为搜索对应的年龄 tag，由服务端过滤，避免客户端逐页补拉
     final ageTag = oneAgeTag(app.ageFilter);
     if (ageTag != null) {
@@ -74,6 +88,29 @@ class ApiService {
       seed: app.category == 'rec' ? app.randomSeed?.toString() : null,
     );
     return parseWorks(json, base: base, perPage: perPage);
+  }
+
+  /// asmr.one 的热门和推荐页分别对应 /popular、/recommend，不能用通用
+  /// 作品流加随机 seed 代替。
+  static Future<String> _fetchOneCategoryWorks(
+    AppState app, {
+    required String category,
+    required int page,
+    required int perPage,
+  }) async {
+    final base = resolveBase(app).replaceFirst(RegExp(r'/+$'), '');
+    final query = <String, String>{
+      'page': '$page',
+      'per_page': '$perPage',
+      'order': orderParam(app),
+      'sort': app.orderAsc ? 'asc' : 'desc',
+    };
+    if (app.subOnly) query['subtitle'] = '1';
+    final uri = Uri.parse(
+      '$base/api/works/$category',
+    ).replace(queryParameters: query);
+    final bytes = await apiGetBytes(url: uri.toString());
+    return utf8.decode(bytes);
   }
 
   static Future<WorksPage> searchWorks(
@@ -112,11 +149,8 @@ class ApiService {
     return parseWorks(json, base: base, perPage: perPage);
   }
 
-  /// 首页/搜索排序参数：热门与推荐使用服务端固定 order
+  /// 首页/搜索排序参数：所有分类均按用户选择传递给服务器。
   static String orderParam(AppState app) {
-    // betterRandom 接口固定只返回 1 个作品，热门改用销量排序
-    if (app.category == 'hot') return 'dl_count';
-    if (app.category == 'rec') return 'random';
     return switch (app.sort) {
       // 发布时间 = DLsite 发布日期；收录时间 = one 站收录日期（两个参数行为不同）
       'date' => 'release',

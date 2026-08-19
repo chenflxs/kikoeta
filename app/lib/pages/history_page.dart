@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data.dart';
 import '../routes.dart';
+import '../services/api_service.dart';
 import '../theme.dart';
 import '../widgets.dart';
 
@@ -32,139 +33,145 @@ class HistoryPage extends StatelessWidget {
             : AppColors.light;
         final list = app.playHistory;
         return Scaffold(
-      appBar: AppBar(
-        title: const Text('播放历史'),
-        leading: const BackButton(),
-        actions: [
-          if (list.isNotEmpty)
-            TextButton(
-              onPressed: () {
-                app.clearPlayHistory();
-              },
-              child: Text(
-                '清空',
-                style: TextStyle(fontSize: 13, color: p.accent),
-              ),
-            ),
-        ],
-      ),
-      body: list.isEmpty
-          ? Center(
-              child: Text(
-                '暂无播放历史',
-                style: TextStyle(fontSize: 13, color: p.dim),
-              ),
-            )
-          : ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
-              itemCount: list.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 8),
-              itemBuilder: (ctx, i) {
-                final e = list[i];
-                final rj = e['rj'] as String? ?? '';
-                final title = e['title'] as String? ?? '';
-                final circle = e['circle'] as String? ?? '';
-                final at = e['at'] as int? ?? 0;
-                final w = _entryWork(e);
-                return InkWell(
-                  borderRadius: BorderRadius.circular(14),
-                  onTap: () {
-                    Work? found;
-                    for (final x in app.remoteWorks) {
-                      if (x.rj == rj) {
-                        found = x;
-                        break;
-                      }
-                    }
-                    if (found == null) {
-                      ScaffoldMessenger.of(ctx).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            '该作品不在当前列表，请先在首页加载',
-                            style: TextStyle(fontSize: 12.5, color: p.text),
-                          ),
-                          behavior: SnackBarBehavior.floating,
-                          backgroundColor: p.toast,
-                        ),
-                      );
-                      return;
-                    }
-                    Navigator.of(ctx).push(buildWorkRoute(app, found));
+          appBar: AppBar(
+            title: const Text('播放历史'),
+            leading: const BackButton(),
+            actions: [
+              if (list.isNotEmpty)
+                TextButton(
+                  onPressed: () {
+                    app.clearPlayHistory();
                   },
-                  child: Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: p.surface,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: p.line),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SizedBox(
-                          width: 58,
-                          height: 58,
-                          child: CoverArt(
-                            work: w,
-                            radius: 10,
-                            showBadges: false,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 13.5,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                '$rj · $circle · ${_fmtTime(at)}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(fontSize: 11, color: p.dim),
-                              ),
-                              if (w.tags.isNotEmpty) ...[
-                                const SizedBox(height: 6),
-                                Wrap(
-                                  spacing: 4,
-                                  runSpacing: 4,
-                                  children: w.tags
-                                      .map(
-                                        (t) => _tagChip(
-                                          ctx,
-                                          t,
-                                          gray: w.grayTags.contains(t),
-                                        ),
-                                      )
-                                      .toList(),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Padding(
-                          padding: const EdgeInsets.only(top: 20),
-                          child: Icon(
-                            Icons.chevron_right,
-                            size: 18,
-                            color: p.dim,
-                          ),
-                        ),
-                      ],
-                    ),
+                  child: Text(
+                    '清空',
+                    style: TextStyle(fontSize: 13, color: p.accent),
                   ),
-                );
-              },
-            ),
+                ),
+            ],
+          ),
+          body: list.isEmpty
+              ? Center(
+                  child: Text(
+                    '暂无播放历史',
+                    style: TextStyle(fontSize: 13, color: p.dim),
+                  ),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
+                  itemCount: list.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
+                  itemBuilder: (ctx, i) {
+                    final e = list[i];
+                    final rj = e['rj'] as String? ?? '';
+                    final title = e['title'] as String? ?? '';
+                    final circle = e['circle'] as String? ?? '';
+                    final at = e['at'] as int? ?? 0;
+                    final w = _entryWork(e);
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: () async {
+                        Work? found;
+                        for (final x in app.remoteWorks) {
+                          if (x.rj == rj) {
+                            found = x;
+                            break;
+                          }
+                        }
+                        if (found == null && rj.isNotEmpty) {
+                          try {
+                            final result = await ApiService.searchWorks(
+                              app,
+                              rj,
+                              perPage: 10,
+                            );
+                            for (final x in result.works) {
+                              if (x.rj == rj) {
+                                found = x;
+                                break;
+                              }
+                            }
+                          } catch (_) {}
+                        }
+                        if (!ctx.mounted) return;
+                        Navigator.of(ctx).push(buildWorkRoute(app, found ?? w));
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: p.surface,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: p.line),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SizedBox(
+                              width: 58,
+                              height: 58,
+                              child: CoverArt(
+                                work: w,
+                                radius: 10,
+                                showBadges: false,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '$rj · $circle · ${_fmtTime(at)}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: p.dim,
+                                    ),
+                                  ),
+                                  if (w.tags.isNotEmpty) ...[
+                                    const SizedBox(height: 6),
+                                    Wrap(
+                                      spacing: 4,
+                                      runSpacing: 4,
+                                      children: w.tags
+                                          .map(
+                                            (t) => _tagChip(
+                                              ctx,
+                                              t,
+                                              gray: w.grayTags.contains(t),
+                                            ),
+                                          )
+                                          .toList(),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Padding(
+                              padding: const EdgeInsets.only(top: 20),
+                              child: Icon(
+                                Icons.chevron_right,
+                                size: 18,
+                                color: p.dim,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
         );
       },
     );

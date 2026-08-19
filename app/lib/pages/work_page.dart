@@ -238,13 +238,20 @@ class _WorkPageState extends State<WorkPage> {
     return out;
   }
 
-  void _playFiles(Iterable<MediaNode> files) {
+  void _playFiles(Iterable<MediaNode> files, {MediaNode? selected}) {
     final audio = _collectAudio(files);
     if (audio.isEmpty) {
       _toast('暂无音频文件（文件流需登录后可用）');
       return;
     }
-    app.startPlayback(work, audio);
+    final selectedIndex = selected == null
+        ? 0
+        : audio.indexWhere((item) => item.path == selected.path);
+    app.startPlayback(
+      work,
+      audio,
+      initialTrackIndex: selectedIndex < 0 ? 0 : selectedIndex,
+    );
     Navigator.of(context).pushNamed('/player');
   }
 
@@ -633,6 +640,15 @@ class _WorkPageState extends State<WorkPage> {
     );
   }
 
+  IconData _mediaIcon(MediaNode n, bool open) {
+    if (n.isDir) return open ? Icons.folder_open : Icons.folder;
+    if (_isAudio(n)) return Icons.music_note;
+    if (_isVideo(n)) return Icons.movie_outlined;
+    if (_isText(n)) return Icons.description_outlined;
+    if (_isImage(n)) return Icons.image_outlined;
+    return Icons.insert_drive_file_outlined;
+  }
+
   Widget _treeView(List<MediaNode> nodes, int depth) {
     return Column(
       children: nodes.map((n) => _nodeRow(n, depth, nodes)).toList(),
@@ -653,7 +669,7 @@ class _WorkPageState extends State<WorkPage> {
               });
             } else {
               if (_isAudio(n)) {
-                _playFiles(siblings);
+                _playFiles(siblings, selected: n);
               } else {
                 _openFile(n);
               }
@@ -672,9 +688,7 @@ class _WorkPageState extends State<WorkPage> {
             child: Row(
               children: [
                 Icon(
-                  n.isDir
-                      ? (open ? Icons.folder_open : Icons.folder)
-                      : Icons.music_note,
+                  _mediaIcon(n, open),
                   size: 17,
                   color: n.isDir ? p.accent : p.dim,
                 ),
@@ -1263,24 +1277,24 @@ class _WorkPageState extends State<WorkPage> {
         'google' => await apiTranslateGoogle(
           text: joined,
           src: 'ja',
-          dst: 'zh-CN',
+          dst: app.translationTarget,
         ),
         'microsoft' => await apiTranslateMicrosoft(
           text: joined,
           src: 'ja',
-          dst: 'zh-CN',
+          dst: app.translationTarget,
         ),
         'deepl' => await apiTranslateDeepl(
           text: joined,
           src: 'ja',
-          dst: 'zh-CN',
+          dst: app.translationTarget,
           apiKey: app.deeplKey,
         ),
         _ => await apiTranslateOpenai(
           baseUrl: app.aiConfig['base']!,
           model: app.aiConfig['model']!,
           apiKey: app.aiConfig['key'] ?? '',
-          text: joined,
+          text: '[[KIKOETA_TARGET:${app.translationTarget}]]\n$joined',
           temperature: 0.2,
         ),
       };

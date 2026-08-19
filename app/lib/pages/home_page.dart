@@ -159,7 +159,6 @@ class _HomePageState extends State<HomePage> {
   /// 年龄分级是客户端过滤：过滤后不足一页时继续补拉（最多 10 页），直到凑够一页或拉完
   void _maybeRefill() {
     if (app.ageFilter == null) return;
-    if (!app.customServer) return; // one站已在服务端按年龄 tag 过滤，无需补页
     if (!app.worksHasMore || app.worksPage >= 10) return;
     if (app.homeOrder.length >= 20) return;
     _loadMore();

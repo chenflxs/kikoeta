@@ -162,9 +162,15 @@ class AppState extends ChangeNotifier {
   String conv = 'orig'; // orig / zh / tw
   int playMode = 0; // 0 列表播放 / 1 循环播放 / 2 单曲循环
 
-  // 播放器音量（0-120，默认上限 100，响度提升解锁 120）
+  // 播放器音量（0-200；响度提升依次解锁至 120、200）
   double volume = 100;
-  bool volumeBoost = false;
+  int volumeBoostLevel = 0;
+  bool get volumeBoost => volumeBoostLevel > 0;
+  int get volumeMax => switch (volumeBoostLevel) {
+    1 => 120,
+    2 => 200,
+    _ => 100,
+  };
 
   // 设置开关
   bool clipboardDetect = true;
@@ -203,8 +209,13 @@ class AppState extends ChangeNotifier {
 
   // 翻译引擎
   String engine = 'google'; // google / deepl / openai
+  String translationTarget = 'zh-CN'; // zh-CN / zh-TW / en
+  final List<String> openAiModels = [];
   final Map<String, String> aiConfig = {'base': '', 'model': '', 'key': ''};
   String deeplKey = '';
+
+  // Windows 关闭窗口后的行为
+  bool keepTrayOnClose = true;
 
   // 定时关闭
   String sleepMode = 'after'; // after / at
@@ -326,10 +337,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void startPlayback(Work w, List<MediaNode> files) {
+  void startPlayback(
+    Work w,
+    List<MediaNode> files, {
+    int initialTrackIndex = 0,
+  }) {
     currentWork = w;
     queue = List.of(files);
-    trackIdx = 0;
+    trackIdx = initialTrackIndex.clamp(0, queue.length - 1);
     playing = true;
     resumePosition = 0;
     recordPlayHistory(w);
@@ -576,10 +591,10 @@ class AppState extends ChangeNotifier {
     }
     final volume = SettingsStore.get('volume');
     if (volume != null) {
-      this.volume = (double.tryParse(volume) ?? 100).clamp(0, 120);
+      this.volume = (double.tryParse(volume) ?? 100)
+          .clamp(0, volumeMax)
+          .toDouble();
     }
-    final boost = SettingsStore.get('volume_boost');
-    if (boost == '1') volumeBoost = true;
     final cd = SettingsStore.get('clipboard_detect');
     if (cd != null) clipboardDetect = cd == '1';
     final ep = SettingsStore.get('ear_pause');
@@ -698,6 +713,13 @@ class AppState extends ChangeNotifier {
     }
     final dk = SettingsStore.get('deepl_key');
     if (dk != null) deeplKey = dk;
+    final translationTarget = SettingsStore.get('translation_target');
+    if (translationTarget != null &&
+        const ['zh-CN', 'zh-TW', 'en'].contains(translationTarget)) {
+      this.translationTarget = translationTarget;
+    }
+    final tray = SettingsStore.get('keep_tray_on_close');
+    if (tray != null) keepTrayOnClose = tray == '1';
     final se = SettingsStore.get('sleep_end_at');
     if (se != null && se.isNotEmpty) {
       final t = DateTime.tryParse(se);
@@ -774,15 +796,27 @@ class AppState extends ChangeNotifier {
   }
 
   void setVolume(double v) {
-    volume = v.clamp(0, 120);
-    // 只记忆 100 以内部分：100 以上（响度提升解锁）仅本次会话生效
+    volume = v.clamp(0, volumeMax).toDouble();
     SettingsStore.set('volume', volume.clamp(0, 100).toStringAsFixed(0));
     notifyListeners();
   }
 
-  void setVolumeBoost(bool b) {
-    volumeBoost = b;
-    SettingsStore.set('volume_boost', b ? '1' : '0');
+  void cycleVolumeBoost() {
+    volumeBoostLevel = (volumeBoostLevel + 1) % 3;
+    if (volumeBoostLevel == 0 && volume > 100) volume = 100;
+    notifyListeners();
+  }
+
+  void setTranslationTarget(String value) {
+    if (!const ['zh-CN', 'zh-TW', 'en'].contains(value)) return;
+    translationTarget = value;
+    SettingsStore.set('translation_target', value);
+    notifyListeners();
+  }
+
+  void setKeepTrayOnClose(bool value) {
+    keepTrayOnClose = value;
+    SettingsStore.set('keep_tray_on_close', value ? '1' : '0');
     notifyListeners();
   }
 
@@ -1055,7 +1089,7 @@ class AppState extends ChangeNotifier {
     conv = 'orig';
     playMode = 0;
     volume = 100;
-    volumeBoost = false;
+    volumeBoostLevel = 0;
     clipboardDetect = true;
     lsCover = false;
     notifCover = false;

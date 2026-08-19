@@ -21,6 +21,7 @@ import 'services/android_audio.dart';
 import 'services/android_lyrics_overlay.dart';
 import 'services/android_media3.dart';
 import 'services/android_notification.dart';
+import 'services/windows_tray_service.dart';
 import 'services/lyrics_hub.dart';
 import 'theme.dart';
 import 'widgets.dart';
@@ -42,6 +43,9 @@ Future<void> main() async {
   if (!kIsWeb && Platform.isAndroid) {
     AndroidAudio.setEarPause(appState.earPause);
     AndroidAudio.setIgnoreAudioFocus(appState.ignoreAudioFocus);
+  }
+  if (!kIsWeb && Platform.isWindows) {
+    await WindowsTrayService.instance.init(appState);
   }
   MediaKit.ensureInitialized();
   // Jetpack Media3：锁屏/通知媒体控制（桥接到 mpv；service 在首次播放时才启动）

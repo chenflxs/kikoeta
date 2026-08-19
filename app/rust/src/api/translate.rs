@@ -2,9 +2,18 @@
 
 use std::time::Duration;
 
-const PROMPT: &str = "你是音频作品标题翻译助手。把输入中的每行日文标题翻译为中文，\
-保持行数一致、保留换行，不翻译 RJ 编号和 .mp3/.flac 等扩展名。\
-只输出翻译结果，不要任何解释。";
+fn translation_prompt(target_language: &str) -> String {
+    let language = match target_language.trim() {
+        "zh-TW" => "繁体中文",
+        "en" => "English",
+        _ => "简体中文",
+    };
+    format!(
+        "你是音频作品标题翻译助手。把输入中的每行日文标题翻译为{language}，\\
+保持行数一致、保留换行，不翻译 RJ 编号和 .mp3/.flac 等扩展名。\\
+只输出翻译结果，不要任何解释。"
+    )
+}
 
 fn http_client() -> Result<reqwest::Client, String> {
     let mut builder = reqwest::Client::builder()
@@ -35,6 +44,11 @@ pub async fn api_translate_openai(
     if base.is_empty() || model.trim().is_empty() {
         return Err("请先配置 API 地址与模型名".to_string());
     }
+    let (target_language, text) = text
+        .strip_prefix("[[KIKOETA_TARGET:")
+        .and_then(|rest| rest.split_once("]]\\n"))
+        .map(|(target, content)| (target.to_string(), content.to_string()))
+        .unwrap_or_else(|| ("zh-CN".to_string(), text));
     if text.trim().is_empty() {
         return Ok(String::new());
     }
@@ -43,7 +57,7 @@ pub async fn api_translate_openai(
     let body = serde_json::json!({
         "model": model.trim(),
         "messages": [
-            { "role": "system", "content": PROMPT },
+            { "role": "system", "content": translation_prompt(&target_language) },
             { "role": "user", "content": text },
         ],
         "temperature": temperature.clamp(0.0, 2.0),

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -43,6 +44,7 @@ class _SettingsPageState extends State<SettingsPage> {
   Timer? _devTimer;
   late final TextEditingController _aiBase;
   late final TextEditingController _aiModel;
+  final MenuController _aiModelMenu = MenuController();
   late final TextEditingController _aiKey;
   late final TextEditingController _deeplKey;
   late final TextEditingController _colorHexCtrl;
@@ -91,6 +93,12 @@ class _SettingsPageState extends State<SettingsPage> {
   Palette get p => Theme.of(context).brightness == Brightness.dark
       ? AppColors.dark
       : AppColors.light;
+
+  String _translationTargetLabel(String code) => switch (code) {
+    'zh-TW' => '繁中',
+    'en' => '英语',
+    _ => '简中',
+  };
 
   void _onAppChanged() {
     if (mounted) setState(() {});
@@ -187,6 +195,46 @@ class _SettingsPageState extends State<SettingsPage> {
         decoration: BoxDecoration(color: color, shape: BoxShape.circle),
       ),
     );
+  }
+
+  Future<void> _detectOpenAiModels() async {
+    final base = _aiBase.text.trim().replaceFirst(RegExp(r'/+$'), '');
+    if (base.isEmpty) {
+      _toast('请先填写 API 地址');
+      return;
+    }
+    _toast('正在获取模型列表…');
+    try {
+      final client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 12);
+      final request = await client.getUrl(Uri.parse('$base/models'));
+      final key = _aiKey.text.trim();
+      if (key.isNotEmpty) request.headers.set('Authorization', 'Bearer $key');
+      final response = await request.close();
+      final body = await utf8.decodeStream(response);
+      client.close(force: true);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw HttpException('HTTP ${response.statusCode}');
+      }
+      final raw = jsonDecode(body) as Map<String, dynamic>;
+      final models =
+          ((raw['data'] as List?) ?? const [])
+              .map((item) => (item as Map?)?['id']?.toString() ?? '')
+              .where((id) => id.isNotEmpty)
+              .toSet()
+              .toList()
+            ..sort();
+      if (models.isEmpty) throw const FormatException('响应未包含 data[].id');
+      app.openAiModels
+        ..clear()
+        ..addAll(models);
+      if (_aiModel.text.trim().isEmpty) _aiModel.text = models.first;
+      app.setAiConfig(_aiBase.text, _aiModel.text, _aiKey.text);
+      if (mounted) setState(() {});
+      _toast('已获取 ${models.length} 个模型');
+    } catch (e) {
+      _toast('模型列表获取失败：$e');
+    }
   }
 
   @override
@@ -351,11 +399,25 @@ class _SettingsPageState extends State<SettingsPage> {
                       'API 地址 (Base URL)',
                       'https://api.openai.com/v1 或 http://127.0.0.1:11434/v1',
                     ),
-                    _input(
-                      _aiModel,
-                      '模型名',
-                      'gpt-4o-mini / deepseek-chat / qwen2.5',
+                    _aiModelInput(),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: _detectOpenAiModels,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: p.muted,
+                              side: BorderSide(color: p.line),
+                            ),
+                            child: const Text(
+                              '检测模型列表',
+                              style: TextStyle(fontSize: 13),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
+                    const SizedBox(height: 8),
                     _input(_aiKey, 'API Key（本地服务可留空）', 'sk-...', obscure: true),
                     OutlinedButton(
                       onPressed: () async {
@@ -387,8 +449,8 @@ class _SettingsPageState extends State<SettingsPage> {
             _row(
               icon: null,
               title: '源语言 / 目标语言',
-              sub: '默认 ja → zh-CN',
-              trailing: null,
+              sub: '日语 → ${_translationTargetLabel(app.translationTarget)}',
+              trailing: _translationTargetDropdown(),
             ),
           ]),
           _sec('歌词'),
@@ -575,7 +637,14 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ],
           ]),
-          _sec('网络代理'),
+          if (Platform.isWindows)
+            _switchRow(
+              Icons.minimize_outlined,
+              '关闭窗口后保留托盘',
+              '关闭主窗口时保持在系统托盘运行',
+              app.keepTrayOnClose,
+              app.setKeepTrayOnClose,
+            ),
           _group([
             _switchRow(
               Icons.vpn_key_outlined,
@@ -726,7 +795,7 @@ class _SettingsPageState extends State<SettingsPage> {
               title: '版本',
               sub: null,
               trailing: const Text(
-                'Kikoeta 0.1.0-beta',
+                'Kikoeta 0.1.1-beta',
                 style: TextStyle(fontSize: 12),
               ),
               onTap: _onVersionTap,
@@ -1008,21 +1077,81 @@ class _SettingsPageState extends State<SettingsPage> {
       'deepl': 'DeepL',
       'openai': 'OpenAI 兼容',
     };
-    return _selectPill(
-      labels[app.engine]!,
-      (ctx) => [
-        _menuHead(ctx, '翻译引擎'),
+    return _translationDropdown(
+      label: labels[app.engine]!,
+      icon: Icons.translate_outlined,
+      tooltip: '翻译引擎',
+      items: [
+        _menuHead(context, '翻译引擎'),
         ...labels.entries.map(
           (e) => PopupMenuItem(
             value: e.key,
-            height: 44,
+            height: 42,
             child: MenuItem(label: e.value, selected: app.engine == e.key),
           ),
         ),
       ],
-      (v) {
-        app.setEngine(v);
-      },
+      onSelected: app.setEngine,
+    );
+  }
+
+  Widget _translationTargetDropdown() {
+    const labels = {'zh-CN': '简中', 'zh-TW': '繁中', 'en': '英语'};
+    return _translationDropdown(
+      label: labels[app.translationTarget]!,
+      icon: Icons.language_outlined,
+      tooltip: '翻译目标语言',
+      items: [
+        _menuHead(context, '目标语言'),
+        ...labels.entries.map(
+          (e) => PopupMenuItem(
+            value: e.key,
+            height: 42,
+            child: MenuItem(
+              label: e.value,
+              selected: app.translationTarget == e.key,
+            ),
+          ),
+        ),
+      ],
+      onSelected: app.setTranslationTarget,
+    );
+  }
+
+  Widget _translationDropdown({
+    required String label,
+    required IconData icon,
+    required String tooltip,
+    required List<PopupMenuEntry<String>> items,
+    required ValueChanged<String> onSelected,
+  }) {
+    return PopupMenuButton<String>(
+      tooltip: tooltip,
+      onSelected: onSelected,
+      offset: const Offset(0, 38),
+      constraints: const BoxConstraints(minWidth: 148),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      color: p.surface,
+      itemBuilder: (_) => items,
+      child: Container(
+        height: 34,
+        padding: const EdgeInsets.symmetric(horizontal: 9),
+        decoration: BoxDecoration(
+          color: p.surface2,
+          border: Border.all(color: p.line),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 15, color: p.dim),
+            const SizedBox(width: 6),
+            Text(label, style: TextStyle(fontSize: 12, color: p.muted)),
+            const SizedBox(width: 2),
+            Icon(Icons.keyboard_arrow_down, size: 16, color: p.dim),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1134,6 +1263,98 @@ class _SettingsPageState extends State<SettingsPage> {
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 12,
             vertical: 10,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _aiModelInput() {
+    final hasModels = app.openAiModels.isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: MenuAnchor(
+        controller: _aiModelMenu,
+        style: MenuStyle(
+          backgroundColor: WidgetStatePropertyAll(p.surface),
+          side: WidgetStatePropertyAll(BorderSide(color: p.line)),
+          shape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+          padding: const WidgetStatePropertyAll(
+            EdgeInsets.symmetric(vertical: 4),
+          ),
+        ),
+        menuChildren: hasModels
+            ? app.openAiModels
+                  .map(
+                    (model) => MenuItemButton(
+                      onPressed: () {
+                        _aiModel.text = model;
+                        app.setAiConfig(_aiBase.text, model, _aiKey.text);
+                        _aiModelMenu.close();
+                      },
+                      child: SizedBox(
+                        width: 260,
+                        child: Text(
+                          model,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 13, color: p.text),
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList()
+            : const [],
+        builder: (_, menuController, _) => TextField(
+          controller: _aiModel,
+          style: TextStyle(fontSize: 13, color: p.text),
+          onChanged: (_) {
+            app.setAiConfig(_aiBase.text, _aiModel.text, _aiKey.text);
+          },
+          decoration: InputDecoration(
+            labelText: '模型名称',
+            labelStyle: TextStyle(fontSize: 11.5, color: p.muted),
+            hintText: hasModels ? '输入模型名或从列表选择' : '例如 gpt-4o-mini',
+            hintStyle: TextStyle(fontSize: 12, color: p.dim),
+            helperText: hasModels
+                ? '已检测到 ${app.openAiModels.length} 个模型'
+                : null,
+            helperStyle: TextStyle(fontSize: 10.5, color: p.dim),
+            filled: true,
+            fillColor: p.surface2,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: p.line),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: p.line),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: p.accent),
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 10,
+            ),
+            suffixIcon: IconButton(
+              tooltip: hasModels ? '选择已检测模型' : '请先检测模型列表',
+              onPressed: hasModels
+                  ? () {
+                      if (menuController.isOpen) {
+                        menuController.close();
+                      } else {
+                        menuController.open();
+                      }
+                    }
+                  : null,
+              icon: Icon(
+                Icons.keyboard_arrow_down,
+                color: hasModels ? p.dim : p.track,
+              ),
+            ),
           ),
         ),
       ),

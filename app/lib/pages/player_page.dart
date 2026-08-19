@@ -42,7 +42,7 @@ class _PlayerPageState extends State<PlayerPage> {
   bool _lyricProgrammatic = false;
   int _lyricScrollToken = 0;
   int _lastAutoIdx = -1;
-  int _lrcOffset = 0; // 字幕偏移（秒，正数表示歌词提前显示）
+  int _lrcOffsetMs = 0; // 字幕偏移（毫秒，正数表示歌词提前显示）
   String? _lyricSourceName; // 当前歌词来源（在线文件名 / 本地文件名）
   double _lyricPanelWidth = 320;
   bool _switching = false; // 切歌防抖：避免 completed 与手动点击重复触发
@@ -67,6 +67,7 @@ class _PlayerPageState extends State<PlayerPage> {
   void initState() {
     super.initState();
     _lastConv = app.conv;
+    _syncPlayerSnapshot();
     app.addListener(_onAppStateChanged);
     _subs.add(
       AppPlayer.instance.position.listen((d) {
@@ -194,6 +195,21 @@ class _PlayerPageState extends State<PlayerPage> {
     }
   }
 
+  void _syncPlayerSnapshot({bool rebuild = false}) {
+    final position = AppPlayer.instance.currentPosition;
+    final duration = AppPlayer.instance.currentDuration;
+    if (_pos == position && _dur == duration) return;
+    if (rebuild && mounted) {
+      setState(() {
+        _pos = position;
+        _dur = duration;
+      });
+      return;
+    }
+    _pos = position;
+    _dur = duration;
+  }
+
   Future<void> _openCurrent({bool autoplay = true}) async {
     final url = track.url;
     if (url == null) {
@@ -218,6 +234,7 @@ class _PlayerPageState extends State<PlayerPage> {
   }) async {
     try {
       await AppPlayer.instance.openMediaUrl(url, autoplay: autoplay);
+      _syncPlayerSnapshot(rebuild: true);
       _applyVolume();
       AppPlayer.instance.applyEqualizer(enabled: app.eqOn, gains: app.eqGains);
     } on TimeoutException {
@@ -389,12 +406,12 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   void _applyVolume() {
-    _setVolumeMax(app.volumeBoost ? 120 : 100);
+    _setVolumeMax(app.volumeMax);
     unawaited(_player.setVolume(app.volume));
   }
 
   void _toggleBoost() {
-    app.setVolumeBoost(!app.volumeBoost);
+    app.cycleVolumeBoost();
     _applyVolume();
     setState(() {});
   }
@@ -858,7 +875,7 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   Widget _volumeControl() {
-    final max = app.volumeBoost ? 120.0 : 100.0;
+    final max = app.volumeMax.toDouble();
     final v = app.volume.clamp(0, max).toDouble();
     return Row(
       children: [
@@ -904,12 +921,20 @@ class _PlayerPageState extends State<PlayerPage> {
         ),
         IconButton(
           onPressed: _toggleBoost,
-          tooltip: '响度提升（解锁至 120）',
+          tooltip: app.volumeBoostLevel == 2
+              ? '响度提升 Plus（上限 200）'
+              : app.volumeBoostLevel == 1
+              ? '响度提升（上限 120）'
+              : '启用响度提升（上限 120）',
           visualDensity: VisualDensity.compact,
           icon: Icon(
-            Icons.bolt,
+            app.volumeBoostLevel == 2 ? Icons.bolt : Icons.bolt_outlined,
             size: 20,
-            color: app.volumeBoost ? p.accent : p.dim,
+            color: app.volumeBoostLevel == 2
+                ? Colors.orange
+                : app.volumeBoost
+                ? p.accent
+                : p.dim,
           ),
         ),
       ],
@@ -1115,13 +1140,13 @@ class _PlayerPageState extends State<PlayerPage> {
                     ),
                     const Spacer(),
                     Text(
-                      '${_lrcOffset > 0 ? '+' : ''}$_lrcOffset s',
+                      '${_lrcOffsetMs > 0 ? '+' : ''}${(_lrcOffsetMs / 1000).toStringAsFixed(1)} s',
                       style: TextStyle(fontSize: 13, color: p.text),
                     ),
                     const SizedBox(width: 6),
-                    if (_lrcOffset != 0)
+                    if (_lrcOffsetMs != 0)
                       GestureDetector(
-                        onTap: () => setDlg(() => _lrcOffset = 0),
+                        onTap: () => setDlg(() => _lrcOffsetMs = 0),
                         child: Text(
                           '归零',
                           style: TextStyle(fontSize: 12, color: p.accent),
@@ -1132,20 +1157,21 @@ class _PlayerPageState extends State<PlayerPage> {
                 const SizedBox(height: 4),
                 Row(
                   children: [
-                    _offsetBtn(ctx, setDlg, Icons.remove, -1),
+                    _offsetBtn(ctx, setDlg, Icons.remove, -100),
                     Expanded(
                       child: Slider(
-                        value: _lrcOffset.toDouble().clamp(-10, 10),
-                        min: -10,
-                        max: 10,
-                        divisions: 40,
+                        value: _lrcOffsetMs.toDouble().clamp(-10000, 10000),
+                        min: -10000,
+                        max: 10000,
+                        divisions: 200,
                         activeColor: p.accent,
                         inactiveColor: p.track,
-                        onChanged: (v) =>
-                            setDlg(() => _lrcOffset = (v * 2).round() ~/ 2),
+                        onChanged: (v) => setDlg(
+                          () => _lrcOffsetMs = (v / 100).round() * 100,
+                        ),
                       ),
                     ),
-                    _offsetBtn(ctx, setDlg, Icons.add, 1),
+                    _offsetBtn(ctx, setDlg, Icons.add, 100),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -1213,7 +1239,7 @@ class _PlayerPageState extends State<PlayerPage> {
   ) {
     return GestureDetector(
       onTap: () => setDlg(() {
-        _lrcOffset = (_lrcOffset + delta).clamp(-10, 10);
+        _lrcOffsetMs = (_lrcOffsetMs + delta).clamp(-10000, 10000);
       }),
       child: Container(
         width: 34,
@@ -1461,10 +1487,13 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   int _currentLyricIdx() {
+    final positionMs = _pos * 1000;
     for (var i = 0; i < _lyrics.length; i++) {
-      final t = _lyrics[i].t + _lrcOffset;
-      if (_pos >= t &&
-          (i == _lyrics.length - 1 || _pos < _lyrics[i + 1].t + _lrcOffset)) {
+      final t = _lyrics[i].t * 1000 + _lrcOffsetMs;
+      final next = i == _lyrics.length - 1
+          ? null
+          : _lyrics[i + 1].t * 1000 + _lrcOffsetMs;
+      if (positionMs >= t && (next == null || positionMs < next)) {
         return i;
       }
     }
