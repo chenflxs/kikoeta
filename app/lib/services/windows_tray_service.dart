@@ -66,7 +66,7 @@ class WindowsTrayService with TrayListener, WindowListener {
     if (_app.keepTrayOnClose) {
       await windowManager.hide();
     } else {
-      _exit();
+      unawaited(_exit());
     }
   }
 
@@ -90,7 +90,7 @@ class WindowsTrayService with TrayListener, WindowListener {
       case 'toggle-playback':
         unawaited(_togglePlayback());
       case 'exit':
-        _exit();
+        unawaited(_exit());
     }
   }
 
@@ -120,12 +120,13 @@ class WindowsTrayService with TrayListener, WindowListener {
     await AppPlayer.instance.player.play();
   }
 
-  void _exit() {
+  Future<void> _exit() async {
     if (_exiting) return;
     _exiting = true;
-    // destroy() 直接销毁原生窗口，不会再次触发 onWindowClose；托盘插件会在
-    // WM_DESTROY 时自动移除图标。不要在菜单回调中串行等待多个平台调用，
-    // 否则可见窗口会在退出前短暂无响应。
-    unawaited(windowManager.destroy());
+    // Windows 上 destroy() 只投递退出消息，窗口不会经过正常 WM_CLOSE /
+    // WM_DESTROY 流程。先解除拦截，再关闭窗口，才能让 runner 与托盘插件
+    // 一起正常清理并结束进程。
+    await windowManager.setPreventClose(false);
+    await windowManager.close();
   }
 }
