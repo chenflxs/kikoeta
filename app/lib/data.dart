@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 
@@ -123,6 +124,7 @@ class AppState extends ChangeNotifier {
   String sort = 'collect'; // 默认按收录时间
   bool orderAsc = false;
   int? randomSeed;
+  String recommenderUuid = '';
   int serverEpoch = 0;
   int loginEpoch = 0;
   int? ageFilter; // null / 0(全年龄) / 1(R15) / 2(R18)
@@ -150,6 +152,7 @@ class AppState extends ChangeNotifier {
   final Set<int> favIds = {}; // 服务器收藏的作品 API id
   int favVersion = 0; // 收藏变更版本（供收藏页刷新）
   int favoritesEntryVersion = 0; // 进入收藏页版本（每次切入时刷新）
+  int homeRefreshVersion = 0; // 再次点击首页时刷新首页数据
   final List<String> history = [];
   final Map<String, List<PlaylistEntry>> playlists = {};
   final List<Map<String, dynamic>> playHistory = []; // {rj,title,circle,at}
@@ -287,8 +290,10 @@ class AppState extends ChangeNotifier {
       remoteWorks.where((w) => favoriteRjs.contains(w.rj)).toList();
 
   void selectTab(int value) {
+    final reselected = tab == value;
     tab = value;
     if (value == 1) favoritesEntryVersion++;
+    if (reselected && value == 0) homeRefreshVersion++;
     notifyListeners();
   }
 
@@ -588,6 +593,13 @@ class AppState extends ChangeNotifier {
     if (customServer && customServerIdx >= customSites.length) {
       customServer = false;
       customServerIdx = 0;
+    }
+    final recommenderUuid = SettingsStore.get('recommender_uuid');
+    if (recommenderUuid != null && recommenderUuid.isNotEmpty) {
+      this.recommenderUuid = recommenderUuid;
+    } else {
+      this.recommenderUuid = _newRecommenderUuid();
+      SettingsStore.set('recommender_uuid', this.recommenderUuid);
     }
     final volume = SettingsStore.get('volume');
     if (volume != null) {
@@ -1138,6 +1150,20 @@ class AppState extends ChangeNotifier {
   void _persistServer() {
     SettingsStore.set('server_custom', customServer ? '1' : '0');
     SettingsStore.set('server_idx', '$customServerIdx');
+  }
+
+  static String _newRecommenderUuid() {
+    final random = Random.secure();
+    String group(int length) {
+      const hex = '0123456789abcdef';
+      return List.generate(
+        length,
+        (_) => hex[random.nextInt(hex.length)],
+      ).join();
+    }
+
+    return '${group(8)}-${group(4)}-4${group(3)}-'
+        '${const ['8', '9', 'a', 'b'][random.nextInt(4)]}${group(3)}-${group(12)}';
   }
 
   void setEngine(String e) {

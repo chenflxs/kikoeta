@@ -30,7 +30,8 @@ class LyricsHub {
     _conv = conv;
     _convCache.clear();
     _lastSent = '';
-    _tick();
+    // 新曲目没有歌词时也必须发送空文本，桌面悬浮窗才能从上一句刷新为“暂无歌词”。
+    _tick(force: true);
   }
 
   void setConv(String conv) {
@@ -55,10 +56,9 @@ class LyricsHub {
     return _display(_lyrics[idx]);
   }
 
-  void _tick() {
+  void _tick({bool force = false}) {
     final line = currentLine;
-    if (line.isEmpty) return;
-    if (line == _lastSent) return;
+    if (!force && line == _lastSent) return;
     _lastSent = line;
     if (Platform.isWindows && DesktopLyricsOverlay.instance.isVisible) {
       DesktopLyricsOverlay.instance.update(line);

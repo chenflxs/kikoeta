@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import '../data.dart';
 import '../src/rust/api/kikoeru_api.dart';
@@ -49,15 +50,9 @@ class ApiService {
       );
       return parseWorks(json, base: base, perPage: perPage);
     }
-    final category = switch (app.category) {
-      'hot' => 'popular',
-      'rec' => 'recommend',
-      _ => null,
-    };
-    if (category != null) {
+    if (app.category == 'hot' || app.category == 'rec') {
       final json = await _fetchOneCategoryWorks(
         app,
-        category: category,
         page: page,
         perPage: perPage,
       );
@@ -90,27 +85,76 @@ class ApiService {
     return parseWorks(json, base: base, perPage: perPage);
   }
 
-  /// asmr.one 的热门和推荐页分别对应 /popular、/recommend，不能用通用
-  /// 作品流加随机 seed 代替。
+  /// asmr.one 热门/推荐页面实际使用 recommender POST 接口，而不是
+  /// GET /api/works/{popular,recommend}。后者不存在，会导致页面显示无网络连接。
   static Future<String> _fetchOneCategoryWorks(
     AppState app, {
-    required String category,
     required int page,
     required int perPage,
   }) async {
-    final base = resolveBase(app).replaceFirst(RegExp(r'/+$'), '');
-    final query = <String, String>{
-      'page': '$page',
-      'per_page': '$perPage',
-      'order': orderParam(app),
-      'sort': app.orderAsc ? 'asc' : 'desc',
+    final base = resolveBase(app);
+    final keyword = oneAgeTag(app.ageFilter) ?? '';
+    if (app.category == 'hot') {
+      return _postOneRecommender(
+        base: base,
+        path: 'popular',
+        keyword: keyword,
+        page: page,
+        pageSize: perPage,
+        subtitle: app.subOnly,
+      );
+    }
+    return _postOneRecommender(
+      base: base,
+      path: 'recommend-for-user',
+      recommenderUuid: app.recommenderUuid,
+      keyword: keyword,
+      page: page,
+      pageSize: perPage,
+      subtitle: app.subOnly,
+    );
+  }
+
+  static Future<String> _postOneRecommender({
+    required String base,
+    required String path,
+    required String keyword,
+    required int page,
+    required int pageSize,
+    required bool subtitle,
+    String? recommenderUuid,
+  }) async {
+    final endpoint = Uri.parse(
+      '${base.replaceFirst(RegExp(r'/+$'), '')}/api/recommender/$path',
+    );
+    final body = <String, dynamic>{
+      'keyword': keyword,
+      'page': page,
+      'pageSize': pageSize,
+      'subtitle': subtitle ? 1 : 0,
+      'localSubtitledWorks': const [],
+      'withPlaylistStatus': const [],
+      if (recommenderUuid != null && recommenderUuid.isNotEmpty)
+        'recommenderUuid': recommenderUuid,
     };
-    if (app.subOnly) query['subtitle'] = '1';
-    final uri = Uri.parse(
-      '$base/api/works/$category',
-    ).replace(queryParameters: query);
-    final bytes = await apiGetBytes(url: uri.toString());
-    return utf8.decode(bytes);
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 20);
+    try {
+      final request = await client.postUrl(endpoint);
+      request.headers.contentType = ContentType.json;
+      request.write(jsonEncode(body));
+      final response = await request.close();
+      final text = await utf8.decodeStream(response);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw HttpException(
+          'HTTP ${response.statusCode}: ${text.substring(0, text.length.clamp(0, 200))}',
+          uri: endpoint,
+        );
+      }
+      return text;
+    } finally {
+      client.close(force: true);
+    }
   }
 
   static Future<WorksPage> searchWorks(
@@ -602,7 +646,7 @@ class ApiService {
     final cached = _tracksCache[key];
     if (cached != null) return cached;
     final json = await apiGetTracks(base: resolveBase(app), rj: '$workApiId');
-    final nodes = _parseNodes(jsonDecode(json), '', resolveBase(app));
+    final nodes = parseMediaNodes(jsonDecode(json), base: resolveBase(app));
     if (_tracksCache.length >= 10) _tracksCache.remove(_tracksCache.keys.first);
     _tracksCache[key] = nodes;
     return nodes;
@@ -610,6 +654,14 @@ class ApiService {
 
   static final Map<String, List<MediaNode>> _tracksCache = {};
   static String _tracksKey(AppState app, int id) => '${resolveBase(app)}|$id';
+
+  /// 将 asmr.one 与 kikoeru-express 的曲目树统一为客户端模型。
+  /// 自建站返回的 mediaStreamUrl 通常是相对地址，必须按该站点的 base
+  /// 解析；否则播放器会把它当成本地路径，无法打开媒体或歌词文件。
+  static List<MediaNode> parseMediaNodes(
+    dynamic list, {
+    required String base,
+  }) => _parseNodes(list, '', base);
 
   static List<MediaNode> _parseNodes(
     dynamic list,
@@ -623,12 +675,14 @@ class ApiService {
       final type = m['type'] as String? ?? 'folder';
       final path = parentPath.isEmpty ? title : '$parentPath/$title';
       final raw = m['children'];
-      final hash = m['hash'] as String?;
-      final url =
+      final hash = m['hash']?.toString();
+      final rawUrl =
           m['mediaUrl'] as String? ??
+          m['mediaStreamUrl'] as String? ??
           m['streamUrl'] as String? ??
           m['url'] as String? ??
-          (hash != null ? '$base/api/media/stream/$hash' : null);
+          (hash != null ? '/api/media/stream/$hash' : null);
+      final url = rawUrl == null ? null : _resolveMediaUrl(base, rawUrl);
       return MediaNode(
         title: title,
         type: type,
@@ -644,6 +698,14 @@ class ApiService {
       return _naturalCompare(a.title, b.title);
     });
     return nodes;
+  }
+
+  static String _resolveMediaUrl(String base, String value) {
+    final parsed = Uri.tryParse(value);
+    if (parsed != null && parsed.hasScheme) return parsed.toString();
+    return Uri.parse(
+      '${base.replaceFirst(RegExp(r'/+$'), '')}/',
+    ).resolve(value).toString();
   }
 
   static int _naturalCompare(String a, String b) {

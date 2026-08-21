@@ -220,7 +220,7 @@ class _WorkPageState extends State<WorkPage> {
   bool _isAudio(MediaNode n) =>
       !n.isDir &&
       n.title.toLowerCase().contains(
-        RegExp(r'\.(mp3|wav|flac|m4a|aac|ogg|opus|wma|ape)$'),
+        RegExp(r'\.(mp3|ogg|opus|wav|aac|flac|webm|mp4|m4a|mka|aiff|wma|ape)$'),
       );
 
   List<MediaNode> _collectAudio(Iterable<MediaNode> nodes) {

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:media_kit/media_kit.dart' hide Track;
 
 import '../src/rust/api/proxy.dart';
+import '../src/rust/api/simple.dart';
 
 const _eqHz = ['31', '62', '125', '250', '500', '1k', '2k', '4k', '8k', '16k'];
 
@@ -99,12 +100,24 @@ class AppPlayer {
     opened = true;
   }
 
-  /// 打开网络音频：Android 直连（mpv 自带 TLS），其余平台走本地 Rust 代理
+  /// 打开网络音频：桌面经本地代理转发；Android 直连时附带该媒体域的
+  /// Bearer token，以兼容要求鉴权的 kikoeru-express 媒体端点。
   Future<void> openMediaUrl(String url, {bool autoplay = true}) async {
     await stop();
-    final mediaUrl = Platform.isAndroid ? url : apiStreamProxyUrl(url: url);
+    final direct = Platform.isAndroid;
+    final mediaUrl = direct ? url : apiStreamProxyUrl(url: url);
+    final uri = Uri.tryParse(url);
+    final base = uri == null || !uri.hasScheme
+        ? ''
+        : '${uri.scheme}://${uri.authority}';
+    final token = base.isEmpty ? null : getToken(base: base);
     await open(
-      Media(mediaUrl),
+      Media(
+        mediaUrl,
+        httpHeaders: direct && token != null && token.isNotEmpty
+            ? {'Authorization': 'Bearer $token'}
+            : null,
+      ),
       autoplay: autoplay,
     ).timeout(const Duration(seconds: 20));
   }

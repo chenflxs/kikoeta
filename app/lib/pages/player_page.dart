@@ -146,6 +146,11 @@ class _PlayerPageState extends State<PlayerPage> {
 
   Future<void> _loadLyrics() async {
     final seq = ++_lyricSeq;
+    // 切歌后先清掉上一首的歌词；请求失败或新曲目无歌词时也不能保留旧内容。
+    if (_lyrics.isNotEmpty) {
+      setState(_lyrics.clear);
+    }
+    LyricsHub.instance.setLyrics(const [], app.conv);
     final title = app.queue.isEmpty ? null : track.title;
     try {
       final l = await ApiService.fetchLrc(app, work, trackTitle: title);

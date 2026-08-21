@@ -31,6 +31,7 @@ class _HomePageState extends State<HomePage> {
   int _searchSeq = 0;
   int _worksGen = 0; // 作品列表代次：切换服务器/筛选后使在途补页失效
   late int _seenEpoch;
+  late int _seenHomeRefreshVersion;
 
   AppState get app => widget.app;
   Palette get p => Theme.of(context).brightness == Brightness.dark
@@ -41,6 +42,7 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _seenEpoch = app.serverEpoch;
+    _seenHomeRefreshVersion = app.homeRefreshVersion;
     _loadedSig = _filterSig;
     _loadedDataSig = _dataSig;
     app.addListener(_onAppChanged);
@@ -54,6 +56,11 @@ class _HomePageState extends State<HomePage> {
       '${app.remoteError}|${app.worksHasMore}';
 
   void _onAppChanged() {
+    if (app.homeRefreshVersion != _seenHomeRefreshVersion) {
+      _seenHomeRefreshVersion = app.homeRefreshVersion;
+      _loadRemote();
+      return;
+    }
     if (app.takePendingClear()) {
       _clearSearchState();
       if (mounted) setState(() {});

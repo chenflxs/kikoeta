@@ -2,6 +2,58 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kikoeta_app/services/api_service.dart';
 
 void main() {
+  group('ApiService.parseMediaNodes', () {
+    test(
+      'resolves kikoeru-express mediaStreamUrl against the selected site',
+      () {
+        final nodes = ApiService.parseMediaNodes([
+          {
+            'type': 'folder',
+            'title': 'Main',
+            'children': [
+              {
+                'type': 'audio',
+                'title': '01.ogg',
+                'hash': '42/0',
+                'mediaStreamUrl': '/api/media/stream/42/0',
+                'duration': 65.8,
+              },
+              {
+                'type': 'text',
+                'title': '01.lrc',
+                'hash': '42/1',
+                'mediaStreamUrl': '/api/media/stream/42/1',
+              },
+            ],
+          },
+        ], base: 'https://listen.example.test/');
+
+        expect(nodes.single.isDir, isTrue);
+        final audio = nodes.single.children.singleWhere(
+          (n) => n.type == 'audio',
+        );
+        final lyric = nodes.single.children.singleWhere(
+          (n) => n.type == 'text',
+        );
+        expect(audio.url, 'https://listen.example.test/api/media/stream/42/0');
+        expect(audio.duration, 65);
+        expect(lyric.url, 'https://listen.example.test/api/media/stream/42/1');
+      },
+    );
+
+    test('keeps absolute asmr.one URLs unchanged', () {
+      final nodes = ApiService.parseMediaNodes([
+        {
+          'type': 'audio',
+          'title': 'track.mp3',
+          'mediaUrl': 'https://cdn.asmr.one/media/track.mp3',
+        },
+      ], base: 'https://api.asmr.one');
+
+      expect(nodes.single.url, 'https://cdn.asmr.one/media/track.mp3');
+    });
+  });
+
   group('ApiService.parseLyrics', () {
     test('keeps LRC parsing compatible and sorts timestamps', () {
       final lyrics = ApiService.parseLyrics('''
