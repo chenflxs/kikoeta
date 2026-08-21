@@ -795,7 +795,7 @@ class _SettingsPageState extends State<SettingsPage> {
               title: '版本',
               sub: null,
               trailing: const Text(
-                'Kikoeta 0.1.3',
+                'Kikoeta 0.1.4',
                 style: TextStyle(fontSize: 12),
               ),
               onTap: _onVersionTap,

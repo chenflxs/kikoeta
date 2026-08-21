@@ -151,9 +151,15 @@ class _PlayerPageState extends State<PlayerPage> {
       setState(_lyrics.clear);
     }
     LyricsHub.instance.setLyrics(const [], app.conv);
-    final title = app.queue.isEmpty ? null : track.title;
+    final currentTrack = app.queue.isEmpty ? null : track;
     try {
-      final l = await ApiService.fetchLrc(app, work, trackTitle: title);
+      final l = await ApiService.fetchLrc(
+        app,
+        work,
+        trackTitle: currentTrack?.title,
+        trackPath: currentTrack?.path,
+        trackUrl: currentTrack?.url,
+      );
       if (mounted && seq == _lyricSeq && !_sameLyrics(l, _lyrics)) {
         setState(
           () => _lyrics
@@ -1309,6 +1315,7 @@ class _PlayerPageState extends State<PlayerPage> {
         app,
         work,
         trackTitle: app.queue.isEmpty ? null : track.title,
+        trackPath: app.queue.isEmpty ? null : track.path,
       );
     } catch (_) {
       cands = const [];
@@ -1438,18 +1445,22 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   Future<void> _loadOnlineLyric(BuildContext ctx, LyricCandidate? pick) async {
+    // 覆盖正在进行的自动匹配，避免它稍后把手动选择的歌词替换回来。
+    final seq = ++_lyricSeq;
     List<LyricLine> l;
     try {
       l = await ApiService.fetchLrc(
         app,
         work,
         trackTitle: app.queue.isEmpty ? null : track.title,
+        trackPath: app.queue.isEmpty ? null : track.path,
+        trackUrl: app.queue.isEmpty ? null : track.url,
         pick: pick,
       );
     } catch (_) {
       l = const [];
     }
-    if (!mounted) return;
+    if (!mounted || seq != _lyricSeq) return;
     if (l.isEmpty) {
       _toast('该歌词无法解析');
       return;
@@ -1461,6 +1472,7 @@ class _PlayerPageState extends State<PlayerPage> {
       _lyricSourceName = pick?.title;
       _lastAutoIdx = -1;
     });
+    LyricsHub.instance.setLyrics(_lyrics, app.conv);
     if (ctx.mounted) Navigator.pop(ctx);
     _maybeAutoScrollLyric();
   }
@@ -1475,11 +1487,13 @@ class _PlayerPageState extends State<PlayerPage> {
     final f = res.files.single;
     final path = f.path;
     if (path == null) return;
+    // 覆盖正在进行的自动匹配，避免它稍后把手动选择的歌词替换回来。
+    final seq = ++_lyricSeq;
     try {
       final bytes = await File(path).readAsBytes();
       final decoded = apiDecodeText(bytes: bytes, encoding: '');
       final l = ApiService.parseLyrics(decoded.text);
-      if (!mounted) return;
+      if (!mounted || seq != _lyricSeq) return;
       if (l.isEmpty) {
         _toast('文件中没有带时间轴的歌词');
         return;
@@ -1491,6 +1505,7 @@ class _PlayerPageState extends State<PlayerPage> {
         _lyricSourceName = f.name;
         _lastAutoIdx = -1;
       });
+      LyricsHub.instance.setLyrics(_lyrics, app.conv);
       _maybeAutoScrollLyric();
     } catch (e) {
       _toast('读取歌词失败：$e');

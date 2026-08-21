@@ -515,7 +515,6 @@ class DesktopLyricsOverlay {
     }
 
     final lf = calloc<LOGFONT>();
-    final textPtr = (_text.isEmpty ? '暂无歌词' : _text).toNativeUtf16();
     try {
       final dpi = GetDeviceCaps(_textMemDc, LOGPIXELSY);
       lf.ref.lfHeight = -((_fontSize * _textScale * dpi / 72).round());
@@ -529,47 +528,74 @@ class DesktopLyricsOverlay {
         SetTextColor(_textMemDc, 0x00FFFFFF);
         final rect = calloc<RECT>();
         try {
-          rect.ref.left = 8 * _textScale;
-          rect.ref.top = 4 * _textScale;
-          rect.ref.right = (w - 8) * _textScale;
-          rect.ref.bottom = (h - 4) * _textScale;
-          final ow = (_outlineWidth * _textScale).round();
-          if (ow > 0) {
-            for (var dy = -ow; dy <= ow; dy++) {
-              for (var dx = -ow; dx <= ow; dx++) {
-                if (dx == 0 && dy == 0) continue;
-                final shifted = calloc<RECT>();
-                try {
-                  shifted.ref.left = rect.ref.left + dx;
-                  shifted.ref.top = rect.ref.top + dy;
-                  shifted.ref.right = rect.ref.right + dx;
-                  shifted.ref.bottom = rect.ref.bottom + dy;
-                  DrawText(
-                    _textMemDc,
-                    textPtr,
-                    -1,
-                    shifted,
-                    DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
-                  );
-                } finally {
-                  calloc.free(shifted);
+          final horizontalPadding = 8 * _textScale;
+          final verticalPadding = 4 * _textScale;
+          final contentWidth = w * _textScale - horizontalPadding * 2;
+          final contentHeight = h * _textScale - verticalPadding * 2;
+          final twoLineHeight = (_fontSize * _textScale * dpi / 72 * 2.4)
+              .ceil();
+          final multiline = contentHeight >= twoLineHeight;
+          final sourceText = _text.isEmpty ? '暂无歌词' : _text;
+          final multilineOverflow =
+              multiline &&
+              _measureMultilineText(sourceText, contentWidth) > twoLineHeight;
+          final displayText = multilineOverflow
+              ? _ellipsizeMultilineText(sourceText, contentWidth, twoLineHeight)
+              : sourceText;
+          final displayTextPtr = displayText.toNativeUtf16();
+          try {
+            final flags = multiline
+                ? (multilineOverflow ? DT_LEFT : DT_CENTER) |
+                      DT_WORDBREAK |
+                      DT_NOPREFIX
+                : DT_LEFT |
+                      DT_VCENTER |
+                      DT_SINGLELINE |
+                      DT_END_ELLIPSIS |
+                      DT_NOPREFIX;
+
+            rect.ref.left = horizontalPadding;
+            rect.ref.right = rect.ref.left + contentWidth;
+            if (multiline) {
+              final textHeight = _measureMultilineText(
+                displayText,
+                contentWidth,
+              );
+              rect.ref.top =
+                  verticalPadding + ((contentHeight - textHeight) / 2).round();
+              rect.ref.bottom = rect.ref.top + twoLineHeight;
+            } else {
+              rect.ref.top = verticalPadding;
+              rect.ref.bottom = verticalPadding + contentHeight;
+            }
+            final ow = (_outlineWidth * _textScale).round();
+            if (ow > 0) {
+              for (var dy = -ow; dy <= ow; dy++) {
+                for (var dx = -ow; dx <= ow; dx++) {
+                  if (dx == 0 && dy == 0) continue;
+                  final shifted = calloc<RECT>();
+                  try {
+                    shifted.ref.left = rect.ref.left + dx;
+                    shifted.ref.top = rect.ref.top + dy;
+                    shifted.ref.right = rect.ref.right + dx;
+                    shifted.ref.bottom = rect.ref.bottom + dy;
+                    DrawText(_textMemDc, displayTextPtr, -1, shifted, flags);
+                  } finally {
+                    calloc.free(shifted);
+                  }
                 }
               }
+              _blendTextMask(w, h, _outlineColor);
             }
-            _blendTextMask(w, h, _outlineColor);
-          }
 
-          for (var i = 0; i < n * 4; i++) {
-            mask[i] = 0;
+            for (var i = 0; i < n * 4; i++) {
+              mask[i] = 0;
+            }
+            DrawText(_textMemDc, displayTextPtr, -1, rect, flags);
+            _blendTextMask(w, h, _textColor);
+          } finally {
+            calloc.free(displayTextPtr);
           }
-          DrawText(
-            _textMemDc,
-            textPtr,
-            -1,
-            rect,
-            DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
-          );
-          _blendTextMask(w, h, _textColor);
         } finally {
           calloc.free(rect);
         }
@@ -579,8 +605,43 @@ class DesktopLyricsOverlay {
       }
     } finally {
       calloc.free(lf);
-      calloc.free(textPtr);
     }
+  }
+
+  int _measureMultilineText(String text, int width) {
+    final textPtr = text.toNativeUtf16();
+    final rect = calloc<RECT>();
+    try {
+      rect.ref.right = width;
+      return DrawText(
+        _textMemDc,
+        textPtr,
+        -1,
+        rect,
+        DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX,
+      );
+    } finally {
+      calloc.free(textPtr);
+      calloc.free(rect);
+    }
+  }
+
+  String _ellipsizeMultilineText(String text, int width, int maxHeight) {
+    if (_measureMultilineText(text, width) <= maxHeight) return text;
+
+    final codePoints = text.runes.toList();
+    var low = 0;
+    var high = codePoints.length;
+    while (low < high) {
+      final mid = (low + high + 1) ~/ 2;
+      final candidate = '${String.fromCharCodes(codePoints.take(mid))}...';
+      if (_measureMultilineText(candidate, width) <= maxHeight) {
+        low = mid;
+      } else {
+        high = mid - 1;
+      }
+    }
+    return '${String.fromCharCodes(codePoints.take(low))}...';
   }
 
   void _blendTextMask(int w, int h, int color) {

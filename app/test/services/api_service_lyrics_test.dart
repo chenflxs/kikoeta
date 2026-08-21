@@ -108,4 +108,22 @@ Dialogue: 0,0:01:02.00,0:01:03.00,Default,,0,0,0,,Again
       expect(lyrics.last.jp, 'Again');
     });
   });
+
+  group('ApiService.lyricMatchKey', () {
+    test(
+      'matches common Chinese subtitle language suffixes to the track name',
+      () {
+        expect(ApiService.lyricMatchKey('Track 01.mp3'), 'track 01');
+        expect(ApiService.lyricMatchKey('Track 01.zh.srt'), 'track 01');
+        expect(ApiService.lyricMatchKey('Track 01-zh.srt'), 'track 01');
+        expect(ApiService.lyricMatchKey('Track 01_zh-CN.vtt'), 'track 01');
+        expect(ApiService.lyricMatchKey('Track 01.简中.ass'), 'track 01');
+      },
+    );
+
+    test('keeps ordinary words in a filename unchanged', () {
+      expect(ApiService.lyricMatchKey('Chinese Track.mp3'), 'chinese track');
+      expect(ApiService.lyricMatchKey('special-en.lrc'), 'special-en');
+    });
+  });
 }

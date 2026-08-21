@@ -96,31 +96,31 @@ class ApiService {
     final keyword = oneAgeTag(app.ageFilter) ?? '';
     if (app.category == 'hot') {
       return _postOneRecommender(
+        app: app,
         base: base,
         path: 'popular',
         keyword: keyword,
         page: page,
-        pageSize: perPage,
         subtitle: app.subOnly,
       );
     }
     return _postOneRecommender(
+      app: app,
       base: base,
       path: 'recommend-for-user',
       recommenderUuid: app.recommenderUuid,
       keyword: keyword,
       page: page,
-      pageSize: perPage,
       subtitle: app.subOnly,
     );
   }
 
   static Future<String> _postOneRecommender({
+    required AppState app,
     required String base,
     required String path,
     required String keyword,
     required int page,
-    required int pageSize,
     required bool subtitle,
     String? recommenderUuid,
   }) async {
@@ -130,10 +130,8 @@ class ApiService {
     final body = <String, dynamic>{
       'keyword': keyword,
       'page': page,
-      'pageSize': pageSize,
       'subtitle': subtitle ? 1 : 0,
       'localSubtitledWorks': const [],
-      'withPlaylistStatus': const [],
       if (recommenderUuid != null && recommenderUuid.isNotEmpty)
         'recommenderUuid': recommenderUuid,
     };
@@ -142,6 +140,10 @@ class ApiService {
     try {
       final request = await client.postUrl(endpoint);
       request.headers.contentType = ContentType.json;
+      final token = tokenFor(app, base);
+      if (token != null && token.isNotEmpty) {
+        request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+      }
       request.write(jsonEncode(body));
       final response = await request.close();
       final text = await utf8.decodeStream(response);
@@ -339,10 +341,20 @@ class ApiService {
     AppState app,
     Work w, {
     String? trackTitle,
+    String? trackPath,
+    String? trackUrl,
     LyricCandidate? pick,
   }) async {
     final apiId = w.apiId;
     if (apiId == null) return const [];
+    if (app.customServer && pick == null) {
+      final serverLyrics = await _fetchCustomServerLyrics(
+        app,
+        workId: apiId,
+        trackUrl: trackUrl,
+      );
+      if (serverLyrics != null) return serverLyrics;
+    }
     final nodes = await fetchTracks(app, apiId);
     final candidates = _findLyricCandidates(nodes);
     if (candidates.isEmpty) return const [];
@@ -358,16 +370,17 @@ class ApiService {
       if (match != null) return _loadLyricCandidate(match);
       return const [];
     }
-    // 与当前曲目同名的歌词优先（如 Track01.mp3 -> Track01.lrc）
-    final trackBase = _baseName(trackTitle ?? '');
-    if (trackBase.isNotEmpty) {
-      for (final c in candidates) {
-        if (_baseName(c.title) == trackBase) c.score += 80;
-      }
-    }
-    candidates.sort((a, b) => b.score.compareTo(a.score));
+    final matched = _trackMatchedLyrics(
+      candidates,
+      trackTitle: trackTitle,
+      trackPath: trackPath,
+    );
+    // 多个歌词文件时不回退到其它曲目歌词；唯一歌词仍可作为整部作品通用歌词。
+    final selected = matched.isNotEmpty
+        ? matched
+        : (candidates.length == 1 ? candidates : const <_LyricCandidate>[]);
     // 按分数从高到低尝试，直到解析出带时间轴的歌词
-    for (final c in candidates.take(3)) {
+    for (final c in selected.take(3)) {
       final lrc = await _loadLyricCandidate(c);
       if (lrc.isNotEmpty) return lrc;
     }
@@ -379,18 +392,17 @@ class ApiService {
     AppState app,
     Work w, {
     String? trackTitle,
+    String? trackPath,
   }) async {
     final apiId = w.apiId;
     if (apiId == null) return const [];
     final nodes = await fetchTracks(app, apiId);
     final candidates = _findLyricCandidates(nodes);
-    final trackBase = _baseName(trackTitle ?? '');
-    if (trackBase.isNotEmpty) {
-      for (final c in candidates) {
-        if (_baseName(c.title) == trackBase) c.score += 80;
-      }
-    }
-    candidates.sort((a, b) => b.score.compareTo(a.score));
+    _sortLyricCandidates(
+      candidates,
+      trackTitle: trackTitle,
+      trackPath: trackPath,
+    );
     return candidates
         .map(
           (c) => LyricCandidate(
@@ -413,6 +425,48 @@ class ApiService {
     } catch (_) {
       return const [];
     }
+  }
+
+  /// 自建站可根据媒体流索引在服务端完成歌词匹配，能正确处理音频与歌词
+  /// 位于不同目录、或文件名不完全相同的作品。null 表示接口不可用，交由旧规则兜底。
+  static Future<List<LyricLine>?> _fetchCustomServerLyrics(
+    AppState app, {
+    required int workId,
+    required String? trackUrl,
+  }) async {
+    final index = _mediaStreamIndex(trackUrl);
+    if (index == null) return null;
+    try {
+      final base = resolveBase(app).replaceFirst(RegExp(r'/+$'), '');
+      final bytes = await apiGetBytes(
+        url: '$base/api/media/check-lrc/$workId/$index',
+      );
+      final json = jsonDecode(utf8.decode(bytes));
+      if (json is! Map || json['result'] != true) return const [];
+      final rows = json['lrc'];
+      if (rows is! List) return const [];
+      return rows
+          .whereType<Map>()
+          .map((row) {
+            final time = (row['time'] as num?)?.toInt() ?? 0;
+            final text = row['text']?.toString().trim() ?? '';
+            return LyricLine(time ~/ 1000, text, text);
+          })
+          .where((line) => line.jp.isNotEmpty)
+          .toList();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static int? _mediaStreamIndex(String? url) {
+    final uri = url == null ? null : Uri.tryParse(url);
+    final segments = uri?.pathSegments;
+    if (segments == null || segments.length < 2) return null;
+    final mediaSegment = segments.indexOf('media');
+    if (mediaSegment < 0 || mediaSegment + 3 >= segments.length) return null;
+    if (segments[mediaSegment + 1] != 'stream') return null;
+    return int.tryParse(segments.last);
   }
 
   /// 歌词候选：收集歌词/字幕文件并按中文优先打分
@@ -515,9 +569,68 @@ class ApiService {
     return s.contains(hint);
   }
 
-  static String _baseName(String name) {
+  /// 用于音轨和歌词文件名配对的标准化名称。
+  ///
+  /// 只移除末尾的语言标记，避免把 `track.zh.srt`、`track-zh.srt`
+  /// 等中文字幕当成不同曲目，同时不影响文件名中间的普通文字。
+  static String lyricMatchKey(String name) {
     final i = name.lastIndexOf('.');
-    return i > 0 ? name.substring(0, i).toLowerCase() : name.toLowerCase();
+    var stem = (i > 0 ? name.substring(0, i) : name).trim().toLowerCase();
+    stem = stem.replaceFirst(
+      RegExp(
+        r'(?:[.\-_\s]+|[\[\(])(?:zh|zho|chi|chs|cht|sc|tc)'
+        r'(?:[-_](?:cn|tw|hans|hant))?[\]\)]?$',
+      ),
+      '',
+    );
+    stem = stem.replaceFirst(
+      RegExp(r'(?:[.\-_\s]+|[\[\(])(?:简体|繁体|简中|繁中|中文|中字|汉化)[\]\)]?$'),
+      '',
+    );
+    return stem.trim();
+  }
+
+  static List<_LyricCandidate> _trackMatchedLyrics(
+    List<_LyricCandidate> candidates, {
+    required String? trackTitle,
+    required String? trackPath,
+  }) {
+    final trackKey = lyricMatchKey(trackTitle ?? '');
+    if (trackKey.isEmpty) return const [];
+    final trackFolder = _parentPath(trackPath ?? '');
+    final sameName = candidates
+        .where((candidate) => lyricMatchKey(candidate.title) == trackKey)
+        .toList();
+    final sameFolderName = sameName
+        .where((candidate) => _parentPath(candidate.path) == trackFolder)
+        .toList();
+    final matched = sameFolderName.isNotEmpty ? sameFolderName : sameName;
+    matched.sort((a, b) => b.score.compareTo(a.score));
+    return matched;
+  }
+
+  static String _parentPath(String path) {
+    final i = path.lastIndexOf('/');
+    return i < 0 ? '' : path.substring(0, i).toLowerCase();
+  }
+
+  /// 精确匹配当前媒体文件名及目录的歌词必须排在其它候选之前。
+  static void _sortLyricCandidates(
+    List<_LyricCandidate> candidates, {
+    required String? trackTitle,
+    required String? trackPath,
+  }) {
+    final matched = _trackMatchedLyrics(
+      candidates,
+      trackTitle: trackTitle,
+      trackPath: trackPath,
+    ).toSet();
+    candidates.sort((a, b) {
+      final aMatches = matched.contains(a);
+      final bMatches = matched.contains(b);
+      if (aMatches != bMatches) return aMatches ? -1 : 1;
+      return b.score.compareTo(a.score);
+    });
   }
 
   /// Parses LRC and common subtitle formats into timestamped lyric lines.

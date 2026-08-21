@@ -9,6 +9,7 @@ import android.graphics.PixelFormat
 import android.graphics.RectF
 import android.os.Build
 import android.provider.Settings
+import android.text.TextUtils
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -107,6 +108,8 @@ class LyricsOverlay(
         tv.setTextColor(color)
         tv.setShadowLayer(outlineWidth.toFloat(), 0f, 0f, outlineColor)
         tv.gravity = Gravity.CENTER
+        tv.maxLines = 2
+        tv.ellipsize = TextUtils.TruncateAt.END
         // 内边距防止描边（outline）在窗口边缘被裁剪
         tv.setPadding(dp(4), dp(3), dp(4), dp(3))
         root.addView(

@@ -96,12 +96,12 @@ class _CoverArtState extends State<CoverArt> {
             Positioned.fill(
               child: LayoutBuilder(
                 builder: (ctx, c) {
-                  // 按实际显示尺寸（含设备像素比）解码封面，上限 720px：
-                  // 网格小图不再全尺寸解码，显著降低内存占用与栅格上传开销
+                  // 按实际显示尺寸（含设备像素比）解码封面，上限 1440px：
+                  // 高分屏与宽网格卡片保留足够细节，小图仍不解码原图。
                   final cacheWidth =
                       (c.maxWidth * MediaQuery.devicePixelRatioOf(ctx))
                           .round()
-                          .clamp(128, 720);
+                          .clamp(256, 1440);
                   final image = ResizeImage.resizeIfNeeded(
                     cacheWidth,
                     null,
