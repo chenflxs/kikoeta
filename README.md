@@ -121,6 +121,10 @@ flutter build apk --release --split-per-abi \
 - 感谢 [asmr.one](https://asmr.one)：自 2021 年上线以来，始终免费向音声爱好者提供数万部同人音声的在线收听与下载，并持续补充中文字幕、歌词等本地化内容。
 - 感谢 [kikoeru-express](https://github.com/Number178/kikoeru-express) 及其维护者：作为同人音声自托管流媒体服务器，历经多年仍保持活跃更新，为自建站点生态与 Kikoeta 这类第三方客户端提供了稳定可靠的开放后端
 
+## 其他
+
+-该项目处于早期测试阶段，如果你需要更加稳定的跨平台项目，我推荐你使用 [kikoflu](https://github.com/pa-jesusf/KikoFlu)
+
 ## 许可
 
 [MIT](LICENSE) © 2026 chenflxs

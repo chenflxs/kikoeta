@@ -95,13 +95,9 @@ class _CoverArtState extends State<CoverArt> {
           if (work.coverUrl != null)
             Positioned.fill(
               child: LayoutBuilder(
-                builder: (ctx, c) {
-                  // 按实际显示尺寸（含设备像素比）解码封面，上限 1440px：
-                  // 高分屏与宽网格卡片保留足够细节，小图仍不解码原图。
-                  final cacheWidth =
-                      (c.maxWidth * MediaQuery.devicePixelRatioOf(ctx))
-                          .round()
-                          .clamp(256, 1440);
+                builder: (_, _) {
+                  // 卡片封面统一按 1080px 解码，避免小卡片缓存被放大后发糊。
+                  const cacheWidth = 1080;
                   final image = ResizeImage.resizeIfNeeded(
                     cacheWidth,
                     null,
