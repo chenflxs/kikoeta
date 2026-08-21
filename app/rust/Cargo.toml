@@ -16,6 +16,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "time"] }
 tiny_http = "0.12"
 encoding_rs = "0.8"
 chardetng = "0.1"
+zhhz = "0.8.2"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
