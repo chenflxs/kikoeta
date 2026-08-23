@@ -1019,88 +1019,99 @@ class _HomeSearchBarState extends State<HomeSearchBar> {
   }
 
   Widget _filterButton() {
-    final active = app.ageFilter != null || app.subOnly;
-    return PopupMenuButton<int>(
-      tooltip: '筛选',
-      onSelected: (v) {
-        if (v == 10) {
-          app.subOnly = !app.subOnly;
-        } else {
-          // SFW 模式下不允许切到 R15/R18
-          if (app.sfwMode && v != 0) return;
-          app.ageFilter = app.ageFilter == v ? null : v;
-        }
-        app.notify();
-      },
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      color: p.surface,
-      itemBuilder: (ctx) => [
-        _menuHead('年龄分级'),
-        PopupMenuItem(
-          value: 2,
-          height: 44,
-          enabled: !app.sfwMode,
-          child: MenuItem(
-            label: 'R18',
-            selected: app.ageFilter == 2,
-            enabled: !app.sfwMode,
+    return ListenableBuilder(
+      listenable: app,
+      builder: (context, _) {
+        final active = app.ageFilter != null || app.subOnly;
+        return PopupMenuButton<int>(
+          tooltip: '筛选',
+          onSelected: (v) {
+            if (v == 10) {
+              app.subOnly = !app.subOnly;
+            } else {
+              // SFW 模式下不允许切到 R15/R18
+              if (app.sfwMode && v != 0) return;
+              app.ageFilter = app.ageFilter == v ? null : v;
+            }
+            app.notify();
+          },
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
           ),
-        ),
-        PopupMenuItem(
-          value: 1,
-          height: 44,
-          enabled: !app.sfwMode,
-          child: MenuItem(
-            label: 'R15',
-            selected: app.ageFilter == 1,
-            enabled: !app.sfwMode,
-          ),
-        ),
-        PopupMenuItem(
-          value: 0,
-          height: 44,
-          child: MenuItem(label: '全年龄', selected: app.ageFilter == 0),
-        ),
-        const PopupMenuDivider(),
-        PopupMenuItem(
-          value: 10,
-          height: 44,
-          child: MenuItem(label: '仅字幕', selected: app.subOnly, checkbox: true),
-        ),
-      ],
-      child: Container(
-        width: 46,
-        height: 46,
-        decoration: BoxDecoration(
-          color: active ? p.accent.withValues(alpha: .1) : p.surface,
-          border: Border.all(color: active ? p.accent : p.line),
-          borderRadius: BorderRadius.circular(15),
-        ),
-        child: Stack(
-          children: [
-            Center(
-              child: Icon(
-                Icons.filter_alt_outlined,
-                size: 20,
-                color: active ? p.accent : p.muted,
+          color: p.surface,
+          itemBuilder: (ctx) => [
+            _menuHead('年龄分级'),
+            PopupMenuItem(
+              value: 2,
+              height: 44,
+              enabled: !app.sfwMode,
+              child: MenuItem(
+                label: 'R18',
+                selected: app.ageFilter == 2,
+                enabled: !app.sfwMode,
               ),
             ),
-            if (active)
-              Positioned(
-                top: 9,
-                right: 9,
-                child: Container(
-                  width: 7,
-                  height: 7,
-                  decoration: BoxDecoration(
-                    color: p.accent,
-                    shape: BoxShape.circle,
+            PopupMenuItem(
+              value: 1,
+              height: 44,
+              enabled: !app.sfwMode,
+              child: MenuItem(
+                label: 'R15',
+                selected: app.ageFilter == 1,
+                enabled: !app.sfwMode,
+              ),
+            ),
+            PopupMenuItem(
+              value: 0,
+              height: 44,
+              child: MenuItem(label: '全年龄', selected: app.ageFilter == 0),
+            ),
+            const PopupMenuDivider(),
+            PopupMenuItem(
+              value: 10,
+              height: 44,
+              child: MenuItem(
+                label: '仅字幕',
+                selected: app.subOnly,
+                checkbox: true,
+              ),
+            ),
+          ],
+          child: Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: active ? p.accent.withValues(alpha: .1) : p.surface,
+              border: Border.all(color: active ? p.accent : p.line),
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: Stack(
+              children: [
+                Center(
+                  child: Icon(
+                    Icons.filter_alt_outlined,
+                    size: 20,
+                    color: active ? p.accent : p.muted,
                   ),
                 ),
-              ),
-          ],
-        ),
-      ),
+                if (active)
+                  Positioned(
+                    top: 9,
+                    right: 9,
+                    child: Container(
+                      width: 7,
+                      height: 7,
+                      decoration: BoxDecoration(
+                        color: p.accent,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
