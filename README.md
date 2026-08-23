@@ -69,7 +69,6 @@ kikoeta/
 │   ├── rust_builder/        kikoeta_core 桥接插件（cargokit）
 │   ├── android/             Android 原生（Media3、悬浮歌词、音频控制）
 │   ├── windows/             Windows 桌面壳
-│   ├── web/                 Web 宿主
 │   └── assets/fonts/        内置字体（Sarasa UI SC）
 ├── docs/                    文档
 │   └── 文件功能索引.md       文件定位速查

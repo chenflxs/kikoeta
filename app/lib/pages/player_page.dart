@@ -147,9 +147,17 @@ class _PlayerPageState extends State<PlayerPage> {
 
   Future<void> _loadLyrics() async {
     final seq = ++_lyricSeq;
+    // 手动歌词只对当前曲目有效；切歌后回到自动匹配，不跨曲目沿用来源。
+    _lyricSourceName = null;
     // 切歌后先清掉上一首的歌词；请求失败或新曲目无歌词时也不能保留旧内容。
-    if (_lyrics.isNotEmpty) {
-      setState(_lyrics.clear);
+    if (mounted) {
+      setState(() {
+        _lyrics.clear();
+        _lastAutoIdx = -1;
+      });
+    } else {
+      _lyrics.clear();
+      _lastAutoIdx = -1;
     }
     LyricsHub.instance.setLyrics(const [], app.conv);
     final currentTrack = app.queue.isEmpty ? null : track;

@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+
 import '../data.dart';
 import '../src/rust/api/kikoeru_api.dart';
 import '../src/rust/api/simple.dart';
@@ -331,16 +333,24 @@ class ApiService {
       if (match != null) return _loadLyricCandidate(match);
       return const [];
     }
+    // 自动匹配不使用 TXT：TXT 仍会在手动选择列表中展示，但格式不明确，
+    // 不应因文件名碰巧匹配而覆盖带时间轴的字幕文件。
+    final automaticCandidates = candidates
+        .where((candidate) => !_isPlainTextLyric(candidate.title))
+        .toList();
+    if (automaticCandidates.isEmpty) return const [];
     final matched = _trackMatchedLyrics(
-      candidates,
+      automaticCandidates,
       trackTitle: trackTitle,
       trackPath: trackPath,
     );
     // 多个歌词文件时不回退到其它曲目歌词；唯一歌词仍可作为整部作品通用歌词。
     final selected = matched.isNotEmpty
         ? matched
-        : (candidates.length == 1 ? candidates : const <_LyricCandidate>[]);
-    // 按分数从高到低尝试，直到解析出带时间轴的歌词
+        : (automaticCandidates.length == 1
+              ? automaticCandidates
+              : const <_LyricCandidate>[]);
+    // 按曲目匹配、格式优先级和语言评分尝试，直到解析出带时间轴的歌词。
     for (final c in selected.take(3)) {
       final lrc = await _loadLyricCandidate(c);
       if (lrc.isNotEmpty) return lrc;
@@ -455,7 +465,6 @@ class ApiService {
       }
       final pathLower = path.toLowerCase();
       var score = 0;
-      if (lower.endsWith('.lrc')) score += 20;
       // 文件夹带歌词/字幕含义
       if (pathLower.contains('lyric') ||
           pathLower.contains('lrc') ||
@@ -520,6 +529,22 @@ class ApiService {
     'kr',
   ];
 
+  /// 歌词格式优先级：LRC > SRT > VTT > ASS/SSA > TXT。
+  /// TXT 仅用于手动选择，自动匹配会排除它。
+  @visibleForTesting
+  static int lyricFormatPriority(String name) {
+    final lower = name.toLowerCase();
+    if (lower.endsWith('.lrc')) return 5;
+    if (lower.endsWith('.srt')) return 4;
+    if (lower.endsWith('.vtt')) return 3;
+    if (lower.endsWith('.ass') || lower.endsWith('.ssa')) return 2;
+    if (lower.endsWith('.txt')) return 1;
+    return 0;
+  }
+
+  static bool _isPlainTextLyric(String name) =>
+      name.toLowerCase().endsWith('.txt');
+
   /// 拉丁语种码按整词匹配，避免误伤（如 en 不匹配 special/English 以外的单词）
   static bool _pathHas(String s, String hint) {
     if (RegExp(r'^[a-z][a-z0-9-]*$').hasMatch(hint)) {
@@ -566,8 +591,18 @@ class ApiService {
         .where((candidate) => _parentPath(candidate.path) == trackFolder)
         .toList();
     final matched = sameFolderName.isNotEmpty ? sameFolderName : sameName;
-    matched.sort((a, b) => b.score.compareTo(a.score));
+    matched.sort(_compareLyricCandidates);
     return matched;
+  }
+
+  static int _compareLyricCandidates(_LyricCandidate a, _LyricCandidate b) {
+    final format = lyricFormatPriority(
+      b.title,
+    ).compareTo(lyricFormatPriority(a.title));
+    if (format != 0) return format;
+    final score = b.score.compareTo(a.score);
+    if (score != 0) return score;
+    return a.path.toLowerCase().compareTo(b.path.toLowerCase());
   }
 
   static String _parentPath(String path) {
@@ -590,7 +625,7 @@ class ApiService {
       final aMatches = matched.contains(a);
       final bMatches = matched.contains(b);
       if (aMatches != bMatches) return aMatches ? -1 : 1;
-      return b.score.compareTo(a.score);
+      return _compareLyricCandidates(a, b);
     });
   }
 

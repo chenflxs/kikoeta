@@ -126,4 +126,15 @@ Dialogue: 0,0:01:02.00,0:01:03.00,Default,,0,0,0,,Again
       expect(ApiService.lyricMatchKey('special-en.lrc'), 'special-en');
     });
   });
+
+  group('ApiService.lyricFormatPriority', () {
+    test('orders timed lyric formats before plain text', () {
+      expect(ApiService.lyricFormatPriority('track.lrc'), 5);
+      expect(ApiService.lyricFormatPriority('track.srt'), 4);
+      expect(ApiService.lyricFormatPriority('track.vtt'), 3);
+      expect(ApiService.lyricFormatPriority('track.ass'), 2);
+      expect(ApiService.lyricFormatPriority('track.ssa'), 2);
+      expect(ApiService.lyricFormatPriority('track.txt'), 1);
+    });
+  });
 }
