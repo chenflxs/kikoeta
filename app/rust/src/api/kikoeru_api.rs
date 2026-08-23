@@ -151,6 +151,55 @@ pub async fn api_get_works(
     http_get(&client, &url, auth.as_deref()).await
 }
 
+/// asmr.one 热门页：POST /api/recommender/popular。
+#[flutter_rust_bridge::frb]
+pub async fn api_get_recommender_popular(
+    base: String,
+    keyword: String,
+    page: u32,
+    subtitle: bool,
+) -> Result<String, String> {
+    let url = format!("{}/api/recommender/popular", base_of(&base));
+    let client = http_client()?;
+    let auth = auth_header(&base);
+    let body = recommender_body(&keyword, page, subtitle, None);
+    http_post_json(&client, &url, auth.as_deref(), body).await
+}
+
+/// asmr.one 推荐页：POST /api/recommender/recommend-for-user。
+#[flutter_rust_bridge::frb]
+pub async fn api_get_recommender_recommend(
+    base: String,
+    recommender_uuid: String,
+    keyword: String,
+    page: u32,
+    subtitle: bool,
+) -> Result<String, String> {
+    let url = format!("{}/api/recommender/recommend-for-user", base_of(&base));
+    let client = http_client()?;
+    let auth = auth_header(&base);
+    let body = recommender_body(&keyword, page, subtitle, Some(&recommender_uuid));
+    http_post_json(&client, &url, auth.as_deref(), body).await
+}
+
+fn recommender_body(
+    keyword: &str,
+    page: u32,
+    subtitle: bool,
+    recommender_uuid: Option<&str>,
+) -> serde_json::Value {
+    let mut body = serde_json::json!({
+        "keyword": keyword,
+        "localSubtitledWorks": [],
+        "page": page,
+        "subtitle": if subtitle { 1 } else { 0 },
+    });
+    if let Some(uuid) = recommender_uuid.filter(|value| !value.trim().is_empty()) {
+        body["recommenderUuid"] = serde_json::Value::String(uuid.to_string());
+    }
+    body
+}
+
 /// 搜索：GET /api/search/{query}?page=&per_page=&order=&sort=&subtitle=
 #[flutter_rust_bridge::frb]
 pub async fn api_search(

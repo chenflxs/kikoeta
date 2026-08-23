@@ -610,6 +610,17 @@ class _SettingsPageState extends State<SettingsPage> {
                         _requestBatteryIgnore,
                       ),
               ),
+            if (Platform.isWindows)
+              _switchRow(
+                Icons.desktop_windows_outlined,
+                '关闭窗口后保留托盘',
+                app.keepTrayOnClose
+                    ? '关闭后继续在后台播放，可从系统托盘恢复'
+                    : '关闭窗口时将停止后台运行并退出程序',
+                app.keepTrayOnClose,
+                app.setKeepTrayOnClose,
+              ),
+            _mediaCacheLimitRow(),
           ]),
           _sec('曲目'),
           _group([
@@ -637,43 +648,8 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ],
           ]),
-          if (Platform.isWindows)
-            _switchRow(
-              Icons.minimize_outlined,
-              '关闭窗口后保留托盘',
-              '关闭主窗口时保持在系统托盘运行',
-              app.keepTrayOnClose,
-              app.setKeepTrayOnClose,
-            ),
-          _group([
-            _switchRow(
-              Icons.vpn_key_outlined,
-              'HTTP 代理',
-              '仅支持 HTTP 协议代理，对所有网络请求生效',
-              app.httpProxyEnabled,
-              (v) => app.setHttpProxyEnabled(v),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 4, 14, 12),
-              child: TextField(
-                controller: _proxyCtrl,
-                style: TextStyle(fontSize: 13, color: p.text),
-                decoration: InputDecoration(
-                  labelText: '代理地址',
-                  hintText: '127.0.0.1:7890 或 http://127.0.0.1:7890',
-                  hintStyle: TextStyle(fontSize: 12, color: p.dim),
-                  isDense: true,
-                  filled: true,
-                  fillColor: p.surface2,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: p.line),
-                  ),
-                ),
-                onChanged: (v) => app.setHttpProxyUrl(v),
-              ),
-            ),
-          ]),
+          _sec('网络'),
+          _group([_proxySettings()]),
           _sec('隐私'),
           _group([
             _switchRow(
@@ -795,7 +771,7 @@ class _SettingsPageState extends State<SettingsPage> {
               title: '版本',
               sub: null,
               trailing: const Text(
-                'Kikoeta 0.1.4',
+                'Kikoeta 0.1.5',
                 style: TextStyle(fontSize: 12),
               ),
               onTap: _onVersionTap,
@@ -950,6 +926,179 @@ class _SettingsPageState extends State<SettingsPage> {
         onChanged: onChanged,
         activeTrackColor: p.accent,
       ),
+    );
+  }
+
+  Widget _mediaCacheLimitRow() {
+    final limit = app.mediaCacheLimitMb;
+    final label = limit < 1024
+        ? '$limit MB'
+        : '${(limit / 1024).toStringAsFixed(limit % 1024 == 0 ? 0 : 1)} GB';
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 13, 14, 10),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: p.line)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: p.surface2,
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Icon(Icons.memory_outlined, size: 17, color: p.accent),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        '媒体缓存上限',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: p.accent,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '仅限制在线播放缓冲，不影响下载功能',
+                  style: TextStyle(fontSize: 11, color: p.dim),
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Text(
+                      '512 MB',
+                      style: TextStyle(fontSize: 10, color: p.dim),
+                    ),
+                    Expanded(
+                      child: Slider(
+                        value: limit.toDouble(),
+                        min: 512,
+                        max: 10240,
+                        divisions: 19,
+                        label: label,
+                        activeColor: p.accent,
+                        semanticFormatterCallback: (_) => label,
+                        onChanged: (value) {
+                          final next = value.round();
+                          app.setMediaCacheLimitMb(next);
+                          unawaited(
+                            AppPlayer.instance.setMediaCacheLimitMb(next),
+                          );
+                        },
+                      ),
+                    ),
+                    Text('10 GB', style: TextStyle(fontSize: 10, color: p.dim)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _proxySettings() {
+    final enabled = app.httpProxyEnabled;
+    final hasAddress = _proxyCtrl.text.trim().isNotEmpty;
+    final status = enabled
+        ? hasAddress
+              ? '已启用：${_proxyCtrl.text.trim()}'
+              : '已启用，请填写 HTTP 代理地址'
+        : hasAddress
+        ? '已保存地址，开启后生效'
+        : '仅支持 HTTP 协议代理，对所有网络请求生效';
+
+    return Column(
+      children: [
+        _switchRow(
+          Icons.vpn_lock_outlined,
+          'HTTP 代理',
+          status,
+          enabled,
+          app.setHttpProxyEnabled,
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+          child: TextField(
+            controller: _proxyCtrl,
+            enabled: enabled,
+            autocorrect: false,
+            enableSuggestions: false,
+            keyboardType: TextInputType.url,
+            textInputAction: TextInputAction.done,
+            style: TextStyle(fontSize: 13, color: enabled ? p.text : p.dim),
+            decoration: InputDecoration(
+              labelText: '代理服务器',
+              labelStyle: TextStyle(fontSize: 12, color: p.muted),
+              hintText: '127.0.0.1:7890 或 http://127.0.0.1:7890',
+              hintStyle: TextStyle(fontSize: 12, color: p.dim),
+              helperText: enabled ? '留空将不使用代理' : '开启 HTTP 代理后可编辑',
+              helperStyle: TextStyle(fontSize: 11, color: p.dim),
+              isDense: true,
+              filled: true,
+              fillColor: enabled ? p.surface2 : p.bg2,
+              prefixIcon: Icon(
+                Icons.lan_outlined,
+                size: 18,
+                color: enabled ? p.accent : p.dim,
+              ),
+              suffixIcon: enabled && hasAddress
+                  ? IconButton(
+                      tooltip: '清空代理地址',
+                      icon: Icon(Icons.close_rounded, size: 17, color: p.dim),
+                      onPressed: () {
+                        _proxyCtrl.clear();
+                        app.setHttpProxyUrl('');
+                      },
+                    )
+                  : null,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: p.line),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: p.border),
+              ),
+              disabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: p.line),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: p.accent, width: 1.5),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 12,
+              ),
+            ),
+            onChanged: app.setHttpProxyUrl,
+          ),
+        ),
+      ],
     );
   }
 

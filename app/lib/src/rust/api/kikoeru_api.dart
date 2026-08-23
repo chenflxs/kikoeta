@@ -27,6 +27,34 @@ Future<String> apiGetWorks({
   seed: seed,
 );
 
+/// asmr.one 热门作品：POST /api/recommender/popular
+Future<String> apiGetRecommenderPopular({
+  required String base,
+  required String keyword,
+  required int page,
+  required bool subtitle,
+}) => RustLib.instance.api.crateApiKikoeruApiApiGetRecommenderPopular(
+  base: base,
+  keyword: keyword,
+  page: page,
+  subtitle: subtitle,
+);
+
+/// asmr.one 推荐作品：POST /api/recommender/recommend-for-user
+Future<String> apiGetRecommenderRecommend({
+  required String base,
+  required String recommenderUuid,
+  required String keyword,
+  required int page,
+  required bool subtitle,
+}) => RustLib.instance.api.crateApiKikoeruApiApiGetRecommenderRecommend(
+  base: base,
+  recommenderUuid: recommenderUuid,
+  keyword: keyword,
+  page: page,
+  subtitle: subtitle,
+);
+
 /// 搜索：GET /api/search/{query}?page=&per_page=&order=&sort=&subtitle=
 Future<String> apiSearch({
   required String base,

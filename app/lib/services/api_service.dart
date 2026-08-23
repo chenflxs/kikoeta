@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 
 import '../data.dart';
 import '../src/rust/api/kikoeru_api.dart';
@@ -95,68 +94,20 @@ class ApiService {
     final base = resolveBase(app);
     final keyword = oneAgeTag(app.ageFilter) ?? '';
     if (app.category == 'hot') {
-      return _postOneRecommender(
-        app: app,
+      return apiGetRecommenderPopular(
         base: base,
-        path: 'popular',
         keyword: keyword,
         page: page,
         subtitle: app.subOnly,
       );
     }
-    return _postOneRecommender(
-      app: app,
+    return apiGetRecommenderRecommend(
       base: base,
-      path: 'recommend-for-user',
       recommenderUuid: app.recommenderUuid,
       keyword: keyword,
       page: page,
       subtitle: app.subOnly,
     );
-  }
-
-  static Future<String> _postOneRecommender({
-    required AppState app,
-    required String base,
-    required String path,
-    required String keyword,
-    required int page,
-    required bool subtitle,
-    String? recommenderUuid,
-  }) async {
-    final endpoint = Uri.parse(
-      '${base.replaceFirst(RegExp(r'/+$'), '')}/api/recommender/$path',
-    );
-    final body = <String, dynamic>{
-      'keyword': keyword,
-      'page': page,
-      'subtitle': subtitle ? 1 : 0,
-      'localSubtitledWorks': const [],
-      if (recommenderUuid != null && recommenderUuid.isNotEmpty)
-        'recommenderUuid': recommenderUuid,
-    };
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 20);
-    try {
-      final request = await client.postUrl(endpoint);
-      request.headers.contentType = ContentType.json;
-      final token = tokenFor(app, base);
-      if (token != null && token.isNotEmpty) {
-        request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
-      }
-      request.write(jsonEncode(body));
-      final response = await request.close();
-      final text = await utf8.decodeStream(response);
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw HttpException(
-          'HTTP ${response.statusCode}: ${text.substring(0, text.length.clamp(0, 200))}',
-          uri: endpoint,
-        );
-      }
-      return text;
-    } finally {
-      client.close(force: true);
-    }
   }
 
   static Future<WorksPage> searchWorks(

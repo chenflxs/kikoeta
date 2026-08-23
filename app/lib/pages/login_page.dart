@@ -107,6 +107,130 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
+  Future<void> _showProxyDialog() async {
+    final controller = TextEditingController(text: app.httpProxyUrl);
+    var enabled = app.httpProxyEnabled;
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            backgroundColor: p.surface,
+            title: const Text(
+              '配置网络代理',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+            content: SizedBox(
+              width: 340,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.vpn_lock_outlined, size: 20, color: p.accent),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Text(
+                          '使用 HTTP 代理',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      Switch(
+                        value: enabled,
+                        activeTrackColor: p.accent,
+                        onChanged: (value) {
+                          setDialogState(() => enabled = value);
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: controller,
+                    enabled: enabled,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    keyboardType: TextInputType.url,
+                    textInputAction: TextInputAction.done,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: enabled ? p.text : p.dim,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: '代理服务器',
+                      labelStyle: TextStyle(fontSize: 12, color: p.muted),
+                      hintText: '127.0.0.1:7890 或 http://127.0.0.1:7890',
+                      hintStyle: TextStyle(fontSize: 12, color: p.dim),
+                      helperText: '仅支持 HTTP 代理',
+                      helperStyle: TextStyle(fontSize: 11, color: p.dim),
+                      prefixIcon: Icon(
+                        Icons.lan_outlined,
+                        size: 18,
+                        color: enabled ? p.accent : p.dim,
+                      ),
+                      filled: true,
+                      fillColor: enabled ? p.surface2 : p.bg2,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: p.line),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: p.border),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: p.accent, width: 1.5),
+                      ),
+                      disabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: p.line),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text('取消', style: TextStyle(color: p.muted)),
+              ),
+              FilledButton(
+                onPressed: () {
+                  app.setHttpProxyUrl(controller.text);
+                  app.setHttpProxyEnabled(enabled);
+                  Navigator.pop(ctx);
+                  _toast(enabled ? '网络代理已启用' : '网络代理已关闭');
+                },
+                child: const Text('保存'),
+              ),
+            ],
+          ),
+        ),
+      );
+    } finally {
+      controller.dispose();
+    }
+  }
+
+  Widget _networkProxyEntry() {
+    return OutlinedButton.icon(
+      onPressed: _showProxyDialog,
+      icon: const Icon(Icons.vpn_lock_outlined, size: 17),
+      label: const Text('配置网络代理', style: TextStyle(fontSize: 13)),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: p.muted,
+        side: BorderSide(color: p.line),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      ),
+    );
+  }
+
   // ---------------- 自建站点配置 ----------------
   Future<void> _useSite(int idx) async {
     setState(() => _savingSite = true);
@@ -290,6 +414,7 @@ class _LoginPageState extends State<LoginPage> {
                 ),
               ),
             ),
+            Positioned(left: 14, bottom: 14, child: _networkProxyEntry()),
           ],
         ),
       ),
@@ -553,6 +678,7 @@ class _LoginPageState extends State<LoginPage> {
                 ),
               ),
             ),
+            Positioned(left: 14, bottom: 14, child: _networkProxyEntry()),
           ],
         ),
       ),

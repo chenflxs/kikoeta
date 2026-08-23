@@ -200,6 +200,9 @@ class AppState extends ChangeNotifier {
   bool httpProxyEnabled = false;
   String httpProxyUrl = '';
 
+  // 在线播放缓冲上限（MB）；仅作用于 mpv 的媒体缓存，不影响未来下载。
+  int mediaCacheLimitMb = 1024;
+
   // 桌面歌词
   bool desktopLyricsOn = false;
   double lyricsFontSize = 20;
@@ -747,6 +750,12 @@ class AppState extends ChangeNotifier {
     if (pe != null) httpProxyEnabled = pe == '1';
     final pu = SettingsStore.get('http_proxy');
     if (pu != null) httpProxyUrl = pu;
+    final cacheLimit = int.tryParse(
+      SettingsStore.get('media_cache_limit_mb') ?? '',
+    );
+    if (cacheLimit != null) {
+      mediaCacheLimitMb = cacheLimit.clamp(512, 10240).toInt();
+    }
     final hs = SettingsStore.get('home_sort');
     if (hs != null && hs.isNotEmpty) sort = hs;
     final ho = SettingsStore.get('home_order_asc');
@@ -938,6 +947,12 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setMediaCacheLimitMb(int v) {
+    mediaCacheLimitMb = v.clamp(512, 10240).toInt();
+    SettingsStore.set('media_cache_limit_mb', mediaCacheLimitMb.toString());
+    notifyListeners();
+  }
+
   void setSort(String v) {
     sort = v;
     SettingsStore.set('home_sort', v);
@@ -1115,6 +1130,7 @@ class AppState extends ChangeNotifier {
       ..addAll(['mp3', 'flac', 'wav', 'opus', 'm4a', 'aac']);
     httpProxyEnabled = false;
     httpProxyUrl = '';
+    mediaCacheLimitMb = 1024;
     desktopLyricsOn = false;
     lyricsFontSize = 20;
     lyricsColor = 0xFFFFFFFF;

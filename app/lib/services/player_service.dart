@@ -100,11 +100,12 @@ class AppPlayer {
     opened = true;
   }
 
-  /// 打开网络音频：桌面经本地代理转发；Android 直连时附带该媒体域的
-  /// Bearer token，以兼容要求鉴权的 kikoeru-express 媒体端点。
+  /// 打开网络音频：桌面始终经本地代理转发；Android 在启用应用 HTTP
+  /// 代理时也走本地代理，未启用时直连并附带该媒体域的 Bearer token。
   Future<void> openMediaUrl(String url, {bool autoplay = true}) async {
     await stop();
-    final direct = Platform.isAndroid;
+    final httpProxy = await httpProxyConfig();
+    final direct = Platform.isAndroid && httpProxy == null;
     final mediaUrl = direct ? url : apiStreamProxyUrl(url: url);
     final uri = Uri.tryParse(url);
     final base = uri == null || !uri.hasScheme
@@ -152,6 +153,18 @@ class AppPlayer {
       await p.setProperty('af', chain);
     } catch (_) {
       // 某些后端不支持动态 af：静默忽略
+    }
+  }
+
+  /// 设置 mpv 网络媒体缓冲上限，只影响在线播放时占用的内存。
+  Future<void> setMediaCacheLimitMb(int megabytes) async {
+    final platform = player.platform;
+    if (platform is! NativePlayer) return;
+    final bytes = megabytes.clamp(512, 10240) * 1024 * 1024;
+    try {
+      await platform.setProperty('demuxer-max-bytes', '$bytes');
+    } catch (_) {
+      // 某些后端不支持运行时调整该 mpv 属性：保持播放器默认值。
     }
   }
 

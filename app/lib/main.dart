@@ -48,6 +48,7 @@ Future<void> main() async {
     await WindowsTrayService.instance.init(appState);
   }
   MediaKit.ensureInitialized();
+  await AppPlayer.instance.setMediaCacheLimitMb(appState.mediaCacheLimitMb);
   // Jetpack Media3：锁屏/通知媒体控制（桥接到 mpv；service 在首次播放时才启动）
   // 注意：必须放在 MediaKit.ensureInitialized() 之后（AppPlayer 依赖 media_kit）
   if (!kIsWeb && Platform.isAndroid) {

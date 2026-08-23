@@ -10,23 +10,40 @@ use tiny_http::{Header, Method, Response, Server, StatusCode};
 use crate::api::kikoeru_api;
 
 static PROXY_PORT: Mutex<Option<u16>> = Mutex::new(None);
-static CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
+type StreamClient = (Option<String>, reqwest::blocking::Client);
 
-fn proxy_client() -> &'static reqwest::blocking::Client {
-    CLIENT.get_or_init(|| {
+static CLIENT: OnceLock<Mutex<Option<StreamClient>>> = OnceLock::new();
+
+fn proxy_client() -> Result<reqwest::blocking::Client, String> {
+    let configured_proxy = crate::api::simple::http_proxy_config();
+    let mut cached = CLIENT
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .map_err(|e| e.to_string())?;
+
+    if let Some((proxy, client)) = cached.as_ref() {
+        if *proxy == configured_proxy {
+            return Ok(client.clone());
+        }
+    }
+
+    let client = {
         let mut builder = reqwest::blocking::Client::builder()
             .user_agent("Kikoeta/0.1 (stream proxy)")
             .connect_timeout(Duration::from_secs(20));
         // 注意：不能设总超时/读超时——长音频流的 body 读取会持续数十分钟。
-        // 连接堆积由「Android 直连（不经代理）+ 连接池复用」缓解。
-        // 允许连接池复用，减少重复 TLS 握手；正在使用的连接不会进池，不会阻塞新请求
-        if let Some(p) = crate::api::simple::http_proxy_config() {
-            if let Ok(proxy) = reqwest::Proxy::all(&p) {
-                builder = builder.proxy(proxy);
-            }
+        // 同一代理配置下复用连接池；配置变更时立即换用新的客户端。
+        if let Some(proxy_url) = configured_proxy.as_deref() {
+            let proxy = reqwest::Proxy::all(proxy_url)
+                .map_err(|e| format!("HTTP 代理地址无效: {e}"))?;
+            builder = builder.proxy(proxy);
         }
-        builder.build().expect("创建代理 HTTP 客户端失败")
-    })
+        builder
+            .build()
+            .map_err(|e| format!("创建流媒体 HTTP 客户端失败: {e}"))?
+    };
+    *cached = Some((configured_proxy, client.clone()));
+    Ok(client)
 }
 
 /// 把一个远程媒体 URL 转成本地代理 URL（首次调用会启动本地代理）。
@@ -86,7 +103,7 @@ fn handle_request(request: tiny_http::Request) -> Result<(), String> {
     }
     let target = query_param(query, "url").ok_or_else(|| "缺少 url 参数".to_string())?;
 
-    let mut req = proxy_client().get(&target);
+    let mut req = proxy_client()?.get(&target);
     if let Some(a) = kikoeru_api::auth_header(&kikoeru_api::origin_of(&target)) {
         req = req.header("authorization", a);
     }

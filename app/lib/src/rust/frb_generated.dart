@@ -156,6 +156,21 @@ abstract class RustLibApi extends BaseApi {
     String? seed,
   });
 
+  Future<String> crateApiKikoeruApiApiGetRecommenderPopular({
+    required String base,
+    required String keyword,
+    required int page,
+    required bool subtitle,
+  });
+
+  Future<String> crateApiKikoeruApiApiGetRecommenderRecommend({
+    required String base,
+    required String recommenderUuid,
+    required String keyword,
+    required int page,
+    required bool subtitle,
+  });
+
   Future<String> crateApiKikoeruApiApiHealth({required String base});
 
   Future<String> crateApiKikoeruApiApiLogin({
@@ -727,6 +742,86 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "subtitle",
           "seed",
         ],
+      );
+
+  @override
+  Future<String> crateApiKikoeruApiApiGetRecommenderPopular({
+    required String base,
+    required String keyword,
+    required int page,
+    required bool subtitle,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(base, serializer);
+          sse_encode_String(keyword, serializer);
+          sse_encode_u_32(page, serializer);
+          sse_encode_bool(subtitle, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 38,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiKikoeruApiApiGetRecommenderPopularConstMeta,
+        argValues: [base, keyword, page, subtitle],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiKikoeruApiApiGetRecommenderPopularConstMeta =>
+      const TaskConstMeta(
+        debugName: "api_get_recommender_popular",
+        argNames: ["base", "keyword", "page", "subtitle"],
+      );
+
+  @override
+  Future<String> crateApiKikoeruApiApiGetRecommenderRecommend({
+    required String base,
+    required String recommenderUuid,
+    required String keyword,
+    required int page,
+    required bool subtitle,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(base, serializer);
+          sse_encode_String(recommenderUuid, serializer);
+          sse_encode_String(keyword, serializer);
+          sse_encode_u_32(page, serializer);
+          sse_encode_bool(subtitle, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 39,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiKikoeruApiApiGetRecommenderRecommendConstMeta,
+        argValues: [base, recommenderUuid, keyword, page, subtitle],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiKikoeruApiApiGetRecommenderRecommendConstMeta =>
+      const TaskConstMeta(
+        debugName: "api_get_recommender_recommend",
+        argNames: ["base", "recommenderUuid", "keyword", "page", "subtitle"],
       );
 
   @override
