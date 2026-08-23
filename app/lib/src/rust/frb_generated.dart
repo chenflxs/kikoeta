@@ -156,6 +156,8 @@ abstract class RustLibApi extends BaseApi {
     String? seed,
   });
 
+  Future<String> crateApiKikoeruApiApiGetRandomWork({required String base});
+
   Future<String> crateApiKikoeruApiApiGetRecommenderPopular({
     required String base,
     required String keyword,
@@ -743,6 +745,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "seed",
         ],
       );
+
+  @override
+  Future<String> crateApiKikoeruApiApiGetRandomWork({required String base}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(base, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 40,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiKikoeruApiApiGetRandomWorkConstMeta,
+        argValues: [base],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiKikoeruApiApiGetRandomWorkConstMeta =>
+      const TaskConstMeta(debugName: "api_get_random_work", argNames: ["base"]);
 
   @override
   Future<String> crateApiKikoeruApiApiGetRecommenderPopular({

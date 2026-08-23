@@ -27,6 +27,10 @@ Future<String> apiGetWorks({
   seed: seed,
 );
 
+/// 随心听：GET /api/works?order=betterRandom
+Future<String> apiGetRandomWork({required String base}) =>
+    RustLib.instance.api.crateApiKikoeruApiApiGetRandomWork(base: base);
+
 /// asmr.one 热门作品：POST /api/recommender/popular
 Future<String> apiGetRecommenderPopular({
   required String base,

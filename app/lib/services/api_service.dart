@@ -146,6 +146,16 @@ class ApiService {
     return parseWorks(json, base: base, perPage: perPage);
   }
 
+  /// 随心听使用 asmr.one 的专用随机作品请求。
+  ///
+  /// 服务端会以 `betterRandom` 返回一个随机作品，客户端必须直接使用响应
+  /// 的首项，不能将首页筛选、分页或本地历史逻辑混入这个请求。
+  static Future<Work?> fetchRandomWork(AppState app) async {
+    final base = resolveBase(app);
+    final json = await apiGetRandomWork(base: base);
+    return parseWorks(json, base: base, perPage: 1).works.firstOrNull;
+  }
+
   /// 首页/搜索排序参数：所有分类均按用户选择传递给服务器。
   static String orderParam(AppState app) {
     return switch (app.sort) {

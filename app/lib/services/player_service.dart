@@ -58,6 +58,9 @@ class AppPlayer {
   /// 当前是否已打开媒体（页面可据此判断是否需要重新打开）
   bool opened = false;
 
+  /// 最后成功打开的原始媒体 URL（不含桌面本地代理地址）。
+  String? openedUrl;
+
   /// stop()/open() 后的 completed 抑制截止时间；到点自动失效，避免被去重流卡死
   DateTime? _suppressCompletedUntil;
 
@@ -121,6 +124,7 @@ class AppPlayer {
       ),
       autoplay: autoplay,
     ).timeout(const Duration(seconds: 20));
+    openedUrl = url;
   }
 
   /// 停止播放（抑制 stop 后短时间内残留的 completed，避免被误判为播放完成）

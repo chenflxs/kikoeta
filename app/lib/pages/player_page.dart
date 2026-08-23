@@ -125,7 +125,10 @@ class _PlayerPageState extends State<PlayerPage> {
     );
     _applyVolume();
     // 重启恢复：有上次播放记录时打开并停在保存位置（默认暂停，不自动播放）
-    if (!app.playing && app.queue.isNotEmpty && !AppPlayer.instance.opened) {
+    final targetUrl = app.queue.isEmpty ? null : track.url;
+    final needsOpen =
+        !AppPlayer.instance.opened || AppPlayer.instance.openedUrl != targetUrl;
+    if (!app.playing && app.queue.isNotEmpty && needsOpen) {
       final resume = app.resumePosition;
       _openCurrent(autoplay: false).then((_) async {
         if (mounted && AppPlayer.instance.opened && resume > 0) {
@@ -135,10 +138,8 @@ class _PlayerPageState extends State<PlayerPage> {
           if (mounted) setState(() => _pos = resume);
         }
       });
-    } else if (app.playing &&
-        app.queue.isNotEmpty &&
-        !AppPlayer.instance.opened) {
-      // 播放器已在播放（全局单例，退出页面不销毁）：直接恢复状态，不重新打开
+    } else if (app.playing && app.queue.isNotEmpty && needsOpen) {
+      // 全局播放器可能仍打开着上一部作品；目标媒体不同也必须重新打开。
       _openCurrent();
     }
     _loadLyrics();

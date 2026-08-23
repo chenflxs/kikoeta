@@ -27,6 +27,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
   int _gen = 0;
   late int _seenFavVersion;
   late int _seenFavoritesEntryVersion;
+  late bool _seenSfwMode;
 
   AppState get app => widget.app;
   Palette get p => Theme.of(context).brightness == Brightness.dark
@@ -38,6 +39,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
     super.initState();
     _seenFavVersion = app.favVersion;
     _seenFavoritesEntryVersion = app.favoritesEntryVersion;
+    _seenSfwMode = app.sfwMode;
     app.addListener(_onAppChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadData(reset: true));
   }
@@ -52,14 +54,43 @@ class _FavoritesPageState extends State<FavoritesPage> {
     final favoriteChanged = app.favVersion != _seenFavVersion;
     final enteredFavorites =
         app.favoritesEntryVersion != _seenFavoritesEntryVersion;
-    if (!favoriteChanged && !enteredFavorites) return;
+    final sfwChanged = app.sfwMode != _seenSfwMode;
+    if (!favoriteChanged && !enteredFavorites && !sfwChanged) return;
 
     _seenFavVersion = app.favVersion;
     _seenFavoritesEntryVersion = app.favoritesEntryVersion;
+    _seenSfwMode = app.sfwMode;
+    if (sfwChanged && app.sfwMode) {
+      // SFW 开启后立即清空当前收藏，且使在途请求结果失效。
+      _gen++;
+      if (mounted) {
+        setState(() {
+          _reviewsMode = true;
+          _playlist = null;
+          _works.clear();
+          _loading = false;
+          _error = false;
+          _page = 0;
+          _hasMore = false;
+        });
+      }
+      return;
+    }
     _loadData(reset: true);
   }
 
   Future<void> _loadData({bool reset = true}) async {
+    if (app.sfwMode) {
+      if (!mounted) return;
+      setState(() {
+        _works.clear();
+        _loading = false;
+        _error = false;
+        _page = 0;
+        _hasMore = false;
+      });
+      return;
+    }
     if (_reviewsMode) {
       await _loadReviews(reset: reset);
     } else {
@@ -144,6 +175,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
   }
 
   Future<void> _openPlaylistPicker() async {
+    if (app.sfwMode) return;
     List<PlaylistInfo> list;
     try {
       list = await ApiService.fetchPlaylists(app);
@@ -281,6 +313,14 @@ class _FavoritesPageState extends State<FavoritesPage> {
   }
 
   Widget _body() {
+    if (app.sfwMode) {
+      return Center(
+        child: Text(
+          'SFW 模式下不显示收藏内容',
+          style: TextStyle(fontSize: 13, color: p.dim),
+        ),
+      );
+    }
     if (_loading && _works.isEmpty) {
       return Center(
         child: Column(

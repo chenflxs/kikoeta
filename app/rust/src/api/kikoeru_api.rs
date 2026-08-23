@@ -151,6 +151,18 @@ pub async fn api_get_works(
     http_get(&client, &url, auth.as_deref()).await
 }
 
+/// asmr.one 随心听：固定请求服务端的单作品随机接口。
+///
+/// 该接口与普通作品列表、热门和推荐页面完全独立，不能附带分页、
+/// 筛选或 seed 等列表参数。
+#[flutter_rust_bridge::frb]
+pub async fn api_get_random_work(base: String) -> Result<String, String> {
+    let url = format!("{}/api/works?order=betterRandom", base_of(&base));
+    let client = http_client()?;
+    let auth = auth_header(&base);
+    http_get(&client, &url, auth.as_deref()).await
+}
+
 /// asmr.one 热门页：POST /api/recommender/popular。
 #[flutter_rust_bridge::frb]
 pub async fn api_get_recommender_popular(

@@ -445,6 +445,18 @@ let api_value = <String>::sse_decode(&mut deserializer);deserializer.end();
                     }
                 })
             }
+            fn wire__crate__api__kikoeru_api__api_get_random_work_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32) {
+                FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "api_get_random_work", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || {
+                    let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+                    let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+                    let api_base = <String>::sse_decode(&mut deserializer);
+                    deserializer.end(); move |context| async move {
+                        transform_result_sse::<_, String>((move || async move {
+                            let output_ok = crate::api::kikoeru_api::api_get_random_work(api_base).await?; Ok(output_ok)
+                        })().await)
+                    }
+                })
+            }
             fn wire__crate__api__kikoeru_api__api_get_recommender_recommend_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32) {
                 FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "api_get_recommender_recommend", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || {
                     let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
@@ -607,6 +619,7 @@ return crate::api::textcodec::DecodedText{encoding: var_encoding, text: var_text
 37 => wire__crate__api__simple__token_for_base_impl(port, ptr, rust_vec_len, data_len),
 38 => wire__crate__api__kikoeru_api__api_get_recommender_popular_impl(port, ptr, rust_vec_len, data_len),
 39 => wire__crate__api__kikoeru_api__api_get_recommender_recommend_impl(port, ptr, rust_vec_len, data_len),
+40 => wire__crate__api__kikoeru_api__api_get_random_work_impl(port, ptr, rust_vec_len, data_len),
                         _ => unreachable!(),
                     }
                 }
