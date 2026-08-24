@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../data.dart';
@@ -259,6 +260,11 @@ class _WorkPageState extends State<WorkPage> {
   void _playAsAudio(MediaNode n) {
     app.startPlayback(work, [n]);
     Navigator.of(context).pushNamed('/player');
+  }
+
+  Future<void> _copyRj() async {
+    await Clipboard.setData(ClipboardData(text: work.rj));
+    if (mounted) _toast('已复制 ${work.rj}');
   }
 
   bool _isImage(MediaNode n) => n.title.toLowerCase().contains(
@@ -789,20 +795,24 @@ class _WorkPageState extends State<WorkPage> {
                         const SizedBox(height: 7),
                         Row(
                           children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 3,
-                              ),
-                              decoration: BoxDecoration(
-                                color: p.surface2,
-                                borderRadius: BorderRadius.circular(7),
-                              ),
-                              child: Text(
-                                work.rj,
-                                style: TextStyle(
-                                  fontSize: 11.5,
-                                  color: p.muted,
+                            InkWell(
+                              onTap: _copyRj,
+                              borderRadius: BorderRadius.circular(7),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: p.surface2,
+                                  borderRadius: BorderRadius.circular(7),
+                                ),
+                                child: Text(
+                                  work.rj,
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    color: p.muted,
+                                  ),
                                 ),
                               ),
                             ),

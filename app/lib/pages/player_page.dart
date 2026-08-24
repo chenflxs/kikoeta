@@ -50,6 +50,7 @@ class _PlayerPageState extends State<PlayerPage> {
   final Map<String, String> _convCache = {};
   late String _lastConv;
   late bool _lastAppPlaying;
+  late int _lastTrackIdx;
   bool _opening = false; // 正在打开媒体
   bool _buffering = false; // 缓冲中
   int _lastSavedPos = 0; // 上次保存播放位置（节流）
@@ -69,6 +70,7 @@ class _PlayerPageState extends State<PlayerPage> {
     super.initState();
     _lastConv = app.conv;
     _lastAppPlaying = app.playing;
+    _lastTrackIdx = app.trackIdx;
     _syncPlayerSnapshot();
     app.addListener(_onAppStateChanged);
     _subs.add(
@@ -212,6 +214,12 @@ class _PlayerPageState extends State<PlayerPage> {
     final playingChanged = app.playing != _lastAppPlaying;
     _lastAppPlaying = app.playing;
     var needsRebuild = playingChanged;
+    if (app.trackIdx != _lastTrackIdx) {
+      _lastTrackIdx = app.trackIdx;
+      // 自动续播在应用常驻层推进队列，和手动切歌一样重新匹配歌词。
+      _loadLyrics();
+      needsRebuild = true;
+    }
     if (app.conv != _lastConv) {
       _lastConv = app.conv;
       _convCache.clear();
@@ -336,9 +344,9 @@ class _PlayerPageState extends State<PlayerPage> {
     _pos = 0;
     _dur = 0;
     AppPlayer.instance.opened = false;
+    _refreshLyricsForCurrentTrack();
     app.notify();
     setState(() {});
-    _loadLyrics();
     // 自动跳转（播放结束）不依赖 playing 状态，强制打开下一首；
     // 手动切歌时若处于暂停则只换曲目，不自动播放
     if (auto || app.playing) {
@@ -362,6 +370,12 @@ class _PlayerPageState extends State<PlayerPage> {
     }
   }
 
+  void _refreshLyricsForCurrentTrack() {
+    // 先同步索引快照，避免紧随后的 app.notify() 重复发起同一匹配请求。
+    _lastTrackIdx = app.trackIdx;
+    _loadLyrics();
+  }
+
   void _jumpTo(int idx) {
     if (idx == app.trackIdx) return;
     if (app.queue.isEmpty || _switching) return;
@@ -370,9 +384,9 @@ class _PlayerPageState extends State<PlayerPage> {
     _pos = 0;
     _dur = 0;
     AppPlayer.instance.opened = false;
+    _refreshLyricsForCurrentTrack();
     app.notify();
     setState(() {});
-    _loadLyrics();
     if (app.playing) {
       _openCurrent().whenComplete(() => _switching = false);
     } else {
@@ -387,9 +401,9 @@ class _PlayerPageState extends State<PlayerPage> {
     _pos = 0;
     _dur = 0;
     AppPlayer.instance.opened = false;
+    _refreshLyricsForCurrentTrack();
     app.notify();
     setState(() {});
-    _loadLyrics();
     if (app.playing) {
       _openCurrent().whenComplete(() => _switching = false);
     } else {
@@ -1233,8 +1247,7 @@ class _PlayerPageState extends State<PlayerPage> {
       child: GestureDetector(
         onTap: () {
           setDlg(() {});
-          app.conv = value;
-          app.notify();
+          app.setConv(value);
         },
         child: Container(
           height: 34,

@@ -200,6 +200,10 @@ class AppState extends ChangeNotifier {
   bool httpProxyEnabled = false;
   String httpProxyUrl = '';
 
+  // 更新服务检测
+  bool updateCheckEnabled = true;
+  String updateIgnoredVersion = '';
+
   // 在线播放缓冲上限（MB）；仅作用于 mpv 的媒体缓存，不影响未来下载。
   int mediaCacheLimitMb = 1024;
 
@@ -750,6 +754,10 @@ class AppState extends ChangeNotifier {
     if (pe != null) httpProxyEnabled = pe == '1';
     final pu = SettingsStore.get('http_proxy');
     if (pu != null) httpProxyUrl = pu;
+    final uc = SettingsStore.get('update_check_enabled');
+    if (uc != null) updateCheckEnabled = uc == '1';
+    final uiv = SettingsStore.get('update_ignored_version');
+    if (uiv != null) updateIgnoredVersion = uiv;
     final cacheLimit = int.tryParse(
       SettingsStore.get('media_cache_limit_mb') ?? '',
     );
@@ -947,6 +955,18 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setUpdateCheckEnabled(bool value) {
+    updateCheckEnabled = value;
+    SettingsStore.set('update_check_enabled', value ? '1' : '0');
+    notifyListeners();
+  }
+
+  void setUpdateIgnoredVersion(String value) {
+    updateIgnoredVersion = value;
+    SettingsStore.set('update_ignored_version', value);
+    notifyListeners();
+  }
+
   void setMediaCacheLimitMb(int v) {
     mediaCacheLimitMb = v.clamp(512, 10240).toInt();
     SettingsStore.set('media_cache_limit_mb', mediaCacheLimitMb.toString());
@@ -1130,6 +1150,8 @@ class AppState extends ChangeNotifier {
       ..addAll(['mp3', 'flac', 'wav', 'opus', 'm4a', 'aac']);
     httpProxyEnabled = false;
     httpProxyUrl = '';
+    updateCheckEnabled = true;
+    updateIgnoredVersion = '';
     mediaCacheLimitMb = 1024;
     desktopLyricsOn = false;
     lyricsFontSize = 20;

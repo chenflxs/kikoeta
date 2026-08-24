@@ -11,6 +11,7 @@ import '../services/android_lyrics_overlay.dart';
 import '../services/api_service.dart';
 import '../services/desktop_lyrics_overlay.dart';
 import '../services/player_service.dart';
+import '../services/update_service.dart';
 import '../src/rust/api/translate.dart';
 import '../sheets.dart';
 import '../theme.dart';
@@ -766,12 +767,25 @@ class _SettingsPageState extends State<SettingsPage> {
           ]),
           _sec('关于'),
           _group([
+            _switchRow(
+              Icons.system_update_outlined,
+              '自动检测更新',
+              '启动后 3 秒请求更新服务',
+              app.updateCheckEnabled,
+              app.setUpdateCheckEnabled,
+            ),
+            _row(
+              icon: Icons.refresh_outlined,
+              title: '检查更新',
+              sub: '手动请求更新服务',
+              onTap: () => UpdateService.checkManually(context, app),
+            ),
             _row(
               icon: null,
               title: '版本',
               sub: null,
-              trailing: const Text(
-                'Kikoeta 0.1.6',
+              trailing: Text(
+                'Kikoeta ${UpdateService.currentVersion}',
                 style: TextStyle(fontSize: 12),
               ),
               onTap: _onVersionTap,

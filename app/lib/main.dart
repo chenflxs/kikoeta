@@ -23,16 +23,19 @@ import 'services/android_media3.dart';
 import 'services/android_notification.dart';
 import 'services/windows_tray_service.dart';
 import 'services/lyrics_hub.dart';
+import 'services/update_service.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
 final GlobalKey<ScaffoldMessengerState> appMessengerKey =
     GlobalKey<ScaffoldMessengerState>();
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SettingsStore.init();
   await appState.loadFromRust();
+  await UpdateService.initialize();
   // Windows 首次运行：自动创建桌面/开始菜单快捷方式（仅 release，幂等）
   ShortcutService.ensureShortcuts();
   // 安卓音频控制：耳机拔出/焦点丢失 → 暂停播放
@@ -68,6 +71,7 @@ Future<void> main() async {
   // 定时关闭：全局计时（播放器页关闭时也生效）
   SleepTimer.start(appState);
   runApp(const KikoetaApp());
+  UpdateService.startAutoCheck(appState, appNavigatorKey);
   // 剪贴板 RJ 检测（每 3 秒轮询）
   ClipboardWatcher.start(appState, appMessengerKey);
   // Android 13+ 通知权限（媒体通知/锁屏卡片；仅首次弹系统框）
@@ -370,6 +374,7 @@ class _KikoetaAppState extends State<KikoetaApp> {
       title: 'Kikoeta',
       debugShowCheckedModeBanner: false,
       scaffoldMessengerKey: appMessengerKey,
+      navigatorKey: appNavigatorKey,
       theme: buildTheme(Brightness.light),
       darkTheme: buildTheme(Brightness.dark),
       themeMode: _themeMode,

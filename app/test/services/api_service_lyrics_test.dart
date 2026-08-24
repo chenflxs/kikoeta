@@ -118,6 +118,8 @@ Dialogue: 0,0:01:02.00,0:01:03.00,Default,,0,0,0,,Again
         expect(ApiService.lyricMatchKey('Track 01-zh.srt'), 'track 01');
         expect(ApiService.lyricMatchKey('Track 01_zh-CN.vtt'), 'track 01');
         expect(ApiService.lyricMatchKey('Track 01.简中.ass'), 'track 01');
+        expect(ApiService.lyricMatchKey('Track 01.mp3.vtt'), 'track 01');
+        expect(ApiService.lyricMatchKey('Track 01.mp3.zh.vtt'), 'track 01');
       },
     );
 
@@ -135,6 +137,15 @@ Dialogue: 0,0:01:02.00,0:01:03.00,Default,,0,0,0,,Again
       expect(ApiService.lyricFormatPriority('track.ass'), 2);
       expect(ApiService.lyricFormatPriority('track.ssa'), 2);
       expect(ApiService.lyricFormatPriority('track.txt'), 1);
+    });
+  });
+
+  group('ApiService.lyricTrackOrdinal', () {
+    test('matches numbered media and subtitle filenames with extra labels', () {
+      expect(ApiService.lyricTrackOrdinal('01. track.mp3'), '1');
+      expect(ApiService.lyricTrackOrdinal('[CHS] 01.vtt'), '1');
+      expect(ApiService.lyricTrackOrdinal('(字幕) 01 - track.vtt'), '1');
+      expect(ApiService.lyricTrackOrdinal('track.vtt'), isNull);
     });
   });
 }

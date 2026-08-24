@@ -333,25 +333,26 @@ class ApiService {
       if (match != null) return _loadLyricCandidate(match);
       return const [];
     }
-    // 自动匹配不使用 TXT：TXT 仍会在手动选择列表中展示，但格式不明确，
-    // 不应因文件名碰巧匹配而覆盖带时间轴的字幕文件。
-    final automaticCandidates = candidates
-        .where((candidate) => !_isPlainTextLyric(candidate.title))
-        .toList();
-    if (automaticCandidates.isEmpty) return const [];
     final matched = _trackMatchedLyrics(
-      automaticCandidates,
+      candidates,
       trackTitle: trackTitle,
       trackPath: trackPath,
     );
+    // 自动匹配优先使用带时间轴的格式；TXT 只在当前曲目没有其它匹配歌词
+    // 时作为兼容兜底，避免只有 TXT 的旧作品失去自动歌词。
+    final timedMatched = matched
+        .where((candidate) => !_isPlainTextLyric(candidate.title))
+        .toList();
     // 多个歌词文件时不回退到其它曲目歌词；唯一歌词仍可作为整部作品通用歌词。
-    final selected = matched.isNotEmpty
-        ? matched
-        : (automaticCandidates.length == 1
-              ? automaticCandidates
-              : const <_LyricCandidate>[]);
+    final selected = timedMatched.isNotEmpty
+        ? timedMatched
+        : (matched.isNotEmpty
+              ? matched
+              : (candidates.length == 1
+                    ? candidates
+                    : const <_LyricCandidate>[]));
     // 按曲目匹配、格式优先级和语言评分尝试，直到解析出带时间轴的歌词。
-    for (final c in selected.take(3)) {
+    for (final c in selected) {
       final lrc = await _loadLyricCandidate(c);
       if (lrc.isNotEmpty) return lrc;
     }
@@ -529,8 +530,28 @@ class ApiService {
     'kr',
   ];
 
+  static const _lyricExtensions = {
+    '.lrc',
+    '.txt',
+    '.vtt',
+    '.srt',
+    '.ass',
+    '.ssa',
+  };
+  static const _audioExtensions = {
+    '.mp3',
+    '.flac',
+    '.wav',
+    '.ogg',
+    '.opus',
+    '.m4a',
+    '.aac',
+    '.wma',
+    '.webm',
+  };
+
   /// 歌词格式优先级：LRC > SRT > VTT > ASS/SSA > TXT。
-  /// TXT 仅用于手动选择，自动匹配会排除它。
+  /// TXT 在自动匹配中仅作为没有其它同曲目歌词时的兼容兜底。
   @visibleForTesting
   static int lyricFormatPriority(String name) {
     final lower = name.toLowerCase();
@@ -560,9 +581,28 @@ class ApiService {
   /// 只移除末尾的语言标记，避免把 `track.zh.srt`、`track-zh.srt`
   /// 等中文字幕当成不同曲目，同时不影响文件名中间的普通文字。
   static String lyricMatchKey(String name) {
-    final i = name.lastIndexOf('.');
-    var stem = (i > 0 ? name.substring(0, i) : name).trim().toLowerCase();
-    stem = stem.replaceFirst(
+    var stem = name.trim().toLowerCase();
+    for (var i = 0; i < 3; i++) {
+      final before = stem;
+      stem = _stripKnownExtension(stem, _lyricExtensions);
+      stem = _stripLanguageSuffix(stem);
+      // 某些字幕会以 `track.mp3.vtt` 或 `track.mp3.zh.vtt` 命名；
+      // 去掉字幕扩展名和语言后，还要继续去掉嵌套的音频扩展名。
+      stem = _stripKnownExtension(stem, _audioExtensions);
+      stem = _stripLanguageSuffix(stem);
+      if (stem == before) break;
+    }
+    return stem.trim();
+  }
+
+  static String _stripKnownExtension(String value, Set<String> extensions) {
+    final dot = value.lastIndexOf('.');
+    if (dot <= 0 || !extensions.contains(value.substring(dot))) return value;
+    return value.substring(0, dot).trim();
+  }
+
+  static String _stripLanguageSuffix(String value) {
+    var stem = value.replaceFirst(
       RegExp(
         r'(?:[.\-_\s]+|[\[\(])(?:zh|zho|chi|chs|cht|sc|tc)'
         r'(?:[-_](?:cn|tw|hans|hant))?[\]\)]?$',
@@ -584,15 +624,38 @@ class ApiService {
     final trackKey = lyricMatchKey(trackTitle ?? '');
     if (trackKey.isEmpty) return const [];
     final trackFolder = _parentPath(trackPath ?? '');
-    final sameName = candidates
+    var sameName = candidates
         .where((candidate) => lyricMatchKey(candidate.title) == trackKey)
         .toList();
+    // 部分作品的字幕仅保留曲目编号，或附加了额外标题/语言标签，无法与
+    // 完整音频名相等。仅在没有完整匹配时，以同目录前置编号兜底。
+    if (sameName.isEmpty) {
+      final ordinal = lyricTrackOrdinal(trackTitle ?? '');
+      if (ordinal != null) {
+        sameName = candidates
+            .where((candidate) => lyricTrackOrdinal(candidate.title) == ordinal)
+            .toList();
+      }
+    }
     final sameFolderName = sameName
         .where((candidate) => _parentPath(candidate.path) == trackFolder)
         .toList();
     final matched = sameFolderName.isNotEmpty ? sameFolderName : sameName;
     matched.sort(_compareLyricCandidates);
     return matched;
+  }
+
+  @visibleForTesting
+  static String? lyricTrackOrdinal(String name) {
+    var stem = lyricMatchKey(name);
+    // 删除开头的语言/字幕标签，例如 [CHS]、(字幕)。
+    stem = stem.replaceFirst(RegExp(r'^\s*(?:\[[^\]]*\]|\([^)]*\))\s*'), '');
+    final match = RegExp(
+      r'^(?:track|tr|第)?\s*0*(\d{1,4})(?!\d)',
+      caseSensitive: false,
+    ).firstMatch(stem);
+    final value = int.tryParse(match?.group(1) ?? '');
+    return value?.toString();
   }
 
   static int _compareLyricCandidates(_LyricCandidate a, _LyricCandidate b) {

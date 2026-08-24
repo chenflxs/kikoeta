@@ -54,4 +54,3 @@ releases
 # ---------- 本地构建脚本 ----------
 build.py
 start build.bat
-update_version.py

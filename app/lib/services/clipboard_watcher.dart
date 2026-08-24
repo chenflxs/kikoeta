@@ -46,7 +46,7 @@ class ClipboardWatcher {
         SnackBar(
           content: Text('检测到 $rj，点击搜索', style: const TextStyle(fontSize: 13)),
           behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 6),
+          duration: const Duration(seconds: 3),
           action: SnackBarAction(
             label: '搜索',
             onPressed: () => app.requestSearch(rj),
