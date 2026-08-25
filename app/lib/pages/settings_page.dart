@@ -1225,12 +1225,7 @@ class _SettingsPageState extends State<SettingsPage> {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(
-        const SnackBar(
-          content: Text('已重置：账号与全部本地数据已清除'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      ..showSnackBar(const SnackBar(content: Text('已重置：账号与全部本地数据已清除')));
   }
 
   Widget _engineDropdown() {
@@ -1529,13 +1524,8 @@ class _SettingsPageState extends State<SettingsPage> {
       ..clearSnackBars()
       ..showSnackBar(
         SnackBar(
-          content: Text(msg, style: TextStyle(fontSize: 12.5, color: p.text)),
-          behavior: SnackBarBehavior.floating,
+          content: Text(msg),
           duration: const Duration(milliseconds: 1600),
-          backgroundColor: p.toast,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
         ),
       );
   }

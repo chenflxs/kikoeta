@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:io';
 
 import '../data.dart';
 import '../src/rust/api/textconv.dart';
+import 'api_service.dart';
 import 'android_lyrics_overlay.dart';
 import 'desktop_lyrics_overlay.dart';
 import 'player_service.dart';
@@ -18,11 +20,25 @@ class LyricsHub {
   final Map<String, String> _convCache = {};
   bool _started = false;
   String _lastSent = '';
+  AppState? _app;
+  String? _trackKey;
+  String? _manualTrackKey;
+  int _matchSeq = 0;
 
   void start() {
     if (_started) return;
     _started = true;
     AppPlayer.instance.position.listen((_) => _tick());
+    AppPlayer.instance.released.listen((_) => setLyrics(const [], _conv));
+  }
+
+  /// 绑定全局播放状态，使自动歌词匹配不依赖播放器页是否仍在路由栈中。
+  void bind(AppState app) {
+    if (identical(_app, app)) return;
+    _app?.removeListener(_onAppChanged);
+    _app = app;
+    app.addListener(_onAppChanged);
+    _onAppChanged();
   }
 
   void setLyrics(List<LyricLine> lyrics, String conv) {
@@ -34,11 +50,61 @@ class LyricsHub {
     _tick(force: true);
   }
 
+  /// 手动选词只覆盖当前曲目的自动匹配结果，切歌后自动恢复匹配。
+  void setManualLyrics(List<LyricLine> lyrics, String conv) {
+    _manualTrackKey = _trackKey;
+    setLyrics(lyrics, conv);
+  }
+
   void setConv(String conv) {
     if (_conv == conv) return;
     _conv = conv;
     _convCache.clear();
     _tick();
+  }
+
+  void _onAppChanged() {
+    final app = _app;
+    if (app == null) return;
+    final key = _currentTrackKey(app);
+    if (key == _trackKey) return;
+    unawaited(_matchCurrentTrack(app, key));
+  }
+
+  String? _currentTrackKey(AppState app) {
+    final work = app.playWork;
+    if (work == null || app.queue.isEmpty) return null;
+    final index = app.trackIdx.clamp(0, app.queue.length - 1).toInt();
+    final track = app.queue[index];
+    return '${work.rj}|${track.path}|${track.url ?? ''}';
+  }
+
+  Future<void> _matchCurrentTrack(AppState app, String? key) async {
+    _trackKey = key;
+    _manualTrackKey = null;
+    final seq = ++_matchSeq;
+    setLyrics(const [], app.conv);
+    if (key == null) return;
+
+    final work = app.playWork;
+    if (work == null || app.queue.isEmpty) return;
+    final index = app.trackIdx.clamp(0, app.queue.length - 1).toInt();
+    final track = app.queue[index];
+    try {
+      final lyrics = await ApiService.fetchLrc(
+        app,
+        work,
+        trackTitle: track.title,
+        trackPath: track.path,
+        trackUrl: track.url,
+      );
+      if (seq != _matchSeq || key != _trackKey || _manualTrackKey == key) {
+        return;
+      }
+      setLyrics(lyrics, app.conv);
+    } catch (_) {
+      // 清空已在请求开始时完成；失败时不能留下上一首歌词。
+    }
   }
 
   /// 当前应显示的歌词行

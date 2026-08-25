@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../data.dart';
+import '../routes.dart';
 import '../services/api_service.dart';
 import '../src/rust/api/kikoeru_api.dart';
 import '../src/rust/api/textcodec.dart';
@@ -49,13 +50,17 @@ class _WorkPageState extends State<WorkPage> {
   List<String>? _smartTarget; // 智能路径自动进入的目录（标题链），用于「查看全部文件」
   late int _seenLoginEpoch;
   bool _translating = false;
+  List<LanguageEdition> _languageEditions = const [];
+  bool _openingLanguageEdition = false;
 
   @override
   void initState() {
     super.initState();
     _seenLoginEpoch = app.loginEpoch;
+    _languageEditions = work.languageEditions;
     app.addListener(_onAppChanged);
     _loadTracks();
+    _loadLanguageEditions();
   }
 
   @override
@@ -89,6 +94,95 @@ class _WorkPageState extends State<WorkPage> {
     } catch (_) {
       if (mounted) setState(() => _tracksFailed = true);
     }
+  }
+
+  Future<void> _loadLanguageEditions() async {
+    final id = work.apiId;
+    if (id == null) return;
+    try {
+      final details = await ApiService.fetchWork(app, id);
+      if (mounted) {
+        setState(() => _languageEditions = details.languageEditions);
+      }
+    } catch (_) {
+      // 作品仍可正常浏览；多语言入口仅在详情接口可用时显示。
+    }
+  }
+
+  Future<void> _openLanguageEdition(LanguageEdition edition) async {
+    if (_openingLanguageEdition) return;
+    setState(() => _openingLanguageEdition = true);
+    try {
+      final target = await ApiService.fetchWork(app, edition.id);
+      if (!mounted) return;
+      if (app.sfwMode && target.age != Age.all) {
+        _toast('SFW 模式下不能打开非全年龄作品');
+        return;
+      }
+      await Navigator.of(context).push(buildWorkRoute(app, target));
+    } catch (_) {
+      if (mounted) _toast('无法加载该语言版本');
+    } finally {
+      if (mounted) setState(() => _openingLanguageEdition = false);
+    }
+  }
+
+  void _showLanguageEditions() {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) => Dialog(
+        backgroundColor: p.surface,
+        surfaceTintColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 360, maxHeight: 360),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Align(
+                alignment: Alignment.topRight,
+                child: IconButton(
+                  tooltip: '关闭',
+                  icon: const Icon(Icons.close, size: 18),
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                ),
+              ),
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.only(bottom: 8),
+                  itemCount: _languageEditions.length,
+                  separatorBuilder: (_, _) => Divider(height: 1, color: p.line),
+                  itemBuilder: (_, index) {
+                    final edition = _languageEditions[index];
+                    return InkWell(
+                      onTap: () {
+                        Navigator.of(dialogContext).pop();
+                        _openLanguageEdition(edition);
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 12,
+                        ),
+                        child: Text(
+                          edition.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 13, color: p.text),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _indexTree(List<MediaNode> nodes) {
@@ -241,6 +335,10 @@ class _WorkPageState extends State<WorkPage> {
   }
 
   void _playFiles(Iterable<MediaNode> files, {MediaNode? selected}) {
+    if (app.sfwMode && work.age != Age.all) {
+      _toast('SFW 模式下不能播放非全年龄作品');
+      return;
+    }
     final audio = _collectAudio(files);
     if (audio.isEmpty) {
       _toast('暂无音频文件（文件流需登录后可用）');
@@ -258,6 +356,10 @@ class _WorkPageState extends State<WorkPage> {
   }
 
   void _playAsAudio(MediaNode n) {
+    if (app.sfwMode && work.age != Age.all) {
+      _toast('SFW 模式下不能播放非全年龄作品');
+      return;
+    }
     app.startPlayback(work, [n]);
     Navigator.of(context).pushNamed('/player');
   }
@@ -818,6 +920,35 @@ class _WorkPageState extends State<WorkPage> {
                             ),
                             const SizedBox(width: 8),
                             AgeBadge(age: work.age),
+                            if (_languageEditions.isNotEmpty) ...[
+                              const SizedBox(width: 6),
+                              SizedBox(
+                                height: 26,
+                                child: OutlinedButton(
+                                  onPressed: _openingLanguageEdition
+                                      ? null
+                                      : _showLanguageEditions,
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: p.muted,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                    ),
+                                    minimumSize: Size.zero,
+                                    visualDensity: VisualDensity.compact,
+                                    tapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                    side: BorderSide(color: p.line),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(7),
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    '多语言',
+                                    style: TextStyle(fontSize: 11.5),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                         const SizedBox(height: 8),
@@ -1353,13 +1484,8 @@ class _WorkPageState extends State<WorkPage> {
       ..clearSnackBars()
       ..showSnackBar(
         SnackBar(
-          content: Text(msg, style: TextStyle(fontSize: 12.5, color: p.text)),
-          behavior: SnackBarBehavior.floating,
+          content: Text(msg),
           duration: const Duration(milliseconds: 1600),
-          backgroundColor: p.toast,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
         ),
       );
   }

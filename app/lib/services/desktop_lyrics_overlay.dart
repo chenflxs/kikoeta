@@ -63,6 +63,9 @@ class DesktopLyricsOverlay {
   // 文字以更高分辨率绘制为灰阶遮罩，再下采样到分层窗口。
   // GDI 直接绘制到透明 DIB 会丢失边缘覆盖率，导致明显锯齿。
   static const _textScale = 3;
+  // 悬停控件也在最终 DIB 上绘制。对其路径和圆角作子像素采样，避免
+  // 文字清晰后按钮、SVG 图标仍停留在 1px 阶梯栅格上。
+  static const _controlScale = 4;
   int _textMemDc = 0;
   int _textDib = 0;
   Pointer<Uint8>? _textBits;
@@ -669,16 +672,6 @@ class DesktopLyricsOverlay {
     }
   }
 
-  void _setPx(int x, int y, int a, int r, int g, int b) {
-    final bits = _bits;
-    if (bits == null || x < 0 || y < 0 || x >= _dibW || y >= _dibH) return;
-    final i = ((_dibH - 1 - y) * _dibW + x) * 4;
-    bits[i] = b;
-    bits[i + 1] = g;
-    bits[i + 2] = r;
-    bits[i + 3] = a;
-  }
-
   void _fillRounded(
     int x0,
     int y0,
@@ -692,21 +685,48 @@ class DesktopLyricsOverlay {
   ) {
     for (var y = y0; y < y1; y++) {
       for (var x = x0; x < x1; x++) {
-        if (_inRounded(x, y, x0, y0, x1, y1, radius)) {
-          _setPx(x, y, a, r, g, b);
-        }
+        final coverage = _roundedCoverage(x, y, x0, y0, x1, y1, radius);
+        if (coverage <= 0) continue;
+        _blendPx(x, y, (a * coverage).round(), r, g, b);
       }
     }
   }
 
-  bool _inRounded(int x, int y, int x0, int y0, int x1, int y1, int radius) {
-    final dx = x < x0 + radius
-        ? x0 + radius - x
-        : (x >= x1 - radius ? x - (x1 - radius - 1) : 0);
-    final dy = y < y0 + radius
-        ? y0 + radius - y
-        : (y >= y1 - radius ? y - (y1 - radius - 1) : 0);
-    if (dx <= 0 || dy <= 0) return true;
+  double _roundedCoverage(
+    int x,
+    int y,
+    int x0,
+    int y0,
+    int x1,
+    int y1,
+    int radius,
+  ) {
+    var inside = 0;
+    final total = _controlScale * _controlScale;
+    for (var sy = 0; sy < _controlScale; sy++) {
+      final py = y + (sy + 0.5) / _controlScale;
+      for (var sx = 0; sx < _controlScale; sx++) {
+        final px = x + (sx + 0.5) / _controlScale;
+        if (_isInRounded(px, py, x0, y0, x1, y1, radius)) inside++;
+      }
+    }
+    return inside / total;
+  }
+
+  bool _isInRounded(
+    double x,
+    double y,
+    int x0,
+    int y0,
+    int x1,
+    int y1,
+    int radius,
+  ) {
+    if (x < x0 || x >= x1 || y < y0 || y >= y1) return false;
+    final cx = x.clamp((x0 + radius).toDouble(), (x1 - radius).toDouble());
+    final cy = y.clamp((y0 + radius).toDouble(), (y1 - radius).toDouble());
+    final dx = x - cx;
+    final dy = y - cy;
     return dx * dx + dy * dy <= radius * radius;
   }
 
@@ -878,12 +898,21 @@ class DesktopLyricsOverlay {
     final maxX = (math.max(a.dx, b.dx) + r2).ceil();
     final minY = (math.min(a.dy, b.dy) - r2).floor();
     final maxY = (math.max(a.dy, b.dy) + r2).ceil();
+    final total = _controlScale * _controlScale;
     for (var y = minY; y <= maxY; y++) {
       for (var x = minX; x <= maxX; x++) {
-        final d = _segDist(x + 0.5, y + 0.5, a.dx, a.dy, b.dx, b.dy);
-        final cover = w / 2 + 0.5 - d;
-        if (cover <= 0) continue;
-        final alpha = cover >= 1 ? 255 : (cover * 255).round();
+        var covered = 0;
+        for (var sy = 0; sy < _controlScale; sy++) {
+          final py = y + (sy + 0.5) / _controlScale;
+          for (var sx = 0; sx < _controlScale; sx++) {
+            final px = x + (sx + 0.5) / _controlScale;
+            if (_segDist(px, py, a.dx, a.dy, b.dx, b.dy) <= w / 2) {
+              covered++;
+            }
+          }
+        }
+        if (covered == 0) continue;
+        final alpha = (covered * 255 / total).round();
         _blendPx(x, y, alpha, 255, 255, 255);
       }
     }

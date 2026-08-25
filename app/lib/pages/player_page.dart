@@ -1494,7 +1494,7 @@ class _PlayerPageState extends State<PlayerPage> {
       _lyricSourceName = pick?.title;
       _lastAutoIdx = -1;
     });
-    LyricsHub.instance.setLyrics(_lyrics, app.conv);
+    LyricsHub.instance.setManualLyrics(_lyrics, app.conv);
     if (ctx.mounted) Navigator.pop(ctx);
     _maybeAutoScrollLyric();
   }
@@ -1527,7 +1527,7 @@ class _PlayerPageState extends State<PlayerPage> {
         _lyricSourceName = f.name;
         _lastAutoIdx = -1;
       });
-      LyricsHub.instance.setLyrics(_lyrics, app.conv);
+      LyricsHub.instance.setManualLyrics(_lyrics, app.conv);
       _maybeAutoScrollLyric();
     } catch (e) {
       _toast('读取歌词失败：$e');
@@ -1647,13 +1647,8 @@ class _PlayerPageState extends State<PlayerPage> {
       ..clearSnackBars()
       ..showSnackBar(
         SnackBar(
-          content: Text(msg, style: TextStyle(fontSize: 12.5, color: p.text)),
-          behavior: SnackBarBehavior.floating,
+          content: Text(msg),
           duration: const Duration(milliseconds: 1600),
-          backgroundColor: p.toast,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
         ),
       );
   }

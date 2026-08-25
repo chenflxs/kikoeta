@@ -4,9 +4,25 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import 'services/android_audio.dart';
+import 'services/player_service.dart';
 import 'services/settings_store.dart';
 
 enum Age { all, r15, r18 }
+
+/// 同一作品的其它语言版本（由作品详情接口提供）。
+class LanguageEdition {
+  final int id;
+  final String title;
+  final String? language;
+  final bool isOriginal;
+
+  const LanguageEdition({
+    required this.id,
+    required this.title,
+    this.language,
+    this.isOriginal = false,
+  });
+}
 
 class Work {
   final String rj;
@@ -21,6 +37,7 @@ class Work {
   final String? coverUrl;
   final bool hasSubtitle;
   final int? apiId;
+  final List<LanguageEdition> languageEditions;
 
   const Work({
     required this.rj,
@@ -35,6 +52,7 @@ class Work {
     this.coverUrl,
     this.hasSubtitle = false,
     this.apiId,
+    this.languageEditions = const [],
   });
 }
 
@@ -985,12 +1003,20 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 切换 SFW 模式：开启后强制只看全年龄（非 R18）内容，关闭恢复全部
-  void toggleSfw() {
+  /// 切换 SFW 模式：开启后只显示全年龄内容，并释放当前播放媒体。
+  Future<void> toggleSfw() async {
     sfwMode = !sfwMode;
     ageFilter = sfwMode ? 0 : null;
     SettingsStore.set('sfw', sfwMode ? '1' : '0');
+    if (sfwMode) {
+      currentWork = null;
+      queue.clear();
+      trackIdx = 0;
+      playing = false;
+      clearPlayState();
+    }
     notifyListeners();
+    if (sfwMode) await AppPlayer.instance.releaseMedia();
   }
 
   /// 拔出耳机自动暂停（安卓）

@@ -11,6 +11,9 @@ class ClipboardWatcher {
 
   static String? _lastRj;
   static String _lastRaw = '';
+  static Timer? _dismissTimer;
+  static ScaffoldFeatureController<SnackBar, SnackBarClosedReason>?
+  _activeSnackBar;
 
   static Timer start(
     AppState app,
@@ -40,19 +43,40 @@ class ClipboardWatcher {
     _lastRj = rj;
     final messenger = messengerKey.currentState;
     if (messenger == null) return;
-    messenger
-      ..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(
-          content: Text('检测到 $rj，点击搜索', style: const TextStyle(fontSize: 13)),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 3),
-          action: SnackBarAction(
-            label: '搜索',
-            onPressed: () => app.requestSearch(rj),
-          ),
+    _dismissTimer?.cancel();
+    messenger.clearSnackBars();
+    late final ScaffoldFeatureController<SnackBar, SnackBarClosedReason>
+    controller;
+    controller = messenger.showSnackBar(
+      SnackBar(
+        content: Text('检测到 $rj，点击搜索'),
+        duration: const Duration(seconds: 3),
+        action: SnackBarAction(
+          label: '搜索',
+          onPressed: () {
+            _dismissTimer?.cancel();
+            if (identical(_activeSnackBar, controller)) {
+              _activeSnackBar = null;
+              controller.close();
+            }
+            app.requestSearch(rj);
+          },
         ),
-      );
+      ),
+    );
+    _activeSnackBar = controller;
+    controller.closed.whenComplete(() {
+      if (!identical(_activeSnackBar, controller)) return;
+      _activeSnackBar = null;
+      _dismissTimer?.cancel();
+      _dismissTimer = null;
+    });
+    _dismissTimer = Timer(const Duration(seconds: 3), () {
+      if (!identical(_activeSnackBar, controller)) return;
+      _activeSnackBar = null;
+      _dismissTimer = null;
+      controller.close();
+    });
   }
 
   static String? _extractRj(String text) {

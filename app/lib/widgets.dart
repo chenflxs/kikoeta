@@ -79,6 +79,9 @@ class _CoverArtState extends State<CoverArt> {
   @override
   Widget build(BuildContext context) {
     final g = coverGrads[work.grad % coverGrads.length];
+    final coverImage = work.coverUrl == null
+        ? null
+        : RustImageProvider(work.coverUrl!);
     return Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
@@ -92,17 +95,11 @@ class _CoverArtState extends State<CoverArt> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          if (work.coverUrl != null)
+          if (coverImage != null)
             Positioned.fill(
               child: LayoutBuilder(
                 builder: (_, _) {
-                  // 卡片封面统一按 1080px 解码，避免小卡片缓存被放大后发糊。
-                  const cacheWidth = 1080;
-                  final image = ResizeImage.resizeIfNeeded(
-                    cacheWidth,
-                    null,
-                    RustImageProvider(work.coverUrl!),
-                  );
+                  final image = coverImage;
                   return TweenAnimationBuilder<double>(
                     key: ValueKey('${work.coverUrl}:$_attempt'),
                     tween: Tween(begin: 0, end: 1),
@@ -317,26 +314,8 @@ class WorkCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           AspectRatio(
-            aspectRatio: 1,
-            child: CoverArt(
-              work: work,
-              child: Positioned(
-                left: 10,
-                right: 10,
-                bottom: 10,
-                child: Text(
-                  work.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    shadows: [Shadow(blurRadius: 6, color: Colors.black54)],
-                  ),
-                ),
-              ),
-            ),
+            aspectRatio: 4 / 3,
+            child: CoverArt(work: work),
           ),
           const SizedBox(height: 7),
           Text(
@@ -361,6 +340,15 @@ class WorkCard extends StatelessWidget {
               Text(work.dur, style: TextStyle(fontSize: 10.5, color: p.dim)),
             ],
           ),
+          if (work.va.trim().isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(
+              work.va,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 10.5, color: p.muted),
+            ),
+          ],
           const SizedBox(height: 6),
           Wrap(spacing: 4, runSpacing: 4, children: tags),
         ],
@@ -984,13 +972,8 @@ class _HomeSearchBarState extends State<HomeSearchBar> {
                         ..clearSnackBars()
                         ..showSnackBar(
                           SnackBar(
-                            content: Text(
-                              '已删除「${e.value}」',
-                              style: TextStyle(fontSize: 12.5, color: p.text),
-                            ),
-                            behavior: SnackBarBehavior.floating,
+                            content: Text('已删除「${e.value}」'),
                             duration: const Duration(milliseconds: 1600),
-                            backgroundColor: p.toast,
                           ),
                         );
                     },

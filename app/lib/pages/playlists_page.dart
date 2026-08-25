@@ -18,14 +18,23 @@ class PlaylistsPage extends StatelessWidget {
             : AppColors.light;
         return Scaffold(
       appBar: AppBar(title: const Text('播放列表'), leading: const BackButton()),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _createPlaylist(context),
-        backgroundColor: p.accent,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.add, size: 20),
-        label: const Text('新建播放列表', style: TextStyle(fontSize: 13)),
-      ),
-      body: app.playlists.isEmpty
+      floatingActionButton: app.sfwMode
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: () => _createPlaylist(context),
+              backgroundColor: p.accent,
+              foregroundColor: Colors.white,
+              icon: const Icon(Icons.add, size: 20),
+              label: const Text('新建播放列表', style: TextStyle(fontSize: 13)),
+            ),
+      body: app.sfwMode
+          ? Center(
+              child: Text(
+                'SFW 模式下不显示播放列表',
+                style: TextStyle(fontSize: 13, color: p.dim),
+              ),
+            )
+          : app.playlists.isEmpty
           ? Center(
               child: Text(
                 '暂无播放列表，点击右下角新建',
@@ -205,13 +214,16 @@ class PlaylistDetailPage extends StatelessWidget {
         final p = Theme.of(context).brightness == Brightness.dark
             ? AppColors.dark
             : AppColors.light;
-        final entries = app.playlists[name] ?? const [];
+        final hiddenBySfw = app.sfwMode;
+        final entries = hiddenBySfw
+            ? const <PlaylistEntry>[]
+            : app.playlists[name] ?? const [];
         return Scaffold(
       appBar: AppBar(title: Text(name), leading: const BackButton()),
       body: entries.isEmpty
           ? Center(
               child: Text(
-                '播放列表为空',
+                hiddenBySfw ? 'SFW 模式下不显示播放列表内容' : '播放列表为空',
                 style: TextStyle(fontSize: 13, color: p.dim),
               ),
             )

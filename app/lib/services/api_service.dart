@@ -158,6 +158,16 @@ class ApiService {
     return parseWorks(json, base: base, perPage: 1).works.firstOrNull;
   }
 
+  /// 读取单部作品详情，以取得首页列表未携带的多语言版本信息。
+  static Future<Work> fetchWork(AppState app, int id) async {
+    final json = await apiGetWork(base: resolveBase(app), rj: id.toString());
+    final decoded = jsonDecode(json);
+    if (decoded is! Map) {
+      throw const FormatException('作品详情格式无效');
+    }
+    return _mapWork(Map<String, dynamic>.from(decoded), 0, resolveBase(app));
+  }
+
   /// 首页/搜索排序参数：所有分类均按用户选择传递给服务器。
   static String orderParam(AppState app) {
     return switch (app.sort) {
@@ -975,6 +985,7 @@ class ApiService {
         (m['circle'] as Map?)?['name'] as String? ??
         (m['name'] as String? ?? '');
     final lyricStatus = m['lyric_status'];
+    final languageEditions = _mapLanguageEditions(m, apiId);
     return Work(
       rj:
           m['source_id'] as String? ??
@@ -998,7 +1009,46 @@ class ApiService {
           m['has_subtitle'] as bool? ??
           (lyricStatus is String && lyricStatus.isNotEmpty),
       apiId: apiId,
+      languageEditions: languageEditions,
     );
+  }
+
+  static List<LanguageEdition> _mapLanguageEditions(
+    Map<String, dynamic> work,
+    int? currentId,
+  ) {
+    final editions = <LanguageEdition>[];
+    final seen = <int>{};
+
+    void addAll(Object? rawEditions) {
+      if (rawEditions is! List) return;
+      for (final raw in rawEditions) {
+        if (raw is! Map) continue;
+        final idValue = raw['id'];
+        final id = idValue is num
+            ? idValue.toInt()
+            : idValue is String
+            ? int.tryParse(idValue)
+            : null;
+        if (id == null || id == currentId || !seen.add(id)) continue;
+        final title = (raw['title'] ?? raw['name'] ?? '').toString().trim();
+        if (title.isEmpty) continue;
+        final language = (raw['lang'] ?? raw['language'])?.toString().trim();
+        editions.add(
+          LanguageEdition(
+            id: id,
+            title: title,
+            language: language == null || language.isEmpty ? null : language,
+            isOriginal: raw['is_original'] == true || raw['isOriginal'] == true,
+          ),
+        );
+      }
+    }
+
+    // asmr.one 使用前者；自建 Kikoeru 使用后者，后者没有语言代码。
+    addAll(work['other_language_editions_in_db']);
+    addAll(work['relatedWorks']);
+    return editions;
   }
 
   static String _fmtDuration(int seconds) {

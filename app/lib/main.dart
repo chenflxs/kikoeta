@@ -102,6 +102,7 @@ Future<void> main() async {
     _syncAndroidLyrics();
   }
   LyricsHub.instance.start();
+  LyricsHub.instance.bind(appState);
 }
 
 void _syncDesktopLyrics() {

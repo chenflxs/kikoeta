@@ -63,6 +63,7 @@ class AppPlayer {
 
   /// stop()/open() 后的 completed 抑制截止时间；到点自动失效，避免被去重流卡死
   DateTime? _suppressCompletedUntil;
+  int _releaseGeneration = 0;
 
   int _lastPos = 0;
   int _lastDur = 0;
@@ -73,6 +74,7 @@ class AppPlayer {
   final _playingCtrl = StreamController<bool>.broadcast();
   final _bufferingCtrl = StreamController<bool>.broadcast();
   final _completedCtrl = StreamController<void>.broadcast();
+  final _releasedCtrl = StreamController<void>.broadcast();
   final _errorCtrl = StreamController<String>.broadcast();
 
   late final List<StreamSubscription> _subs;
@@ -82,6 +84,7 @@ class AppPlayer {
   Stream<bool> get playing => _playingCtrl.stream;
   Stream<bool> get buffering => _bufferingCtrl.stream;
   Stream<void> get completed => _completedCtrl.stream;
+  Stream<void> get released => _releasedCtrl.stream;
   Stream<String> get error => _errorCtrl.stream;
 
   /// 当前播放位置（秒）
@@ -106,8 +109,11 @@ class AppPlayer {
   /// 打开网络音频：桌面始终经本地代理转发；Android 在启用应用 HTTP
   /// 代理时也走本地代理，未启用时直连并附带该媒体域的 Bearer token。
   Future<void> openMediaUrl(String url, {bool autoplay = true}) async {
+    final generation = _releaseGeneration;
     await stop();
+    if (generation != _releaseGeneration) return;
     final httpProxy = await httpProxyConfig();
+    if (generation != _releaseGeneration) return;
     final direct = Platform.isAndroid && httpProxy == null;
     final mediaUrl = direct ? url : apiStreamProxyUrl(url: url);
     final uri = Uri.tryParse(url);
@@ -124,6 +130,12 @@ class AppPlayer {
       ),
       autoplay: autoplay,
     ).timeout(const Duration(seconds: 20));
+    if (generation != _releaseGeneration) {
+      await stop();
+      opened = false;
+      openedUrl = null;
+      return;
+    }
     openedUrl = url;
   }
 
@@ -133,6 +145,19 @@ class AppPlayer {
     try {
       await player.stop();
     } catch (_) {}
+  }
+
+  /// 停止并解除当前媒体关联，用于隐私模式等需要立即丢弃播放上下文的场景。
+  Future<void> releaseMedia() async {
+    _releaseGeneration++;
+    await stop();
+    opened = false;
+    openedUrl = null;
+    _lastPos = 0;
+    _lastDur = 0;
+    _posCtrl.add(_lastPos);
+    _durCtrl.add(_lastDur);
+    _releasedCtrl.add(null);
   }
 
   /// 应用 10 段 EQ（mpv af 链）。
@@ -177,6 +202,7 @@ class AppPlayer {
     for (final s in _subs) {
       s.cancel();
     }
+    _releasedCtrl.close();
     player.dispose();
   }
 }

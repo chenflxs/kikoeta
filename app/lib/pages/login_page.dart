@@ -57,9 +57,7 @@ class _LoginPageState extends State<LoginPage> {
   void _toast(String s) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(content: Text(s), behavior: SnackBarBehavior.floating),
-      );
+      ..showSnackBar(SnackBar(content: Text(s)));
   }
 
   // ---------------- one 站登录 ----------------

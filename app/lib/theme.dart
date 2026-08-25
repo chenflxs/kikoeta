@@ -138,6 +138,15 @@ ThemeData buildTheme(Brightness brightness) {
       titleLarge: TextStyle(fontWeight: FontWeight.w800, letterSpacing: .2),
       bodyMedium: TextStyle(height: 1.4),
     ),
+    snackBarTheme: SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: p.toast,
+      contentTextStyle: TextStyle(fontSize: 12.5, color: p.text),
+      actionTextColor: p.accent,
+      disabledActionTextColor: p.dim,
+      elevation: 8,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ),
     bottomSheetTheme: BottomSheetThemeData(
       backgroundColor: p.surface,
       shape: const RoundedRectangleBorder(

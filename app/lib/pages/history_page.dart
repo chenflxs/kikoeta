@@ -31,7 +31,8 @@ class HistoryPage extends StatelessWidget {
         final p = Theme.of(context).brightness == Brightness.dark
             ? AppColors.dark
             : AppColors.light;
-        final list = app.playHistory;
+        final hiddenBySfw = app.sfwMode;
+        final list = hiddenBySfw ? const <Map<String, dynamic>>[] : app.playHistory;
         return Scaffold(
           appBar: AppBar(
             title: const Text('播放历史'),
@@ -52,7 +53,7 @@ class HistoryPage extends StatelessWidget {
           body: list.isEmpty
               ? Center(
                   child: Text(
-                    '暂无播放历史',
+                    hiddenBySfw ? 'SFW 模式下不显示播放历史' : '暂无播放历史',
                     style: TextStyle(fontSize: 13, color: p.dim),
                   ),
                 )
