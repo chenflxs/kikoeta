@@ -286,16 +286,17 @@ Future<void> _mediaPrev() async {
 /// 上报当前播放状态到 MediaSession（通知/锁屏卡片）
 void _syncMedia3State() {
   if (kIsWeb || !Platform.isAndroid) return;
+  final hideCard = appState.lsCover;
   final w = appState.currentWork;
   final q = appState.queue;
   final t = q.isEmpty ? null : q[appState.trackIdx.clamp(0, q.length - 1)];
   final title = t?.title ?? '';
   if (w == null || title.isEmpty) {
+    _media3Hidden = hideCard;
     _media3ArtworkLoadKey = '';
     AndroidMedia3.clearSession();
     return;
   }
-  final hideCard = appState.lsCover;
   final artworkUrl = w.coverUrl;
   final artworkKey = '${w.rj}\n${artworkUrl ?? ''}';
   // 首次有播放内容时才启动媒体会话服务（避免启动即拉前台服务）；
@@ -375,7 +376,10 @@ void _bindMedia3Sync() {
   });
   appState.addListener(() {
     final now = DateTime.now();
-    if (now.difference(_lastMedia3Sync).inMilliseconds > 1000) {
+    // 隐藏卡片开关必须立即刷新，不能被常规状态同步节流吞掉。
+    final hideCardChanged = appState.lsCover != _media3Hidden;
+    if (hideCardChanged ||
+        now.difference(_lastMedia3Sync).inMilliseconds > 1000) {
       _lastMedia3Sync = now;
       _syncMedia3State();
     }

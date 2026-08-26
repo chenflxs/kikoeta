@@ -658,10 +658,7 @@ class _SettingsPageState extends State<SettingsPage> {
               '不显示通知栏媒体卡片',
               '播放时不在通知栏显示媒体卡片',
               app.lsCover,
-              (v) {
-                app.lsCover = v;
-                app.notify();
-              },
+              app.setLsCover,
             ),
             _switchRow(
               Icons.branding_watermark_outlined,

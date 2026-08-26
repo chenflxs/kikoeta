@@ -8,7 +8,10 @@ permissions:
 
 jobs:
   build-windows-arm64:
-    runs-on: windows-2025
+    # Flutter selects the Windows target from the host architecture.
+    # The ARM runner is therefore required; --target-platform is not a
+    # supported option for `flutter build windows`.
+    runs-on: windows-11-arm
 
     steps:
       - name: Checkout
@@ -47,7 +50,7 @@ jobs:
 
       - name: Build Flutter Windows ARM64
         working-directory: app
-        run: flutter build windows --release --target-platform windows-arm64 --build-name "$env:VERSION_NAME" --build-number "$env:VERSION_CODE"
+        run: flutter build windows --release --build-name "$env:VERSION_NAME" --build-number "$env:VERSION_CODE"
 
       - name: Verify ARM64 build output
         shell: pwsh
