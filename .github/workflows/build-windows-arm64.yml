@@ -1,0 +1,100 @@
+name: Build Windows ARM64 installer
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-arm64:
+    runs-on: windows-2025
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Set up Rust ARM64 target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-pc-windows-msvc
+
+      - name: Read version from pubspec
+        shell: pwsh
+        run: |
+          $pubspecPath = Join-Path $env:GITHUB_WORKSPACE 'app/pubspec.yaml'
+          $pubspec = Get-Content -LiteralPath $pubspecPath -Raw
+          $match = [regex]::Match($pubspec, '(?m)^version:\s*(?<name>[^\s+]+)\+(?<code>\d+)\s*$')
+          if (-not $match.Success) {
+            throw "Could not read version: NAME+CODE from $pubspecPath"
+          }
+
+          $versionName = $match.Groups['name'].Value
+          $versionCode = $match.Groups['code'].Value
+          "VERSION_NAME=$versionName" >> $env:GITHUB_ENV
+          "VERSION_CODE=$versionCode" >> $env:GITHUB_ENV
+          "Read Kikoeta version $versionName+$versionCode"
+
+      - name: Install dependencies
+        working-directory: app
+        run: flutter pub get
+
+      - name: Build Flutter Windows ARM64
+        working-directory: app
+        run: flutter build windows --release --target-platform windows-arm64 --build-name "$env:VERSION_NAME" --build-number "$env:VERSION_CODE"
+
+      - name: Verify ARM64 build output
+        shell: pwsh
+        run: |
+          $releaseDir = Join-Path $env:GITHUB_WORKSPACE 'app/build/windows/arm64/runner/Release'
+          $executable = Join-Path $releaseDir 'kikoeta_app.exe'
+          if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
+            throw "Flutter ARM64 output was not found: $executable"
+          }
+          "FLUTTER_RELEASE_DIR=$releaseDir" >> $env:GITHUB_ENV
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --version=6.7.0 --no-progress --yes
+
+      - name: Build Inno installer
+        shell: pwsh
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
+          if (-not (Test-Path -LiteralPath $iscc -PathType Leaf)) {
+            throw "ISCC.exe was not found at $iscc"
+          }
+
+          $outputDir = Join-Path $env:GITHUB_WORKSPACE 'artifacts'
+          New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
+          $outputName = "kikoeta-$env:VERSION_NAME-windows-arm64-setup"
+          & $iscc `
+            "/DMyAppVersion=$env:VERSION_NAME" `
+            "/DMyAppVersionCode=$env:VERSION_CODE" `
+            "/DMySourceDir=$env:FLUTTER_RELEASE_DIR" `
+            "/DMyOutputDir=$outputDir" `
+            "/DMyOutputBaseFilename=$outputName" `
+            "/DMyArchitecturesAllowed=arm64" `
+            (Join-Path $env:GITHUB_WORKSPACE 'kikoeta-installer.iss')
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup failed with exit code $LASTEXITCODE"
+          }
+
+          $installer = Join-Path $outputDir "$outputName.exe"
+          if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) {
+            throw "Installer was not created: $installer"
+          }
+          "INSTALLER_PATH=$installer" >> $env:GITHUB_ENV
+
+      - name: Upload Windows ARM64 installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: kikoeta-${{ env.VERSION_NAME }}-windows-arm64
+          path: ${{ env.INSTALLER_PATH }}
+          if-no-files-found: error

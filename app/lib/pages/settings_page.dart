@@ -666,7 +666,7 @@ class _SettingsPageState extends State<SettingsPage> {
             _switchRow(
               Icons.branding_watermark_outlined,
               '通知栏封面显示项目 logo',
-              '开启后封面位置显示项目 logo，不显示真实封面（暂无 logo，暂用占位图）',
+              '开启后封面位置显示项目 logo，不显示真实封面',
               app.notifCover,
               (v) {
                 app.notifCover = v;
