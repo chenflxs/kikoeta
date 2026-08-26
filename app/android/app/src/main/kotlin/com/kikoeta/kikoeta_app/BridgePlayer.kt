@@ -1,7 +1,10 @@
 package com.kikoeta.kikoeta_app
 
 import android.content.Context
-import android.net.Uri
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import java.io.ByteArrayOutputStream
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -17,13 +20,16 @@ import com.google.common.util.concurrent.ListenableFuture
  */
 @UnstableApi
 class BridgePlayer(context: Context) : SimpleBasePlayer(context.mainLooper) {
+    private val appContext = context.applicationContext
     private var isPlaying = false
     private var positionMs = 0L
     private var bufferedMs = 0L
     private var durationMs = C.TIME_UNSET
     private var title = ""
     private var artist = ""
-    private var artworkUrl: String? = null
+    private var artworkKey: String? = null
+    private var artworkData: ByteArray? = null
+    private var logoCover = false
     private var mediaId = ""
     private var released = false
 
@@ -41,8 +47,9 @@ class BridgePlayer(context: Context) : SimpleBasePlayer(context.mainLooper) {
         durationMs: Long,
         title: String,
         artist: String,
-        artworkUrl: String?,
+        artworkKey: String?,
         mediaId: String,
+        logoCover: Boolean,
     ) {
         this.isPlaying = playing
         this.positionMs = positionMs
@@ -50,8 +57,17 @@ class BridgePlayer(context: Context) : SimpleBasePlayer(context.mainLooper) {
         this.durationMs = if (durationMs > 0) durationMs else C.TIME_UNSET
         this.title = title
         this.artist = artist
-        this.artworkUrl = artworkUrl
+        if (this.mediaId != mediaId || this.artworkKey != artworkKey ||
+            this.logoCover != logoCover
+        ) {
+            artworkData = null
+        }
+        this.artworkKey = artworkKey
         this.mediaId = mediaId
+        this.logoCover = logoCover
+        if (logoCover && artworkData == null) {
+            artworkData = loadLogoArtwork()
+        }
         if (!released) {
             try {
                 invalidateState()
@@ -67,7 +83,9 @@ class BridgePlayer(context: Context) : SimpleBasePlayer(context.mainLooper) {
         durationMs = C.TIME_UNSET
         title = ""
         artist = ""
-        artworkUrl = null
+        artworkKey = null
+        artworkData = null
+        logoCover = false
         mediaId = ""
         if (!released) {
             try {
@@ -76,9 +94,68 @@ class BridgePlayer(context: Context) : SimpleBasePlayer(context.mainLooper) {
         }
     }
 
+    /** 将本地文件解码出的封面写入会话元数据，供不读取通知大图的系统使用。 */
+    fun updateArtwork(artworkKey: String, bitmap: Bitmap) {
+        if (released || logoCover || artworkKey != this.artworkKey) return
+        val maxSide = 512
+        val scale = maxOf(bitmap.width, bitmap.height).toFloat() / maxSide
+        val scaled = if (scale > 1f) {
+            Bitmap.createScaledBitmap(
+                bitmap,
+                (bitmap.width / scale).toInt().coerceAtLeast(1),
+                (bitmap.height / scale).toInt().coerceAtLeast(1),
+                true,
+            )
+        } else {
+            bitmap
+        }
+        artworkData = try {
+            ByteArrayOutputStream().use { output ->
+                for (quality in intArrayOf(88, 76, 64, 52)) {
+                    output.reset()
+                    scaled.compress(Bitmap.CompressFormat.JPEG, quality, output)
+                    if (output.size() <= 512 * 1024) break
+                }
+                output.toByteArray()
+            }
+        } catch (_: Throwable) {
+            null
+        } finally {
+            if (scaled !== bitmap) scaled.recycle()
+        }
+        if (artworkData != null) {
+            try {
+                invalidateState()
+            } catch (_: Throwable) {}
+        }
+    }
+
+    private fun loadLogoArtwork(): ByteArray? {
+        val bitmap = runCatching {
+            BitmapFactory.decodeResource(appContext.resources, R.mipmap.ic_launcher)
+        }.getOrNull() ?: return null
+        return try {
+            ByteArrayOutputStream().use { output ->
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
+                output.toByteArray()
+            }
+        } catch (_: Throwable) {
+            null
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
     override fun getState(): State {
         try {
             val commands = Player.Commands.Builder()
+                // 这些读取命令决定 MediaSession 能否把曲目、元数据和播放位置暴露给平台。
+                // 缺失时控制命令仍有效，但 AOSP 会话会显示 position=-1、metadata=null。
+                .add(Player.COMMAND_GET_CURRENT_MEDIA_ITEM)
+                .add(Player.COMMAND_GET_TIMELINE)
+                .add(Player.COMMAND_GET_MEDIA_ITEMS_METADATA)
+                .add(Player.COMMAND_GET_METADATA)
+                .add(Player.COMMAND_GET_AUDIO_ATTRIBUTES)
                 .add(Player.COMMAND_PLAY_PAUSE)
                 .add(Player.COMMAND_STOP)
                 .add(Player.COMMAND_SEEK_TO_PREVIOUS)
@@ -96,27 +173,34 @@ class BridgePlayer(context: Context) : SimpleBasePlayer(context.mainLooper) {
                 )
                 // 有曲目即 READY（暂停时通知/锁屏卡片保持显示，仅状态变暂停）
                 .setPlaybackState(if (title.isEmpty()) Player.STATE_IDLE else Player.STATE_READY)
+                .setAudioAttributes(AudioAttributes.DEFAULT)
                 .setContentPositionMs(positionMs)
+                .setContentBufferedPositionMs(PositionSupplier.getConstant(bufferedMs))
                 .setTotalBufferedDurationMs(PositionSupplier.getConstant(bufferedMs))
             if (title.isNotEmpty()) {
+                val metadata = MediaMetadata.Builder()
+                    .setTitle(title)
+                    .setArtist(artist)
+                artworkData?.let {
+                    metadata.setArtworkData(it, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+                }
                 val mediaItem = MediaItem.Builder()
                     .setMediaId(mediaId.ifEmpty { title })
-                    .setMediaMetadata(
-                        MediaMetadata.Builder()
-                            .setTitle(title)
-                            .setArtist(artist)
-                            .setArtworkUri(artworkUrl?.let { Uri.parse(it) })
-                            .build(),
-                    )
+                    .setMediaMetadata(metadata.build())
                     .build()
                 builder
                     .setPlaylist(
                         listOf(
                             MediaItemData.Builder(Any())
                                 .setMediaItem(mediaItem)
+                                // SimpleBasePlayer 的 Timeline 使用这里的 metadata，而非仅 MediaItem 内部字段。
+                                .setMediaMetadata(metadata.build())
                                 .setIsSeekable(durationMs != C.TIME_UNSET && durationMs > 0)
-                            .setIsDynamic(false)
-                            .build(),
+                                .setIsDynamic(false)
+                                .setDurationUs(
+                                    if (durationMs == C.TIME_UNSET) C.TIME_UNSET else durationMs * 1000,
+                                )
+                                .build(),
                     ),
                 )
                 .setCurrentMediaItemIndex(0)

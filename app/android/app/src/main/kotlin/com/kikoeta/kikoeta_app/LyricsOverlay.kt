@@ -38,6 +38,7 @@ class LyricsOverlay(
     private var visible = false
     private var locked = false
     private var portrait = true
+    private var overlayWidth = WindowManager.LayoutParams.MATCH_PARENT
     private var fontSize = 20f
     private var color = Color.WHITE
     private var outlineColor = Color.BLACK
@@ -67,6 +68,11 @@ class LyricsOverlay(
         portraitWidthDp: Double,
     ) {
         this.portrait = portrait
+        overlayWidth = if (portrait) {
+            WindowManager.LayoutParams.MATCH_PARENT
+        } else {
+            dp(portraitWidthDp.toInt())
+        }
         this.locked = locked
         this.fontSize = fontSize.toFloat()
         this.color = color
@@ -81,10 +87,11 @@ class LyricsOverlay(
             // 仅首次显示时初始化位置；之后歌词行更新不重置拖动位置
             winX = 0
             winY = dp(90)
-            wm.addView(root, params(portrait, portraitWidthDp))
+            wm.addView(root, params())
             visible = true
         } else {
-            wm.updateViewLayout(root, params(portrait, portraitWidthDp))
+            constrainPosition()
+            wm.updateViewLayout(root, params())
         }
     }
 
@@ -120,15 +127,9 @@ class LyricsOverlay(
             ),
         )
 
-        // 未锁定时点击歌词：显示/隐藏锁定按钮（再次点击隐藏）
-        root.setOnClickListener {
-            if (!locked) {
-                btn.visibility =
-                    if (btn.visibility == View.VISIBLE) View.INVISIBLE else View.VISIBLE
-            }
-        }
-        // 未锁定时可拖动窗口调整位置（拖动结束位置保留）
-        root.setOnTouchListener { _, event ->
+        // 歌词文本同时负责点击和拖拽。ACTION_DOWN 必须消费，否则 Android 不会
+        // 分派同一次手势后续的 MOVE/UP 事件，导致悬浮窗无法拖动。
+        tv.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     touchStartX = event.rawX
@@ -136,7 +137,7 @@ class LyricsOverlay(
                     winStartX = winX
                     winStartY = winY
                     dragging = false
-                    false // 不消费：位移小时仍触发点击
+                    true
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = event.rawX - touchStartX
@@ -147,17 +148,19 @@ class LyricsOverlay(
                     }
                     if (dragging) {
                         moveTo((winStartX + dx).toInt(), (winStartY + dy).toInt())
-                        true
-                    } else {
-                        false
                     }
+                    true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     val wasDragging = dragging
                     dragging = false
-                    wasDragging // 拖动过则消费，避免触发点击显示锁定按钮
+                    if (!wasDragging && event.action == MotionEvent.ACTION_UP && !locked) {
+                        btn.visibility =
+                            if (btn.visibility == View.VISIBLE) View.INVISIBLE else View.VISIBLE
+                    }
+                    true
                 }
-                else -> false
+                else -> true
             }
         }
         btn.setOnClickListener {
@@ -173,17 +176,26 @@ class LyricsOverlay(
     }
 
     private fun moveTo(x: Int, y: Int) {
-        val p = params(portrait, 0.0)
-        val screenW = context.resources.displayMetrics.widthPixels
-        val screenH = context.resources.displayMetrics.heightPixels
-        val w = p.width
-        val h = if (p.height > 0) p.height else dp(60)
-        winX = x.coerceIn(-w, screenW)
-        winY = y.coerceIn(0, (screenH - h).coerceAtLeast(0))
-        root?.let { wm.updateViewLayout(it, params(portrait, 0.0)) }
+        winX = x
+        winY = y
+        constrainPosition()
+        root?.let { wm.updateViewLayout(it, params()) }
     }
 
-    private fun params(portrait: Boolean, portraitWidthDp: Double): WindowManager.LayoutParams {
+    private fun constrainPosition() {
+        val screenW = context.resources.displayMetrics.widthPixels
+        val screenH = context.resources.displayMetrics.heightPixels
+        val maxX = if (portrait || overlayWidth >= screenW) {
+            0
+        } else {
+            ((screenW - overlayWidth).coerceAtLeast(0)) / 2
+        }
+        val height = root?.height?.takeIf { it > 0 } ?: dp(60)
+        winX = winX.coerceIn(-maxX, maxX)
+        winY = winY.coerceIn(0, (screenH - height).coerceAtLeast(0))
+    }
+
+    private fun params(): WindowManager.LayoutParams {
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         } else {
@@ -193,11 +205,7 @@ class LyricsOverlay(
         var flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
         if (locked) flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         return WindowManager.LayoutParams(
-            if (portrait) {
-                WindowManager.LayoutParams.MATCH_PARENT
-            } else {
-                dp(portraitWidthDp.toInt())
-            },
+            overlayWidth,
             WindowManager.LayoutParams.WRAP_CONTENT,
             type,
             flags,
@@ -210,8 +218,7 @@ class LyricsOverlay(
     }
 
     private fun applyTouchable() {
-        val p = params(portrait, 0.0)
-        root?.let { wm.updateViewLayout(it, p) }
+        root?.let { wm.updateViewLayout(it, params()) }
     }
 
     fun update(text: String) {

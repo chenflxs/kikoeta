@@ -169,6 +169,8 @@ class MainActivity : FlutterActivity() {
         ch.setMethodCallHandler { call, result ->
             when (call.method) {
                 "ensureSession" -> {
+                    // 与 Kikoeru 一致：先在前台 Activity 中创建 MediaSessionService，
+                    // 再由 Media3 Provider 在真实播放状态到达时提升为前台服务。
                     startService(Intent(this, KikoetaMediaSessionService::class.java))
                     result.success(null)
                 }
@@ -179,26 +181,37 @@ class MainActivity : FlutterActivity() {
                     val dur = (a["durationMs"] as Number).toLong()
                     val title = a["title"] as String? ?: ""
                     val artist = a["artist"] as String? ?: ""
-                    val artwork = a["artworkUrl"] as String?
+                    val artworkKey = a["artworkKey"] as String?
                     val mediaId = a["mediaId"] as String? ?: ""
                     val hideCard = a["hideCard"] == true
                     val logoCover = a["logoCover"] == true
+                    val state = Media3Bridge.PendingState(
+                        playing, pos, dur, title, artist, artworkKey, mediaId, hideCard, logoCover,
+                    )
+                    // 始终保留最近状态：服务刚创建时需要回放，而异步封面也需要据此丢弃旧结果。
+                    Media3Bridge.pendingState = state
                     val p = Media3Bridge.player
                     if (p != null) {
-                        p.updateState(playing, pos, dur, title, artist, artwork, mediaId)
-                    } else {
-                        Media3Bridge.pendingState = Media3Bridge.PendingState(
-                            playing, pos, dur, title, artist, artwork, mediaId, hideCard, logoCover,
+                        // 隐藏卡片时让 Media3 看到空播放列表，由 Provider 自行移除通知。
+                        p.updateState(
+                            playing, pos, dur,
+                            if (hideCard) "" else title,
+                            artist, artworkKey, mediaId, logoCover,
                         )
                     }
-                    // 通知（Service 注册的 onStateChanged 会更新/隐藏媒体通知）
-                    Media3Bridge.onStateChanged?.invoke(playing, title, artist, artwork, hideCard, logoCover)
+                    result.success(null)
+                }
+                "updateArtwork" -> {
+                    val a = call.arguments as Map<*, *>
+                    val mediaId = a["mediaId"] as String? ?: ""
+                    val artworkKey = a["artworkKey"] as String? ?: ""
+                    val artworkPath = a["artworkPath"] as String? ?: ""
+                    Media3Bridge.onArtworkCached?.invoke(mediaId, artworkKey, artworkPath)
                     result.success(null)
                 }
                 "clearSession" -> {
                     Media3Bridge.player?.clearSession()
                     Media3Bridge.pendingState = null
-                    Media3Bridge.onStateChanged?.invoke(false, "", "", null, false, false)
                     result.success(null)
                 }
                 else -> result.notImplemented()

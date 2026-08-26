@@ -14,6 +14,8 @@ class UpdateService {
   static const _unknownVersion = '0.0.0';
   static const updateApi =
       'http://kikoeta-api.chenflxs.xin/?key=14bj234b2j343u423j4gj34';
+  static const githubReleasesApi =
+      'https://api.github.com/repos/chenflxs/kikoeta/releases/latest';
 
   static Timer? _startupTimer;
   static bool _checking = false;
@@ -56,19 +58,14 @@ class UpdateService {
     final client = HttpClient()
       ..connectionTimeout = const Duration(seconds: 12);
     try {
-      final response = await _getUpdateResponse(client);
-      final body = await utf8.decodeStream(response);
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        return UpdateCheckResult(error: 'HTTP ${response.statusCode}');
-      }
-      final raw = jsonDecode(body) as Map<String, dynamic>;
+      final raw = await _getLatestRelease(client);
       final tag = (raw['tag_name'] as String?)?.trim() ?? '';
       final version = _normalizeVersion(tag);
       final parsedUrl = Uri.tryParse(
         (raw['html_url'] as String?)?.trim() ?? '',
       );
       if (parsedUrl?.isAbsolute != true) {
-        return const UpdateCheckResult(error: '更新服务未返回发行版地址');
+        return const UpdateCheckResult(error: '更新服务未返回有效版本信息');
       }
       if (version.isEmpty || !isNewerVersion(version, currentVersion)) {
         return const UpdateCheckResult(upToDate: true);
@@ -78,7 +75,7 @@ class UpdateService {
       );
     } catch (e) {
       if (e is SocketException) {
-        return const UpdateCheckResult(error: '无法解析更新服务域名');
+        return const UpdateCheckResult(error: '无法连接更新服务或 GitHub');
       }
       return const UpdateCheckResult(error: '更新服务连接失败');
     } finally {
@@ -100,6 +97,43 @@ class UpdateService {
       }
     }
     throw StateError('更新服务请求未执行');
+  }
+
+  static Future<Map<String, dynamic>> _getLatestRelease(
+    HttpClient client,
+  ) async {
+    try {
+      final response = await _getUpdateResponse(client);
+      return await _parseReleaseResponse(response);
+    } catch (_) {
+      final request = await client.getUrl(Uri.parse(githubReleasesApi));
+      request.headers.set(
+        HttpHeaders.acceptHeader,
+        'application/vnd.github+json',
+      );
+      request.headers.set(
+        HttpHeaders.userAgentHeader,
+        'Kikoeta Update Checker',
+      );
+      final response = await request.close();
+      return _parseReleaseResponse(response);
+    }
+  }
+
+  static Future<Map<String, dynamic>> _parseReleaseResponse(
+    HttpClientResponse response,
+  ) async {
+    final body = await utf8.decodeStream(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw HttpException('HTTP ${response.statusCode}');
+    }
+    final raw = jsonDecode(body);
+    if (raw is! Map<String, dynamic> ||
+        raw['tag_name'] is! String ||
+        raw['html_url'] is! String) {
+      throw const FormatException('更新响应缺少版本信息');
+    }
+    return raw;
   }
 
   static Future<void> checkManually(BuildContext context, AppState app) async {

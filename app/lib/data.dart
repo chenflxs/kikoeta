@@ -128,6 +128,7 @@ class PlaylistInfo {
 
 class AppState extends ChangeNotifier {
   ThemeMode themeMode = ThemeMode.system; // 跟随系统 / 浅色 / 深色
+  int uiScalePercent = 100; // 应用 UI 缩放：25% - 200%，每档 25%
   int tab = 0; // 0 首页 / 1 收藏 / 2 更多
 
   // 服务器
@@ -585,6 +586,10 @@ class AppState extends ChangeNotifier {
     } else {
       themeMode = ThemeMode.system;
     }
+    final uiScale = int.tryParse(SettingsStore.get('ui_scale_percent') ?? '');
+    if (uiScale != null) {
+      uiScalePercent = _normalizeUiScalePercent(uiScale);
+    }
     final engine = SettingsStore.get('engine');
     if (engine != null && engine.isNotEmpty) this.engine = engine;
     final asmrUser = SettingsStore.get('asmr_user');
@@ -840,6 +845,19 @@ class AppState extends ChangeNotifier {
           : 'system',
     );
     notifyListeners();
+  }
+
+  void setUiScalePercent(int value) {
+    final normalized = _normalizeUiScalePercent(value);
+    if (uiScalePercent == normalized) return;
+    uiScalePercent = normalized;
+    SettingsStore.set('ui_scale_percent', '$uiScalePercent');
+    notifyListeners();
+  }
+
+  static int _normalizeUiScalePercent(int value) {
+    final clamped = value.clamp(25, 200).toInt();
+    return (clamped / 25).round() * 25;
   }
 
   void setVolume(double v) {
@@ -1120,6 +1138,7 @@ class AppState extends ChangeNotifier {
   void resetAll() {
     SettingsStore.clearAll();
     themeMode = ThemeMode.system;
+    uiScalePercent = 100;
     tab = 0;
     customServer = false;
     customServerIdx = 0;

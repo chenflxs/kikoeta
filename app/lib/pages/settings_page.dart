@@ -687,6 +687,41 @@ class _SettingsPageState extends State<SettingsPage> {
           _sec('外观'),
           _group([
             Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
+              child: Row(
+                children: [
+                  Icon(Icons.zoom_out_map_outlined, size: 17, color: p.accent),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      '界面缩放',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    '${app.uiScalePercent}%',
+                    style: TextStyle(fontSize: 12, color: p.dim),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+              child: Slider(
+                value: (app.uiScalePercent / 25 - 1).toDouble(),
+                min: 0,
+                max: 7,
+                divisions: 7,
+                label: '${app.uiScalePercent}%',
+                activeColor: p.accent,
+                onChanged: (value) =>
+                    app.setUiScalePercent((value.round() + 1) * 25),
+              ),
+            ),
+            Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               child: Row(
                 children: [

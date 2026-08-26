@@ -68,9 +68,9 @@ kotlin {
 
 dependencies {
     // Jetpack Media3：媒体会话 / 锁屏与通知控制（桥接到 mpv 播放器）
-    implementation("androidx.media3:media3-session:1.3.1")
-    // MediaStyle 通知样式
-    implementation("androidx.media:media:1.7.0")
+    // 由 MediaSessionService 的默认 Provider 构造平台 MediaStyle 通知，
+    // 与 Kikoeru 3.0.9 使用的 Media3 前台服务链路保持一致。
+    implementation("androidx.media3:media3-session:1.6.0")
 }
 
 flutter {

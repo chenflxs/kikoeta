@@ -544,37 +544,49 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   Widget _topBar({bool showControls = true}) {
-    return Row(
-      children: [
-        IconButton(
-          onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.keyboard_arrow_down, size: 26),
-        ),
-        const Expanded(
-          child: Center(
-            child: Text(
-              '正在播放',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+    return SizedBox(
+      height: kMinInteractiveDimension,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: IconButton(
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(Icons.keyboard_arrow_down, size: 26),
             ),
           ),
-        ),
-        // 桌面歌词/更多仅出现在歌词页右上（封面页通过左右滑动进入歌词页）
-        if (showControls) ...[
-          IconButton(
-            onPressed: _toggleDesktopLyrics,
-            tooltip: '桌面歌词',
-            icon: Icon(
-              app.desktopLyricsOn ? Icons.lyrics : Icons.lyrics_outlined,
-              size: 22,
-              color: app.desktopLyricsOn ? p.accent : null,
+          const Text(
+            '正在播放',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+          ),
+          // 桌面歌词/更多仅出现在歌词页右上（封面页通过左右滑动进入歌词页）
+          if (showControls)
+            Align(
+              alignment: Alignment.centerRight,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    onPressed: _toggleDesktopLyrics,
+                    tooltip: '桌面歌词',
+                    icon: Icon(
+                      app.desktopLyricsOn
+                          ? Icons.lyrics
+                          : Icons.lyrics_outlined,
+                      size: 22,
+                      color: app.desktopLyricsOn ? p.accent : null,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: _showLyricSettings,
+                    icon: const Icon(Icons.more_horiz, size: 22),
+                  ),
+                ],
+              ),
             ),
-          ),
-          IconButton(
-            onPressed: _showLyricSettings,
-            icon: const Icon(Icons.more_horiz, size: 22),
-          ),
         ],
-      ],
+      ),
     );
   }
 
@@ -940,7 +952,6 @@ class _PlayerPageState extends State<PlayerPage> {
               child: Slider(
                 value: v,
                 max: max,
-                divisions: max.round(),
                 activeColor: p.accent,
                 inactiveColor: p.track,
                 onChanged: (nv) {

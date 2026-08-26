@@ -11,4 +11,11 @@ void main() {
       expect(UpdateService.isNewerVersion('0.1.7', '0.1.6'), isTrue);
     });
   });
+
+  test('uses GitHub as the fallback release endpoint', () {
+    expect(
+      UpdateService.githubReleasesApi,
+      'https://api.github.com/repos/chenflxs/kikoeta/releases/latest',
+    );
+  });
 }

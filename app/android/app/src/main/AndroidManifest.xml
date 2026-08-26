@@ -43,7 +43,7 @@
         <!-- Media3 媒体会话前台服务（锁屏/通知媒体控制） -->
         <service
             android:name=".KikoetaMediaSessionService"
-            android:exported="true"
+            android:exported="false"
             android:foregroundServiceType="mediaPlayback">
             <intent-filter>
                 <action android:name="androidx.media3.session.MediaSessionService"/>

@@ -38,7 +38,7 @@ class AndroidMedia3 {
     required int durationMs,
     required String title,
     required String artist,
-    String? artworkUrl,
+    String? artworkKey,
     required String mediaId,
     bool hideCard = false,
     bool logoCover = false,
@@ -54,7 +54,7 @@ class AndroidMedia3 {
         'durationMs': durationMs,
         'title': title,
         'artist': artist,
-        'artworkUrl': artworkUrl,
+        'artworkKey': artworkKey,
         'mediaId': mediaId,
         'hideCard': hideCard,
         'logoCover': logoCover,
@@ -63,6 +63,22 @@ class AndroidMedia3 {
       // ignore: avoid_print
       print('[media3] updateState FAILED: $e');
     }
+  }
+
+  /// 传递已由 Flutter/Rust 下载到本地缓存的封面文件。
+  /// 原图不通过 MethodChannel 传输，避免 Binder 的事务大小限制。
+  static Future<void> updateArtwork({
+    required String mediaId,
+    required String artworkKey,
+    required String artworkPath,
+  }) async {
+    try {
+      await _ch.invokeMethod('updateArtwork', {
+        'mediaId': mediaId,
+        'artworkKey': artworkKey,
+        'artworkPath': artworkPath,
+      });
+    } catch (_) {}
   }
 
   /// 清空会话（停止播放/无曲目时）

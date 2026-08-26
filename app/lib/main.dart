@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 import 'package:media_kit/media_kit.dart';
 
 import 'data.dart';
@@ -24,6 +26,7 @@ import 'services/android_notification.dart';
 import 'services/windows_tray_service.dart';
 import 'services/lyrics_hub.dart';
 import 'services/update_service.dart';
+import 'src/rust/api/kikoeru_api.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -97,7 +100,7 @@ Future<void> main() async {
         appState.setLyricsLockedLandscape(locked);
       }
     };
-    AndroidLyricsOverlay.instance.init();
+    await AndroidLyricsOverlay.instance.init();
     appState.addListener(_syncAndroidLyrics);
     _syncAndroidLyrics();
   }
@@ -212,6 +215,7 @@ DateTime _lastMedia3Sync = DateTime.fromMillisecondsSinceEpoch(0);
 bool _media3SessionStarted = false;
 // 「不显示通知栏媒体卡片」开关的上次状态（用于切回显示时重新拉起会话服务）
 bool _media3Hidden = false;
+String _media3ArtworkLoadKey = '';
 
 /// MediaSession 控制命令（Kotlin → Dart，mpv 执行）
 void _media3Command(String action, int positionMs) {
@@ -287,10 +291,13 @@ void _syncMedia3State() {
   final t = q.isEmpty ? null : q[appState.trackIdx.clamp(0, q.length - 1)];
   final title = t?.title ?? '';
   if (w == null || title.isEmpty) {
+    _media3ArtworkLoadKey = '';
     AndroidMedia3.clearSession();
     return;
   }
   final hideCard = appState.lsCover;
+  final artworkUrl = w.coverUrl;
+  final artworkKey = '${w.rj}\n${artworkUrl ?? ''}';
   // 首次有播放内容时才启动媒体会话服务（避免启动即拉前台服务）；
   // 从「隐藏卡片」切回显示时若服务已被系统回收，重新拉起
   if (!_media3SessionStarted || (_media3Hidden && !hideCard)) {
@@ -304,11 +311,57 @@ void _syncMedia3State() {
     durationMs: AppPlayer.instance.currentDuration * 1000,
     title: title,
     artist: w.title,
-    artworkUrl: w.coverUrl,
+    artworkKey: artworkKey,
     mediaId: w.rj,
     hideCard: hideCard,
     logoCover: appState.notifCover,
   );
+  final shouldLoadArtwork =
+      !hideCard &&
+      !appState.notifCover &&
+      artworkUrl != null &&
+      artworkUrl.isNotEmpty;
+  final loadKey = shouldLoadArtwork ? artworkKey : '';
+  if (_media3ArtworkLoadKey != loadKey) {
+    _media3ArtworkLoadKey = loadKey;
+    if (shouldLoadArtwork) {
+      unawaited(_cacheMedia3Artwork(w.rj, artworkKey, artworkUrl));
+    }
+  }
+}
+
+/// 复用 Rust 网络层下载封面，交给原生层的是本地缓存路径而非远程 URL。
+/// 这样私有服务器的鉴权和 Rust 的 TLS 兼容策略也会作用于媒体卡片封面。
+Future<void> _cacheMedia3Artwork(
+  String mediaId,
+  String artworkKey,
+  String artworkUrl,
+) async {
+  try {
+    final bytes = await apiGetBytes(url: artworkUrl);
+    if (_media3ArtworkLoadKey != artworkKey || bytes.isEmpty) return;
+    final cacheDir = await getTemporaryDirectory();
+    final file = File(
+      '${cacheDir.path}${Platform.pathSeparator}kikoeta-media-artwork-${_stableArtworkId(artworkKey)}.img',
+    );
+    await file.writeAsBytes(bytes, flush: true);
+    if (_media3ArtworkLoadKey != artworkKey) return;
+    await AndroidMedia3.updateArtwork(
+      mediaId: mediaId,
+      artworkKey: artworkKey,
+      artworkPath: file.path,
+    );
+  } catch (_) {
+    // 封面失败不能影响播放；系统继续显示无封面的标准媒体卡片。
+  }
+}
+
+int _stableArtworkId(String value) {
+  var hash = 0x811c9dc5;
+  for (final unit in value.codeUnits) {
+    hash = (hash ^ unit) * 0x01000193 & 0x7fffffff;
+  }
+  return hash;
 }
 
 /// 绑定播放事件与全局状态变化 → 同步 MediaSession
@@ -338,18 +391,20 @@ class KikoetaApp extends StatefulWidget {
   State<KikoetaApp> createState() => _KikoetaAppState();
 }
 
-/// 仅监听 MaterialApp 自身依赖的状态（主题模式 / 登录态）。
+/// 仅监听 MaterialApp 自身依赖的状态（主题模式 / 登录态 / UI 缩放）。
 /// 其余状态变化由各页面自行监听并局部重建，
 /// 避免每次 notify()（音量拖动、播放/暂停、收藏等）都重建整棵应用树导致掉帧。
 class _KikoetaAppState extends State<KikoetaApp> {
   late ThemeMode _themeMode;
   late bool _loginRequired;
+  late int _uiScalePercent;
 
   @override
   void initState() {
     super.initState();
     _themeMode = appState.themeMode;
     _loginRequired = appState.loginRequired;
+    _uiScalePercent = appState.uiScalePercent;
     appState.addListener(_onChanged);
   }
 
@@ -361,16 +416,25 @@ class _KikoetaAppState extends State<KikoetaApp> {
 
   void _onChanged() {
     if (_themeMode == appState.themeMode &&
-        _loginRequired == appState.loginRequired) {
+        _loginRequired == appState.loginRequired &&
+        _uiScalePercent == appState.uiScalePercent) {
       return;
     }
     _themeMode = appState.themeMode;
     _loginRequired = appState.loginRequired;
+    _uiScalePercent = appState.uiScalePercent;
     setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
+    return MediaQuery.fromView(
+      view: View.of(context),
+      child: _UiScale(scale: _uiScalePercent / 100, child: _buildApp()),
+    );
+  }
+
+  Widget _buildApp() {
     return MaterialApp(
       title: 'Kikoeta',
       debugShowCheckedModeBanner: false,
@@ -391,6 +455,48 @@ class _KikoetaAppState extends State<KikoetaApp> {
       },
     );
   }
+}
+
+/// 以虚拟逻辑视口缩放整个 Flutter 界面，保证文字、间距、图标和命中区域同比例变化。
+/// 桌面歌词由独立原生窗口绘制，不在此组件树内，因此不会受到影响。
+class _UiScale extends StatelessWidget {
+  final double scale;
+  final Widget child;
+
+  const _UiScale({required this.scale, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    if (scale == 1) return child;
+    final virtualMedia = media.copyWith(
+      size: Size(media.size.width / scale, media.size.height / scale),
+      padding: _divideInsets(media.padding, scale),
+      viewPadding: _divideInsets(media.viewPadding, scale),
+      viewInsets: _divideInsets(media.viewInsets, scale),
+      systemGestureInsets: _divideInsets(media.systemGestureInsets, scale),
+    );
+    return SizedBox.expand(
+      child: FittedBox(
+        fit: BoxFit.fill,
+        alignment: Alignment.topLeft,
+        clipBehavior: Clip.hardEdge,
+        child: SizedBox(
+          width: virtualMedia.size.width,
+          height: virtualMedia.size.height,
+          child: MediaQuery(data: virtualMedia, child: child),
+        ),
+      ),
+    );
+  }
+
+  EdgeInsets _divideInsets(EdgeInsets value, double divisor) =>
+      EdgeInsets.fromLTRB(
+        value.left / divisor,
+        value.top / divisor,
+        value.right / divisor,
+        value.bottom / divisor,
+      );
 }
 
 class Shell extends StatefulWidget {
