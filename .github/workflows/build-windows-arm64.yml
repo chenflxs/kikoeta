@@ -54,7 +54,7 @@ jobs:
 
       - name: Assemble Flutter Windows ARM64 assets
         working-directory: app
-        run: flutter assemble --output build/windows/arm64 -dTargetPlatform=windows-arm64 -dBuildMode=release release_bundle_windows_arm64_assets
+        run: flutter assemble --output build/windows/arm64 -dTargetPlatform=windows-arm64 -dBuildMode=release release_bundle_windows-arm64_assets
 
       - name: Build Windows ARM64 runner with CMake
         working-directory: app
