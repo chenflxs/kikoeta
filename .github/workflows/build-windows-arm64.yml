@@ -28,6 +28,30 @@ jobs:
         with:
           targets: aarch64-pc-windows-msvc
 
+      - name: Download Flutter Windows ARM64 engine
+        shell: pwsh
+        run: |
+          $engineRevision = (Get-Content -LiteralPath (Join-Path $env:FLUTTER_ROOT 'bin/internal/engine.version') -Raw).Trim()
+          if (-not $engineRevision) {
+            throw 'Could not determine the Flutter engine revision'
+          }
+
+          $engineDir = Join-Path $env:FLUTTER_ROOT 'bin/cache/artifacts/engine'
+          $baseUrl = "https://storage.googleapis.com/flutter_infra_release/flutter/$engineRevision"
+          $archives = @(
+            @{ Directory = 'windows-arm64'; Archive = 'windows-arm64-debug/windows-arm64-flutter.zip' },
+            @{ Directory = 'windows-arm64'; Archive = 'windows-arm64/flutter-cpp-client-wrapper.zip' },
+            @{ Directory = 'windows-arm64-release'; Archive = 'windows-arm64-release/windows-arm64-flutter.zip' }
+          )
+
+          foreach ($item in $archives) {
+            $destination = Join-Path $engineDir $item.Directory
+            $archivePath = Join-Path $env:RUNNER_TEMP ([IO.Path]::GetFileName($item.Archive))
+            Invoke-WebRequest -Uri "$baseUrl/$($item.Archive)" -OutFile $archivePath
+            New-Item -ItemType Directory -Force -Path $destination | Out-Null
+            Expand-Archive -LiteralPath $archivePath -DestinationPath $destination -Force
+          }
+
       - name: Read version from pubspec
         shell: pwsh
         run: |
@@ -51,10 +75,6 @@ jobs:
       - name: Generate Windows project configuration
         working-directory: app
         run: flutter build windows --config-only --build-name "$env:VERSION_NAME" --build-number "$env:VERSION_CODE"
-
-      - name: Assemble Flutter Windows ARM64 assets
-        working-directory: app
-        run: flutter assemble --output build/windows/arm64 -dTargetPlatform=windows-arm64 -dBuildMode=release release_bundle_windows-arm64_assets
 
       - name: Build Windows ARM64 runner with CMake
         working-directory: app

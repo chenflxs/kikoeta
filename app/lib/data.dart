@@ -639,8 +639,8 @@ class AppState extends ChangeNotifier {
     }
     final cd = SettingsStore.get('clipboard_detect');
     if (cd != null) clipboardDetect = cd == '1';
-    final lc = SettingsStore.get('ls_cover');
-    if (lc != null) lsCover = lc == '1';
+    final lsCoverSetting = SettingsStore.get('ls_cover');
+    if (lsCoverSetting != null) lsCover = lsCoverSetting == '1';
     final ep = SettingsStore.get('ear_pause');
     if (ep != null) earPause = ep == '1';
     final iae = SettingsStore.get('ignore_audio_focus');
