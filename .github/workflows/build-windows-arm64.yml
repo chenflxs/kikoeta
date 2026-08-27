@@ -52,6 +52,15 @@ jobs:
             Expand-Archive -LiteralPath $archivePath -DestinationPath $destination -Force
           }
 
+          # ICU data is architecture-independent and is not included in the
+          # Windows ARM64 engine archive, although Flutter expects it there.
+          $icuSource = Join-Path $engineDir 'windows-x64/icudtl.dat'
+          $icuDestination = Join-Path $engineDir 'windows-arm64/icudtl.dat'
+          if (-not (Test-Path -LiteralPath $icuSource -PathType Leaf)) {
+            throw "Flutter ICU data was not found at $icuSource"
+          }
+          Copy-Item -LiteralPath $icuSource -Destination $icuDestination -Force
+
       - name: Read version from pubspec
         shell: pwsh
         run: |
@@ -99,7 +108,9 @@ jobs:
             throw "Visual Studio CMake was not found at $cmake"
           }
           Write-Host "Using $generator at $($visualStudio.installationPath)"
-          & $cmake -S windows -B build/windows/arm64 -G $generator -A ARM64 -DFLUTTER_TARGET_PLATFORM=windows-arm64
+          & $cmake -S windows -B build/windows/arm64 -G $generator -A ARM64 `
+            -DFLUTTER_TARGET_PLATFORM=windows-arm64 `
+            -DCMAKE_DISABLE_FIND_PACKAGE_JNI=TRUE
           if ($LASTEXITCODE -ne 0) {
             throw "CMake configuration failed with exit code $LASTEXITCODE"
           }
