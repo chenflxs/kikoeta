@@ -503,6 +503,12 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void removeHistory(String query) {
+    if (!history.remove(query)) return;
+    _persistSearchHistory();
+    notifyListeners();
+  }
+
   /// 记录播放历史（去重、上限 50）
   void recordPlayHistory(Work w) {
     playHistory.removeWhere((e) => e['rj'] == w.rj);
@@ -1215,6 +1221,7 @@ class AppState extends ChangeNotifier {
     lsCover = false;
     notifCover = false;
     releaseInterface = true;
+    doNotRememberPlaybackProgress = false;
     earPause = false;
     ignoreAudioFocus = false;
     initialPathBehavior = 'auto';

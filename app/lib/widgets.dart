@@ -744,6 +744,7 @@ class MiniPlayer extends StatelessWidget {
 class _HomeSearchBarState extends State<HomeSearchBar> {
   final TextEditingController _ctrl = TextEditingController();
   final FocusNode _focus = FocusNode();
+  late String _historySig;
 
   AppState get app => widget.app;
   Palette get p => Theme.of(context).brightness == Brightness.dark
@@ -754,6 +755,7 @@ class _HomeSearchBarState extends State<HomeSearchBar> {
   void initState() {
     super.initState();
     _ctrl.text = app.peekPendingSearch() ?? '';
+    _historySig = _currentHistorySig;
     // 搜索框获得焦点即自动展开
     _focus.addListener(() {
       if (_focus.hasFocus && !app.searchExpanded) {
@@ -782,7 +784,14 @@ class _HomeSearchBarState extends State<HomeSearchBar> {
     if (!app.searchExpanded && _focus.hasFocus) {
       _focus.unfocus();
     }
+    final historySig = _currentHistorySig;
+    if (historySig != _historySig) {
+      _historySig = historySig;
+      if (mounted) setState(() {});
+    }
   }
+
+  String get _currentHistorySig => app.history.join('\u0000');
 
   void _submit(String q) {
     final s = q.trim();
@@ -958,21 +967,19 @@ class _HomeSearchBarState extends State<HomeSearchBar> {
               Wrap(
                 spacing: 9,
                 runSpacing: 9,
-                children: app.history.asMap().entries.map((e) {
-                  final i = e.key;
+                children: app.history.map((value) {
                   return GestureDetector(
                     onTap: () {
-                      _ctrl.text = e.value;
-                      _submit(e.value);
+                      _ctrl.text = value;
+                      _submit(value);
                     },
                     onLongPress: () {
-                      app.history.removeAt(i);
-                      app.notify();
+                      app.removeHistory(value);
                       ScaffoldMessenger.of(context)
                         ..clearSnackBars()
                         ..showSnackBar(
                           SnackBar(
-                            content: Text('已删除「${e.value}」'),
+                            content: Text('已删除「$value」'),
                             duration: const Duration(milliseconds: 1600),
                           ),
                         );
@@ -988,7 +995,7 @@ class _HomeSearchBarState extends State<HomeSearchBar> {
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
-                        e.value,
+                        value,
                         style: TextStyle(fontSize: 12, color: p.muted),
                       ),
                     ),
