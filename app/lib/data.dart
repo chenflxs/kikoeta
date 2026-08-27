@@ -199,6 +199,7 @@ class AppState extends ChangeNotifier {
   bool lsCover = false; // 不显示通知栏媒体卡片（隐私）
   bool notifCover = false; // 通知栏封面显示项目 logo（隐私，暂无 logo 用占位图）
   bool releaseInterface = true;
+  bool doNotRememberPlaybackProgress = false;
   // 安卓音频（默认关闭）
   bool earPause = false; // 拔出耳机自动暂停
   bool ignoreAudioFocus = false; // 忽略音频焦点
@@ -408,7 +409,7 @@ class AppState extends ChangeNotifier {
         },
         'queue': queue.map(_nodeToJson).toList(),
         'trackIdx': trackIdx,
-        'position': resumePosition,
+        'position': doNotRememberPlaybackProgress ? 0 : resumePosition,
       }),
     );
   }
@@ -793,6 +794,12 @@ class AppState extends ChangeNotifier {
     if (hs != null && hs.isNotEmpty) sort = hs;
     final ho = SettingsStore.get('home_order_asc');
     if (ho != null) orderAsc = ho == '1';
+    final doNotRememberProgress = SettingsStore.get(
+      'do_not_remember_playback_progress',
+    );
+    if (doNotRememberProgress != null) {
+      doNotRememberPlaybackProgress = doNotRememberProgress == '1';
+    }
     // 恢复上次播放状态（作品/队列/位置，默认暂停，不自动播放）
     final ps = SettingsStore.get('play_state');
     if (ps != null && ps.isNotEmpty) {
@@ -821,7 +828,9 @@ class AppState extends ChangeNotifier {
             ),
           );
         trackIdx = ((m['trackIdx'] as int?) ?? 0).clamp(0, queue.length - 1);
-        resumePosition = (m['position'] as int?) ?? 0;
+        resumePosition = doNotRememberPlaybackProgress
+            ? 0
+            : (m['position'] as int?) ?? 0;
         if (queue.isEmpty) {
           currentWork = null;
           trackIdx = 0;
@@ -927,6 +936,18 @@ class AppState extends ChangeNotifier {
   void setClipboardDetect(bool v) {
     clipboardDetect = v;
     SettingsStore.set('clipboard_detect', v ? '1' : '0');
+    notifyListeners();
+  }
+
+  void setDoNotRememberPlaybackProgress(bool value) {
+    if (doNotRememberPlaybackProgress == value) return;
+    doNotRememberPlaybackProgress = value;
+    SettingsStore.set(
+      'do_not_remember_playback_progress',
+      value ? '1' : '0',
+    );
+    // 立即覆盖已保存的进度，确保刚切换后关闭程序也遵循新设置。
+    savePlayState();
     notifyListeners();
   }
 

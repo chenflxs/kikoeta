@@ -578,6 +578,13 @@ class _SettingsPageState extends State<SettingsPage> {
                 app.setClipboardDetect(v);
               },
             ),
+            _switchRow(
+              Icons.restart_alt_outlined,
+              '不记忆播放进度',
+              '重启程序后恢复上次曲目，但从头开始播放',
+              app.doNotRememberPlaybackProgress,
+              app.setDoNotRememberPlaybackProgress,
+            ),
             if (Platform.isAndroid) ...[
               _switchRow(
                 Icons.headphones_outlined,
