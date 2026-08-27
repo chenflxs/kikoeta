@@ -94,9 +94,19 @@ jobs:
             17 { 'Visual Studio 17 2022' }
             default { throw "Unsupported Visual Studio version: $($visualStudio.installationVersion)" }
           }
+          $cmake = Join-Path $visualStudio.installationPath 'Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe'
+          if (-not (Test-Path -LiteralPath $cmake -PathType Leaf)) {
+            throw "Visual Studio CMake was not found at $cmake"
+          }
           Write-Host "Using $generator at $($visualStudio.installationPath)"
-          cmake -S windows -B build/windows/arm64 -G $generator -A ARM64 -DFLUTTER_TARGET_PLATFORM=windows-arm64
-          cmake --build build/windows/arm64 --config Release --target INSTALL
+          & $cmake -S windows -B build/windows/arm64 -G $generator -A ARM64 -DFLUTTER_TARGET_PLATFORM=windows-arm64
+          if ($LASTEXITCODE -ne 0) {
+            throw "CMake configuration failed with exit code $LASTEXITCODE"
+          }
+          & $cmake --build build/windows/arm64 --config Release --target INSTALL
+          if ($LASTEXITCODE -ne 0) {
+            throw "CMake build failed with exit code $LASTEXITCODE"
+          }
 
       - name: Verify ARM64 build output
         shell: pwsh
