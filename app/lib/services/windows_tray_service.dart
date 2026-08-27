@@ -5,6 +5,7 @@ import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../data.dart';
+import 'desktop_lyrics_overlay.dart';
 import 'player_service.dart';
 
 class WindowsTrayService with TrayListener, WindowListener {
@@ -129,10 +130,16 @@ class WindowsTrayService with TrayListener, WindowListener {
   Future<void> _exit() async {
     if (_exiting) return;
     _exiting = true;
-    // Windows 上 destroy() 只投递退出消息，窗口不会经过正常 WM_CLOSE /
-    // WM_DESTROY 流程。先解除拦截，再关闭窗口，才能让 runner 与托盘插件
-    // 一起正常清理并结束进程。
-    await windowManager.setPreventClose(false);
-    await windowManager.close();
+    // Prevent a stuck native close callback from keeping the Dart isolate and
+    // the lyrics window alive after the user explicitly chose "Exit".
+    Timer(const Duration(seconds: 2), () => exit(0));
+    DesktopLyricsOverlay.instance.dispose();
+    try {
+      await trayManager.destroy();
+      await windowManager.setPreventClose(false);
+      await windowManager.close();
+    } catch (_) {
+      exit(0);
+    }
   }
 }

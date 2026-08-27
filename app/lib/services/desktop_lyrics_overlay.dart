@@ -12,6 +12,16 @@ import 'app_paths.dart';
 import 'settings_store.dart';
 
 typedef _WndProcNative = IntPtr Function(IntPtr, Uint32, IntPtr, IntPtr);
+typedef _RemoveFontResourceExNative =
+    Int32 Function(Pointer<Utf16>, Uint32, Pointer<Void>);
+typedef _RemoveFontResourceExDart =
+    int Function(Pointer<Utf16>, int, Pointer<Void>);
+
+final _removeFontResourceEx = DynamicLibrary.open(
+  'gdi32.dll',
+).lookupFunction<_RemoveFontResourceExNative, _RemoveFontResourceExDart>(
+  'RemoveFontResourceExW',
+);
 
 /// 桌面歌词悬浮窗（Windows）：
 /// - 最顶层、无边框、透明背景（洋红色键，GDI 渲染文字与按钮）
@@ -50,6 +60,7 @@ class DesktopLyricsOverlay {
   NativeCallable<_WndProcNative>? _wndProc;
   Pointer<Utf16>? _classNamePtr;
   Pointer<Utf16>? _windowTitlePtr;
+  String? _privateFontPath;
   Timer? _pump;
   Timer? _hoverPoll;
 
@@ -200,6 +211,7 @@ class DesktopLyricsOverlay {
       final added = AddFontResourceEx(p, FR_PRIVATE, nullptr);
       calloc.free(p);
       if (added > 0) {
+        _privateFontPath = tmp.path;
         _fontFace = 'Sarasa UI SC';
       }
     } catch (_) {
@@ -1185,16 +1197,37 @@ class DesktopLyricsOverlay {
 
   void dispose() {
     _pump?.cancel();
+    _pump = null;
     _hoverPoll?.cancel();
-    _freeTarget();
-    _freeTextTarget();
+    _hoverPoll = null;
+    _visible = false;
     if (_hwnd != 0) {
       DestroyWindow(_hwnd);
       _hwnd = 0;
     }
+    _freeTarget();
+    _freeTextTarget();
     _wndProc?.close();
     _wndProc = null;
+    if (_registered && _classNamePtr != null) {
+      UnregisterClass(_classNamePtr!, GetModuleHandle(nullptr));
+      _registered = false;
+    }
+    final classNamePtr = _classNamePtr;
+    if (classNamePtr != null) calloc.free(classNamePtr);
     _classNamePtr = null;
+    final windowTitlePtr = _windowTitlePtr;
+    if (windowTitlePtr != null) calloc.free(windowTitlePtr);
     _windowTitlePtr = null;
+    final fontPath = _privateFontPath;
+    if (fontPath != null) {
+      final path = fontPath.toNativeUtf16();
+      try {
+        _removeFontResourceEx(path, FR_PRIVATE, nullptr);
+      } finally {
+        calloc.free(path);
+      }
+      _privateFontPath = null;
+    }
   }
 }

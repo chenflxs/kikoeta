@@ -50,6 +50,11 @@
 
 - asmr.one 官方接口 + 自建站点（支持 IP + 端口），可随时切换
 
+##TODO
+
+- [ ] linux与mac os客户端
+- [ ] 基于[VoiceTransl](https://github.com/shinnpuru/VoiceTransl)或[海南鸡饭特化听写模型衍生](https://github.com/TransWithAI/Faster-Whisper-TransWithAI-ChickenRice)的翻译功能
+- [ ] ...
 ## 技术栈
 
 | 层 | 方案 |
@@ -107,7 +112,7 @@ Android（arm64 + x64，含混淆瘦身）：
 ```bash
 cd app
 flutter build apk --release --split-per-abi \
-  --target-platform android-arm64,android-x64 \
+  --target-platform android-arm64 \
   --obfuscate --split-debug-info=build/symbols
 ```
 
