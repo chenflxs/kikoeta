@@ -69,6 +69,7 @@ Future<void> main() async {
       appState.notify();
     }
   });
+  _bindPlaybackPersistence();
   // 播放器页面可随时关闭，自动续播必须由应用常驻层处理。
   AppPlayer.instance.completed.listen((_) => _advanceAfterCompletion());
   // 定时关闭：全局计时（播放器页关闭时也生效）
@@ -388,6 +389,59 @@ void _bindMedia3Sync() {
 
 final AppState appState = AppState();
 
+String? _persistedPlaybackTrack;
+int _persistedPlaybackPosition = 0;
+
+String? _playbackTrackKey() {
+  if (appState.currentWork == null || appState.queue.isEmpty) return null;
+  final index = appState.trackIdx.clamp(0, appState.queue.length - 1).toInt();
+  final track = appState.queue[index];
+  return '${appState.currentWork!.rj}|${track.path}|${track.url ?? ''}';
+}
+
+/// 播放器是全局单例，不能依赖 PlayerPage 的生命周期保存进度。
+/// 位置流持续落盘，应用被系统直接终止时也只会损失最近几秒。
+void _bindPlaybackPersistence() {
+  _persistedPlaybackTrack = _playbackTrackKey();
+  _persistedPlaybackPosition = appState.resumePosition;
+  appState.addListener(_persistPlaybackTrackChange);
+  AppPlayer.instance.position.listen(_persistPlaybackPositionTick);
+  AppPlayer.instance.playing.listen((playing) {
+    if (!playing) {
+      _persistPlaybackPositionTick(
+        AppPlayer.instance.currentPosition,
+        force: true,
+      );
+    }
+  });
+}
+
+void _persistPlaybackTrackChange() {
+  final key = _playbackTrackKey();
+  if (key == _persistedPlaybackTrack) return;
+  _persistedPlaybackTrack = key;
+  _persistedPlaybackPosition = 0;
+  if (key == null) return;
+  // 切歌后立即保存曲目和从零开始的位置，避免异常退出恢复到旧曲目/旧进度。
+  appState.resumePosition = 0;
+  appState.savePlayState();
+}
+
+void _persistPlaybackPositionTick(int position, {bool force = false}) {
+  final key = _playbackTrackKey();
+  if (key == null) return;
+  if (key != _persistedPlaybackTrack) _persistPlaybackTrackChange();
+  // 启动恢复尚未打开媒体时，播放器会先发出位置 0，不能覆盖已保存的进度。
+  if (!AppPlayer.instance.opened && !appState.playing && position == 0) {
+    return;
+  }
+  if (!force && position <= 0) return;
+  if (!force && (position - _persistedPlaybackPosition).abs() < 5) return;
+  _persistedPlaybackPosition = position;
+  appState.resumePosition = position;
+  appState.savePlayState();
+}
+
 class KikoetaApp extends StatefulWidget {
   const KikoetaApp({super.key});
 
@@ -398,7 +452,7 @@ class KikoetaApp extends StatefulWidget {
 /// 仅监听 MaterialApp 自身依赖的状态（主题模式 / 登录态 / UI 缩放）。
 /// 其余状态变化由各页面自行监听并局部重建，
 /// 避免每次 notify()（音量拖动、播放/暂停、收藏等）都重建整棵应用树导致掉帧。
-class _KikoetaAppState extends State<KikoetaApp> {
+class _KikoetaAppState extends State<KikoetaApp> with WidgetsBindingObserver {
   late ThemeMode _themeMode;
   late bool _loginRequired;
   late int _uiScalePercent;
@@ -406,6 +460,7 @@ class _KikoetaAppState extends State<KikoetaApp> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _themeMode = appState.themeMode;
     _loginRequired = appState.loginRequired;
     _uiScalePercent = appState.uiScalePercent;
@@ -414,8 +469,22 @@ class _KikoetaAppState extends State<KikoetaApp> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     appState.removeListener(_onChanged);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
+      _persistPlaybackPositionTick(
+        AppPlayer.instance.currentPosition,
+        force: true,
+      );
+    }
   }
 
   void _onChanged() {

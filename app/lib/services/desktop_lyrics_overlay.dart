@@ -169,6 +169,7 @@ class DesktopLyricsOverlay {
       nullptr,
     );
     if (_hwnd == 0) return;
+    _setTopmost();
     _pump = Timer.periodic(
       const Duration(milliseconds: 16),
       (_) => _pumpOnce(),
@@ -176,6 +177,19 @@ class DesktopLyricsOverlay {
     _hoverPoll = Timer.periodic(
       const Duration(milliseconds: 100),
       (_) => _pollHover(),
+    );
+  }
+
+  void _setTopmost() {
+    if (_hwnd == 0) return;
+    SetWindowPos(
+      _hwnd,
+      HWND_TOPMOST,
+      0,
+      0,
+      0,
+      0,
+      SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
     );
   }
 
@@ -1160,6 +1174,7 @@ class DesktopLyricsOverlay {
       ShowWindow(_hwnd, SW_SHOWNOACTIVATE);
       _visible = true;
     }
+    _setTopmost();
     _render();
   }
 

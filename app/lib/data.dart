@@ -37,6 +37,8 @@ class Work {
   final String? coverUrl;
   final bool hasSubtitle;
   final int? apiId;
+  // 评价接口是否返回了当前用户的评价关联；null 表示接口未提供该字段。
+  final bool? hasReview;
   final List<LanguageEdition> languageEditions;
 
   const Work({
@@ -52,6 +54,7 @@ class Work {
     this.coverUrl,
     this.hasSubtitle = false,
     this.apiId,
+    this.hasReview,
     this.languageEditions = const [],
   });
 }
@@ -339,6 +342,25 @@ class AppState extends ChangeNotifier {
       favoriteRjs.contains(w.rj) ||
       (w.apiId != null && favIds.contains(w.apiId));
 
+  /// 用作品详情中的评价关联刷新本地收藏镜像。
+  void syncFavoriteFromServer(Work w, bool value) {
+    var changed = false;
+    if (value) {
+      if (w.apiId != null) changed = favIds.add(w.apiId!) || changed;
+      if (!favoriteRjs.contains(w.rj)) {
+        favoriteRjs.add(w.rj);
+        changed = true;
+      }
+    } else {
+      if (w.apiId != null) changed = favIds.remove(w.apiId!) || changed;
+      changed = favoriteRjs.remove(w.rj) || changed;
+    }
+    if (changed) {
+      _persistFavs();
+      notifyListeners();
+    }
+  }
+
   /// 收藏成功后记录（本地镜像，保持界面即时一致）
   void addFavorite(Work w) {
     if (w.apiId != null) favIds.add(w.apiId!);
@@ -380,6 +402,8 @@ class AppState extends ChangeNotifier {
     playing = true;
     resumePosition = 0;
     recordPlayHistory(w);
+    // 播放器页面可能尚未建立，立即保存队列以覆盖异常退出窗口。
+    savePlayState();
     notifyListeners();
   }
 
@@ -406,6 +430,7 @@ class AppState extends ChangeNotifier {
           'coverUrl': w.coverUrl,
           'hasSubtitle': w.hasSubtitle,
           'apiId': w.apiId,
+          'hasReview': w.hasReview,
         },
         'queue': queue.map(_nodeToJson).toList(),
         'trackIdx': trackIdx,
@@ -825,6 +850,7 @@ class AppState extends ChangeNotifier {
           coverUrl: wm['coverUrl'] as String?,
           hasSubtitle: (wm['hasSubtitle'] as bool?) ?? false,
           apiId: wm['apiId'] as int?,
+          hasReview: wm['hasReview'] as bool?,
         );
         queue
           ..clear()
@@ -948,10 +974,7 @@ class AppState extends ChangeNotifier {
   void setDoNotRememberPlaybackProgress(bool value) {
     if (doNotRememberPlaybackProgress == value) return;
     doNotRememberPlaybackProgress = value;
-    SettingsStore.set(
-      'do_not_remember_playback_progress',
-      value ? '1' : '0',
-    );
+    SettingsStore.set('do_not_remember_playback_progress', value ? '1' : '0');
     // 立即覆盖已保存的进度，确保刚切换后关闭程序也遵循新设置。
     savePlayState();
     notifyListeners();

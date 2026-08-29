@@ -257,8 +257,9 @@ fn preview(s: &str) -> String {
     s.chars().take(160).collect()
 }
 
-/// Google 免费翻译接口（translate.googleapis.com gtx，无需 Key）。
-/// 作用范围与 OpenAI 一致：多行标题拼接翻译，保持行数。
+/// Google 网页端翻译接口（无需 Key）。
+/// 使用网页端 `client=webapp` 协议和本地计算的 `tk`，避免旧 gtx 客户端
+/// 在批量请求时频繁触发 429。
 #[flutter_rust_bridge::frb]
 pub async fn api_translate_google(
     text: String,
@@ -269,28 +270,162 @@ pub async fn api_translate_google(
         return Ok(String::new());
     }
     let client = http_client()?;
-    let url = "https://translate.googleapis.com/translate_a/single";
-    let resp = client
-        .get(url)
-        .query(&[
-            ("client", "gtx"),
-            ("sl", src.as_str()),
-            ("tl", dst.as_str()),
-            ("dt", "t"),
-            ("q", text.as_str()),
-        ])
-        .send()
-        .await
-        .map_err(|e| format!("Google 翻译请求失败: {e}"))?;
-    let status = resp.status();
-    let body = resp
-        .text()
-        .await
-        .map_err(|e| format!("读取响应失败: {e}"))?;
-    if !status.is_success() {
-        return Err(format!("Google 翻译 HTTP {}: {}", status.as_u16(), preview(&body)));
+    let batches = google_batches(&text, 1200);
+    let mut translated = Vec::with_capacity(batches.len());
+    for batch in batches {
+        let mut last_error = String::new();
+        // Try the current web protocol first, then fall back to the legacy
+        // endpoint when Google rejects the web request with 403/429.
+        for (url, webapp) in [
+            ("https://translate.google.com/translate_a/single", true),
+            ("https://translate.googleapis.com/translate_a/single", false),
+        ] {
+            match google_request(&client, url, webapp, &batch, &src, &dst).await {
+                Ok(result) => {
+                    translated.push(result);
+                    last_error.clear();
+                    break;
+                }
+                Err(error) => last_error = error,
+            }
+        }
+        if !last_error.is_empty() {
+            return Err(last_error);
+        }
     }
-    parse_google(&body)
+    Ok(translated.join("\n"))
+}
+
+/// Keep requests short enough for the web endpoint and preserve source line
+/// boundaries so callers can map translations back to tracks safely.
+fn google_batches(text: &str, max_chars: usize) -> Vec<String> {
+    let mut batches = Vec::new();
+    let mut current = String::new();
+    for line in text.lines() {
+        let extra = if current.is_empty() { 0 } else { 1 };
+        if !current.is_empty() && current.chars().count() + extra + line.chars().count() > max_chars
+        {
+            batches.push(std::mem::take(&mut current));
+        }
+        if !current.is_empty() {
+            current.push('\n');
+        }
+        current.push_str(line);
+    }
+    if !current.is_empty() {
+        batches.push(current);
+    }
+    batches
+}
+
+async fn google_request(
+    client: &reqwest::Client,
+    url: &str,
+    webapp: bool,
+    text: &str,
+    src: &str,
+    dst: &str,
+) -> Result<String, String> {
+    let mut delay = Duration::from_secs(2);
+    let mut last_error = String::new();
+    for attempt in 0..3 {
+        let mut request = client
+            .get(url)
+            .header("user-agent", browser_user_agent())
+            .header("accept", "application/json,text/plain,*/*")
+            .query(&[("sl", src), ("tl", dst), ("dt", "t"), ("q", text)]);
+        if webapp {
+            let token = google_token(text);
+            request = request.query(&[
+                ("client", "webapp"),
+                ("hl", "en"),
+                ("v", "1.0"),
+                ("source", "is"),
+                ("tk", token.as_str()),
+                ("dj", "1"),
+                ("ie", "UTF-8"),
+                ("oe", "UTF-8"),
+            ]);
+        } else {
+            request = request.query(&[("client", "gtx"), ("ie", "UTF-8"), ("oe", "UTF-8")]);
+        }
+        let resp = request
+            .send()
+            .await
+            .map_err(|e| format!("Google 翻译请求失败: {e}"))?;
+        let status = resp.status();
+        let retry_after = resp
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<u64>().ok());
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| format!("读取 Google 响应失败: {e}"))?;
+        if status.is_success() {
+            return if webapp {
+                parse_google_webapp(&body)
+            } else {
+                parse_google(&body)
+            };
+        }
+        last_error = format!("Google 翻译 HTTP {}: {}", status.as_u16(), preview(&body));
+        if status.as_u16() != 429 || attempt == 2 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_secs(retry_after.unwrap_or(delay.as_secs()))).await;
+        delay *= 2;
+    }
+    Err(last_error)
+}
+
+fn google_token(text: &str) -> String {
+    let mut value: i64 = 406_644;
+    // encodeURIComponent/unescape in the web client iterates UTF-8 bytes.
+    for byte in text.as_bytes() {
+        value = google_shift(value + i64::from(*byte), "+-a^+6");
+        value = google_shift(value, "+-3^+b+-f");
+    }
+    value = js_i32(value ^ 3_293_161_072);
+    if value < 0 {
+        value = (value & 2_147_483_647) + 2_147_483_648;
+    }
+    value %= 1_000_000;
+    format!("{value}.{}", js_i32(value ^ 3_293_161_072))
+}
+
+fn google_shift(mut value: i64, pattern: &str) -> i64 {
+    let chars = pattern.as_bytes();
+    let mut index = 0;
+    while index + 2 < chars.len() {
+        let mut shift = i64::from(chars[index + 2]);
+        if shift >= i64::from(b'a') {
+            shift -= 87;
+        }
+        let shifted = if chars[index + 1] == b'+' {
+            js_i32(value) >> shift
+        } else {
+            js_i32(value) << shift
+        };
+        value = if chars[index] == b'+' {
+            value + shifted
+        } else {
+            value ^ shifted
+        };
+        value = js_i32(value);
+        index += 3;
+    }
+    value
+}
+
+fn js_i32(value: i64) -> i64 {
+    let unsigned = value.rem_euclid(4_294_967_296);
+    if unsigned >= 2_147_483_648 {
+        unsigned - 4_294_967_296
+    } else {
+        unsigned
+    }
 }
 
 fn parse_google(body: &str) -> Result<String, String> {
@@ -311,6 +446,21 @@ fn parse_google(body: &str) -> Result<String, String> {
     Ok(out)
 }
 
+fn parse_google_webapp(body: &str) -> Result<String, String> {
+    let value: serde_json::Value =
+        serde_json::from_str(body).map_err(|e| format!("Google 响应解析失败: {e}"))?;
+    if let Some(sentences) = value["sentences"].as_array() {
+        let output = sentences
+            .iter()
+            .filter_map(|sentence| sentence["trans"].as_str())
+            .collect::<String>();
+        if !output.trim().is_empty() {
+            return Ok(output);
+        }
+    }
+    parse_google(body)
+}
+
 /// DeepL 免费版接口（api-free.deepl.com/v2/translate，需免费注册的 auth_key）。
 #[flutter_rust_bridge::frb]
 pub async fn api_translate_deepl(
@@ -329,8 +479,8 @@ pub async fn api_translate_deepl(
     let client = http_client()?;
     let resp = client
         .post("https://api-free.deepl.com/v2/translate")
+        .header("authorization", format!("DeepL-Auth-Key {key}"))
         .form(&[
-            ("auth_key", key),
             ("text", text.as_str()),
             ("source_lang", deepl_lang(&src).as_str()),
             ("target_lang", deepl_lang(&dst).as_str()),
@@ -363,8 +513,8 @@ fn deepl_lang(code: &str) -> String {
     }
 }
 
-/// Microsoft 免费翻译（Edge 浏览器同款接口，无需 Key）：
-/// 先从 edge.microsoft.com 取匿名 token，再调 api-edge 翻译。
+/// Microsoft 免费翻译（Bing 网页端接口，无需 Key）。
+/// Edge 的匿名 token 接口已下线，因此从 Bing 翻译页取得短期 token 后调用其页面接口。
 #[flutter_rust_bridge::frb]
 pub async fn api_translate_microsoft(
     text: String,
@@ -375,18 +525,19 @@ pub async fn api_translate_microsoft(
         return Ok(String::new());
     }
     let client = http_client()?;
-    let token = fetch_edge_token(&client).await?;
-    let url = format!(
-        "https://api-edge.cognitive.microsofttranslator.com/translate?api-version=3.0&from={}&to={}",
-        microsoft_lang(&src),
-        microsoft_lang(&dst)
-    );
-    let body = serde_json::json!([{ "Text": text }]);
+    let bing = fetch_bing_translation_config(&client).await?;
     let resp = client
-        .post(&url)
-        .header("authorization", format!("Bearer {token}"))
-        .header("content-type", "application/json")
-        .body(body.to_string())
+        .post(bing.endpoint)
+        .header("user-agent", browser_user_agent())
+        .header("origin", bing.origin)
+        .header("referer", bing.referer)
+        .form(&[
+            ("text", text.as_str()),
+            ("fromLang", microsoft_lang(&src).as_str()),
+            ("to", microsoft_lang(&dst).as_str()),
+            ("token", bing.token.as_str()),
+            ("key", bing.key.as_str()),
+        ])
         .send()
         .await
         .map_err(|e| format!("微软翻译请求失败: {e}"))?;
@@ -402,33 +553,103 @@ pub async fn api_translate_microsoft(
         serde_json::from_str(&body).map_err(|e| format!("微软响应解析失败: {e}"))?;
     let out = v[0]["translations"][0]["text"]
         .as_str()
+        // Bing page API uses this compact shape, while the former Azure-style
+        // endpoint returned translations[0].text.
+        .or_else(|| v[0]["text"].as_str())
         .ok_or_else(|| "微软响应中未找到翻译结果".to_string())?;
     Ok(out.trim().to_string())
 }
 
-async fn fetch_edge_token(client: &reqwest::Client) -> Result<String, String> {
+const BING_TRANSLATOR_URL: &str = "https://www.bing.com/translator";
+
+struct BingTranslationConfig {
+    endpoint: String,
+    origin: String,
+    referer: String,
+    key: String,
+    token: String,
+}
+
+fn browser_user_agent() -> &'static str {
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36 Edg/126.0"
+}
+
+async fn fetch_bing_translation_config(
+    client: &reqwest::Client,
+) -> Result<BingTranslationConfig, String> {
     let resp = client
-        .get("https://edge.microsoft.com/translate/auth")
-        .header("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36 Edg/126.0")
+        .get(BING_TRANSLATOR_URL)
+        .header("user-agent", browser_user_agent())
+        .header("accept-language", "zh-CN,zh;q=0.9,en;q=0.8")
         .send()
         .await
-        .map_err(|e| format!("微软授权接口请求失败: {e}"))?;
+        .map_err(|e| format!("微软翻译页面请求失败: {e}"))?;
     let status = resp.status();
+    let page_url = resp.url().clone();
     let body = resp
         .text()
         .await
-        .map_err(|e| format!("读取授权响应失败: {e}"))?;
+        .map_err(|e| format!("读取微软翻译页面失败: {e}"))?;
     if !status.is_success() {
         return Err(format!(
-            "微软免费翻译授权失败（HTTP {}）——edge.microsoft.com 可能被当前网络拦截，可改用 Google/DeepL/OpenAI 引擎",
+            "微软翻译页面请求失败（HTTP {}）：请检查网络或代理设置",
             status.as_u16()
         ));
     }
-    let token = body.trim().to_string();
-    if token.is_empty() || token.len() < 20 {
-        return Err("微软授权响应异常".to_string());
+    let (key, token) = parse_bing_auth(&body)?;
+    let ig = parse_bing_ig(&body)?;
+    let origin = page_url.origin().ascii_serialization();
+    if origin == "null" {
+        return Err("微软翻译页面地址异常".to_string());
     }
-    Ok(token)
+    Ok(BingTranslationConfig {
+        endpoint: format!("{origin}/ttranslatev3?isVertical=1&IG={ig}&IID=translator.5028.1"),
+        origin,
+        referer: page_url.to_string(),
+        key,
+        token,
+    })
+}
+
+fn parse_bing_auth(page: &str) -> Result<(String, String), String> {
+    let marker = "params_AbusePreventionHelper";
+    let start = page
+        .find(marker)
+        .and_then(|position| page[position..].find('[').map(|offset| position + offset + 1))
+        .ok_or_else(|| "微软翻译页面缺少授权参数".to_string())?;
+    let end = page[start..]
+        .find(']')
+        .map(|offset| start + offset)
+        .ok_or_else(|| "微软翻译授权参数格式异常".to_string())?;
+    let fields = page[start..end].split(',').map(str::trim).collect::<Vec<_>>();
+    let key = fields
+        .first()
+        .filter(|value| value.chars().all(|c| c.is_ascii_digit()))
+        .ok_or_else(|| "微软翻译授权密钥异常".to_string())?;
+    let token = fields
+        .get(1)
+        .and_then(|value| value.strip_prefix('"'))
+        .and_then(|value| value.strip_suffix('"'))
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "微软翻译授权令牌异常".to_string())?;
+    Ok(((*key).to_string(), token.to_string()))
+}
+
+fn parse_bing_ig(page: &str) -> Result<String, String> {
+    let marker = "IG:\"";
+    let start = page
+        .find(marker)
+        .map(|position| position + marker.len())
+        .ok_or_else(|| "微软翻译页面缺少会话标识".to_string())?;
+    let end = page[start..]
+        .find('"')
+        .map(|offset| start + offset)
+        .ok_or_else(|| "微软翻译会话标识格式异常".to_string())?;
+    let ig = &page[start..end];
+    if ig.is_empty() || !ig.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err("微软翻译会话标识异常".to_string());
+    }
+    Ok(ig.to_string())
 }
 
 fn microsoft_lang(code: &str) -> String {
@@ -555,6 +776,26 @@ mod tests {
     }
 
     #[test]
+    fn parses_google_webapp_response() {
+        let body = r#"{"sentences":[{"trans":"你好","orig":"こんにちは"}],"src":"ja"}"#;
+        assert_eq!(parse_google_webapp(body).unwrap(), "你好");
+    }
+
+    #[test]
+    fn computes_google_webapp_token() {
+        assert_eq!(google_token("こんにちは"), "787929.-1002069079");
+    }
+
+    #[test]
+    fn splits_google_requests_without_breaking_lines() {
+        assert_eq!(
+            google_batches("第一行\n第二行\n第三行", 5),
+            vec!["第一行".to_string(), "第二行".to_string(), "第三行".to_string()]
+        );
+        assert_eq!(google_batches("短\n也短", 20), vec!["短\n也短".to_string()]);
+    }
+
+    #[test]
     fn deepl_lang_map() {
         assert_eq!(deepl_lang("zh-CN"), "ZH");
         assert_eq!(deepl_lang("zh-TW"), "ZH-HANT");
@@ -566,5 +807,24 @@ mod tests {
         assert_eq!(microsoft_lang("zh-CN"), "zh-Hans");
         assert_eq!(microsoft_lang("zh-TW"), "zh-Hant");
         assert_eq!(microsoft_lang("ja"), "ja");
+    }
+
+    #[test]
+    fn parses_current_bing_page_authorization_values() {
+        let page = r#"
+            window._G={IG:"A1B2C3D4"};
+            var params_AbusePreventionHelper = [1787866985732,"token-value",3600000];
+        "#;
+        assert_eq!(
+            parse_bing_auth(page).unwrap(),
+            ("1787866985732".to_string(), "token-value".to_string())
+        );
+        assert_eq!(parse_bing_ig(page).unwrap(), "A1B2C3D4");
+    }
+
+    #[test]
+    fn rejects_invalid_bing_page_authorization_values() {
+        assert!(parse_bing_auth("params_AbusePreventionHelper = []").is_err());
+        assert!(parse_bing_ig("window._G={IG:\"not-a-session\"}").is_err());
     }
 }

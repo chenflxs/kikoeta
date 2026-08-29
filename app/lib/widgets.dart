@@ -884,6 +884,9 @@ class _HomeSearchBarState extends State<HomeSearchBar> {
               GestureDetector(
                 onTap: () {
                   _ctrl.clear();
+                  // TextEditingController 的程序化更新不会触发 onChanged；
+                  // 这里需要刷新条件渲染的清除按钮。
+                  setState(() {});
                   app.requestSearchClear();
                 },
                 child: Container(

@@ -215,8 +215,14 @@ Future<String> apiGetMyReviews({
   required String base,
   required int page,
   required int perPage,
+  required String order,
+  required String sort,
+  String? filter,
 }) => RustLib.instance.api.crateApiKikoeruApiApiGetMyReviews(
   base: base,
   page: page,
   perPage: perPage,
+  order: order,
+  sort: sort,
+  filter: filter,
 );

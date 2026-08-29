@@ -124,11 +124,14 @@ let api_seed = <Option<String>>::sse_decode(&mut deserializer);deserializer.end(
                 FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "api_get_my_reviews", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || { 
             let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
             let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_base = <String>::sse_decode(&mut deserializer);
+let api_base = <String>::sse_decode(&mut deserializer);
 let api_page = <u32>::sse_decode(&mut deserializer);
-let api_per_page = <u32>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
+let api_per_page = <u32>::sse_decode(&mut deserializer);
+let api_order = <String>::sse_decode(&mut deserializer);
+let api_sort = <String>::sse_decode(&mut deserializer);
+let api_filter = <Option<String>>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
                     transform_result_sse::<_, String>((move || async move {
-                         let output_ok = crate::api::kikoeru_api::api_get_my_reviews(api_base, api_page, api_per_page).await?;   Ok(output_ok)
+                         let output_ok = crate::api::kikoeru_api::api_get_my_reviews(api_base, api_page, api_per_page, api_order, api_sort, api_filter).await?;   Ok(output_ok)
                     })().await)
                 } })
             }fn wire__crate__api__kikoeru_api__api_get_playlist_works_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {

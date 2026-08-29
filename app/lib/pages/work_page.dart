@@ -101,6 +101,9 @@ class _WorkPageState extends State<WorkPage> {
     if (id == null) return;
     try {
       final details = await ApiService.fetchWork(app, id);
+      if (details.hasReview != null) {
+        app.syncFavoriteFromServer(work, details.hasReview!);
+      }
       if (mounted) {
         setState(() => _languageEditions = details.languageEditions);
       }
@@ -771,6 +774,10 @@ class _WorkPageState extends State<WorkPage> {
     return Column(
       children: [
         InkWell(
+          onLongPress: () async {
+            await Clipboard.setData(ClipboardData(text: n.title));
+            if (mounted) _toast('已复制文件名：${n.title}');
+          },
           onTap: () {
             if (n.isDir) {
               setState(() {

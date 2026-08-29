@@ -545,13 +545,22 @@ pub async fn api_get_my_reviews(
     base: String,
     page: u32,
     per_page: u32,
+    order: String,
+    sort: String,
+    filter: Option<String>,
 ) -> Result<String, String> {
-    let url = format!(
-        "{}/api/review?page={}&per_page={}",
+    let mut url = format!(
+        "{}/api/review?page={}&per_page={}&order={}&sort={}",
         base_of(&base),
         page,
-        per_page
+        per_page,
+        urlencoding(&order),
+        urlencoding(&sort),
     );
+    if let Some(value) = filter.filter(|value| !value.is_empty()) {
+        url.push_str("&filter=");
+        url.push_str(&urlencoding(&value));
+    }
     let client = http_client()?;
     let auth = auth_header(&base);
     http_get(&client, &url, auth.as_deref()).await

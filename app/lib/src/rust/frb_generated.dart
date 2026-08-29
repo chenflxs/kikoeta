@@ -125,6 +125,9 @@ abstract class RustLibApi extends BaseApi {
     required String base,
     required int page,
     required int perPage,
+    required String order,
+    required String sort,
+    String? filter,
   });
 
   Future<String> crateApiKikoeruApiApiGetPlaylistWorks({
@@ -527,6 +530,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String base,
     required int page,
     required int perPage,
+    required String order,
+    required String sort,
+    String? filter,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -535,6 +541,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(base, serializer);
           sse_encode_u_32(page, serializer);
           sse_encode_u_32(perPage, serializer);
+          sse_encode_String(order, serializer);
+          sse_encode_String(sort, serializer);
+          sse_encode_opt_String(filter, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -547,7 +556,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiKikoeruApiApiGetMyReviewsConstMeta,
-        argValues: [base, page, perPage],
+        argValues: [base, page, perPage, order, sort, filter],
         apiImpl: this,
       ),
     );
@@ -556,7 +565,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiKikoeruApiApiGetMyReviewsConstMeta =>
       const TaskConstMeta(
         debugName: "api_get_my_reviews",
-        argNames: ["base", "page", "perPage"],
+        argNames: ["base", "page", "perPage", "order", "sort", "filter"],
       );
 
   @override

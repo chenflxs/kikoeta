@@ -259,11 +259,17 @@ class ApiService {
     AppState app, {
     int page = 1,
     int perPage = 20,
+    String order = 'updated_at',
+    String sort = 'desc',
+    String? filter,
   }) async {
     final json = await apiGetMyReviews(
       base: resolveBase(app),
       page: page,
       perPage: perPage,
+      order: order,
+      sort: sort,
+      filter: filter,
     );
     return parseWorks(json, base: resolveBase(app), perPage: perPage);
   }
@@ -985,6 +991,9 @@ class ApiService {
         (m['circle'] as Map?)?['name'] as String? ??
         (m['name'] as String? ?? '');
     final lyricStatus = m['lyric_status'];
+    final hasReview = m.containsKey('user_name')
+        ? m['user_name'] != null
+        : null;
     final languageEditions = _mapLanguageEditions(m, apiId);
     return Work(
       rj:
@@ -1009,6 +1018,7 @@ class ApiService {
           m['has_subtitle'] as bool? ??
           (lyricStatus is String && lyricStatus.isNotEmpty),
       apiId: apiId,
+      hasReview: hasReview,
       languageEditions: languageEditions,
     );
   }

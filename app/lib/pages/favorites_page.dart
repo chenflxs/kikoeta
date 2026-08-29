@@ -25,6 +25,9 @@ class _FavoritesPageState extends State<FavoritesPage> {
   bool _hasMore = true;
   int _page = 0;
   int _gen = 0;
+  String _reviewSort = 'updated_at';
+  bool _reviewOrderAsc = false;
+  String? _reviewFilter;
   late int _seenFavVersion;
   late int _seenFavoritesEntryVersion;
   late bool _seenSfwMode;
@@ -116,6 +119,9 @@ class _FavoritesPageState extends State<FavoritesPage> {
         app,
         page: page,
         perPage: 20,
+        order: _reviewSort,
+        sort: _reviewOrderAsc ? 'asc' : 'desc',
+        filter: _reviewFilter,
       );
       if (!mounted || gen != _gen) return;
       setState(() {
@@ -307,8 +313,156 @@ class _FavoritesPageState extends State<FavoritesPage> {
             ],
           ),
         ),
+        if (_reviewsMode) _reviewToolbar(),
         Expanded(child: _body()),
       ],
+    );
+  }
+
+  static const _reviewSortLabels = {
+    'updated_at': '标记时间',
+    'userRating': '我的评价',
+    'release': '发布时间',
+    'review_count': '评论数量',
+    'dl_count': '销售数量',
+    'nsfw': '年龄分级',
+  };
+
+  static const _reviewFilterLabels = <String, String>{
+    '': '全部',
+    'marked': '想听',
+    'listening': '在听',
+    'listened': '听过',
+    'replay': '重听',
+    'postponed': '搁置',
+  };
+
+  Widget _reviewToolbar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 12, 4, 0),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _reviewFilterButton(),
+            const SizedBox(width: 8),
+            _reviewSortDropdown(),
+            const SizedBox(width: 8),
+            _reviewOrderButton(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _reviewFilterButton() {
+    return PopupMenuButton<String>(
+      tooltip: '进度筛选',
+      initialValue: _reviewFilter ?? '',
+      onSelected: (value) {
+        final filter = value.isEmpty ? null : value;
+        if (_reviewFilter == filter) return;
+        setState(() => _reviewFilter = filter);
+        _loadData(reset: true);
+      },
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      color: p.surface,
+      itemBuilder: (ctx) => _reviewFilterLabels.entries
+          .map(
+            (entry) => PopupMenuItem<String>(
+              value: entry.key,
+              height: 42,
+              child: MenuItem(
+                label: entry.value,
+                selected: entry.key.isEmpty
+                    ? _reviewFilter == null
+                    : _reviewFilter == entry.key,
+              ),
+            ),
+          )
+          .toList(),
+      child: Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: p.surface,
+          border: Border.all(color: _reviewFilter != null ? p.accent : p.line),
+          borderRadius: BorderRadius.circular(11),
+        ),
+        child: Icon(
+          Icons.tune,
+          size: 17,
+          color: _reviewFilter != null ? p.accent : p.muted,
+        ),
+      ),
+    );
+  }
+
+  Widget _reviewSortDropdown() {
+    return PopupMenuButton<String>(
+      tooltip: '排序方式',
+      initialValue: _reviewSort,
+      onSelected: (value) {
+        if (_reviewSort == value) return;
+        setState(() => _reviewSort = value);
+        _loadData(reset: true);
+      },
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      color: p.surface,
+      itemBuilder: (ctx) => _reviewSortLabels.entries
+          .map(
+            (entry) => PopupMenuItem(
+              value: entry.key,
+              height: 42,
+              child: MenuItem(
+                label: entry.value,
+                selected: _reviewSort == entry.key,
+              ),
+            ),
+          )
+          .toList(),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: p.surface,
+          border: Border.all(color: p.line),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              _reviewSortLabels[_reviewSort]!,
+              style: TextStyle(fontSize: 12, color: p.muted),
+            ),
+            const SizedBox(width: 6),
+            Icon(Icons.keyboard_arrow_down, size: 15, color: p.dim),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _reviewOrderButton() {
+    return GestureDetector(
+      onTap: () {
+        setState(() => _reviewOrderAsc = !_reviewOrderAsc);
+        _loadData(reset: true);
+      },
+      child: Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: p.surface,
+          border: Border.all(color: _reviewOrderAsc ? p.accent : p.line),
+          borderRadius: BorderRadius.circular(11),
+        ),
+        child: Icon(
+          _reviewOrderAsc ? Icons.arrow_upward : Icons.arrow_downward,
+          size: 16,
+          color: _reviewOrderAsc ? p.accent : p.muted,
+        ),
+      ),
     );
   }
 

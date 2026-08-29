@@ -130,6 +130,14 @@ class WindowsTrayService with TrayListener, WindowListener {
   Future<void> _exit() async {
     if (_exiting) return;
     _exiting = true;
+    // 窗口关闭不会触发播放器页 dispose；退出前强制保存播放器当前位置。
+    if (_app.queue.isNotEmpty &&
+        (AppPlayer.instance.opened ||
+            _app.playing ||
+            _app.resumePosition == 0)) {
+      _app.resumePosition = AppPlayer.instance.currentPosition;
+      _app.savePlayState();
+    }
     // Prevent a stuck native close callback from keeping the Dart isolate and
     // the lyrics window alive after the user explicitly chose "Exit".
     Timer(const Duration(seconds: 2), () => exit(0));
