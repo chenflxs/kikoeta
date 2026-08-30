@@ -58,6 +58,7 @@ class _PlayerPageState extends State<PlayerPage> {
   bool _opening = false; // 正在打开媒体
   bool _buffering = false; // 缓冲中
   int _lastSavedPos = 0; // 上次保存播放位置（节流）
+  Future<void>? _restoreFuture;
 
   Player get _player => AppPlayer.instance.player;
   bool get _opened => AppPlayer.instance.opened;
@@ -144,19 +145,31 @@ class _PlayerPageState extends State<PlayerPage> {
         !AppPlayer.instance.opened || AppPlayer.instance.openedUrl != targetUrl;
     if (!app.playing && app.queue.isNotEmpty && needsOpen) {
       final resume = app.resumePosition;
-      _openCurrent(autoplay: false).then((_) async {
-        if (mounted && AppPlayer.instance.opened && resume > 0) {
-          try {
-            await _player.seek(Duration(seconds: resume));
-          } catch (_) {}
-          if (mounted) setState(() => _pos = resume);
-        }
-      });
+      _restoreFuture = _restorePlayback(resume);
     } else if (app.playing && app.queue.isNotEmpty && needsOpen) {
       // 全局播放器可能仍打开着上一部作品；目标媒体不同也必须重新打开。
       _openCurrent();
     }
     _loadLyrics();
+  }
+
+  Future<void> _restorePlayback(int resume) async {
+    await _openCurrent(autoplay: false);
+    if (!AppPlayer.instance.opened || resume <= 0) return;
+    final target = Duration(seconds: resume);
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        await _player.seek(target);
+      } catch (_) {}
+      if ((AppPlayer.instance.currentPosition - resume).abs() <= 1) break;
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+    }
+    // 打开媒体时可能先发出位置 0 的暂停事件，恢复定位完成后重新
+    // 持久化一次，避免该初始化事件覆盖掉已保存的播放进度。
+    app.resumePosition = resume;
+    _lastSavedPos = resume;
+    app.savePlayState();
+    if (mounted) setState(() => _pos = resume);
   }
 
   Future<void> _loadLyrics() async {
@@ -783,15 +796,24 @@ class _PlayerPageState extends State<PlayerPage> {
             ],
           ),
           child: IconButton(
-            onPressed: () {
+            onPressed: () async {
+              await _restoreFuture;
+              if (!mounted) return;
               if (app.playing) {
-                _player.pause();
+                await _player.pause();
                 app.playing = false;
               } else {
                 if (_opened) {
-                  _player.play();
+                  final resume = app.resumePosition;
+                  final current = AppPlayer.instance.currentPosition;
+                  if (resume > current + 1) {
+                    try {
+                      await _player.seek(Duration(seconds: resume));
+                    } catch (_) {}
+                  }
+                  await _player.play();
                 } else {
-                  _openCurrent();
+                  await _openCurrent();
                 }
                 app.playing = true;
               }

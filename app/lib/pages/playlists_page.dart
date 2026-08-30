@@ -17,10 +17,7 @@ class PlaylistsPage extends StatelessWidget {
             ? AppColors.dark
             : AppColors.light;
         return Scaffold(
-          appBar: AppBar(
-            title: const Text('播放列表'),
-            leading: const BackButton(),
-          ),
+          appBar: AppBar(title: const Text('歌单'), leading: const BackButton()),
           floatingActionButton: app.sfwMode
               ? null
               : FloatingActionButton.extended(
@@ -28,19 +25,19 @@ class PlaylistsPage extends StatelessWidget {
                   backgroundColor: p.accent,
                   foregroundColor: Colors.white,
                   icon: const Icon(Icons.add, size: 20),
-                  label: const Text('新建播放列表', style: TextStyle(fontSize: 13)),
+                  label: const Text('新建歌单', style: TextStyle(fontSize: 13)),
                 ),
           body: app.sfwMode
               ? Center(
                   child: Text(
-                    'SFW 模式下不显示播放列表',
+                    'SFW 模式下不显示歌单',
                     style: TextStyle(fontSize: 13, color: p.dim),
                   ),
                 )
               : app.playlists.isEmpty
               ? Center(
                   child: Text(
-                    '暂无播放列表，点击右下角新建',
+                    '暂无歌单，点击右下角新建',
                     style: TextStyle(fontSize: 13, color: p.dim),
                   ),
                 )
@@ -150,13 +147,13 @@ class PlaylistsPage extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: p.surface,
-        title: const Text('新建播放列表'),
+        title: const Text('新建歌单'),
         content: TextField(
           controller: ctrl,
           autofocus: true,
           style: TextStyle(fontSize: 13, color: p.text),
           decoration: InputDecoration(
-            hintText: '播放列表名称',
+            hintText: '歌单名称',
             hintStyle: TextStyle(fontSize: 13, color: p.dim),
             filled: true,
             fillColor: p.surface2,
@@ -189,7 +186,7 @@ class PlaylistsPage extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: p.surface,
-        title: const Text('重命名播放列表'),
+        title: const Text('重命名歌单'),
         content: TextField(
           controller: ctrl,
           autofocus: true,
@@ -241,6 +238,7 @@ class PlaylistDetailPage extends StatelessWidget {
 
   void _playTrack(
     BuildContext context,
+    List<PlaylistEntry> entries,
     PlaylistEntry entry,
     PlaylistTrack track,
   ) {
@@ -250,19 +248,31 @@ class PlaylistDetailPage extends StatelessWidget {
       ).showSnackBar(const SnackBar(content: Text('该音频缺少可用文件流，请从作品详情重新添加')));
       return;
     }
-    final files = entry.tracks
-        .where((item) => item.url != null && item.url!.isNotEmpty)
-        .map(
-          (item) => MediaNode(
+    final files = <MediaNode>[];
+    var index = -1;
+    for (final currentEntry in entries) {
+      for (final item in currentEntry.tracks) {
+        if (item.url == null || item.url!.isEmpty) continue;
+        if (identical(currentEntry, entry) && item.path == track.path) {
+          index = files.length;
+        }
+        files.add(
+          MediaNode(
             title: item.title,
             type: 'file',
             path: item.path,
             url: item.url,
             duration: item.duration,
           ),
-        )
-        .toList();
-    final index = files.indexWhere((item) => item.path == track.path);
+        );
+      }
+    }
+    if (files.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('歌单中没有可播放的音频')));
+      return;
+    }
     app.startPlayback(
       _workFor(entry),
       files,
@@ -288,7 +298,7 @@ class PlaylistDetailPage extends StatelessWidget {
           body: entries.isEmpty
               ? Center(
                   child: Text(
-                    hiddenBySfw ? 'SFW 模式下不显示播放列表内容' : '播放列表为空',
+                    hiddenBySfw ? 'SFW 模式下不显示歌单内容' : '歌单为空',
                     style: TextStyle(fontSize: 13, color: p.dim),
                   ),
                 )
@@ -357,7 +367,8 @@ class PlaylistDetailPage extends StatelessWidget {
                         const SizedBox(height: 4),
                         ...e.tracks.asMap().entries.map(
                           (item) => InkWell(
-                            onTap: () => _playTrack(ctx, e, item.value),
+                            onTap: () =>
+                                _playTrack(ctx, entries, e, item.value),
                             child: Padding(
                               padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
                               child: Row(

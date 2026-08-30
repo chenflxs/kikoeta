@@ -118,7 +118,7 @@ class _MorePageState extends State<MorePage> {
               _row(
                 context,
                 Icons.queue_music,
-                '播放列表',
+                '歌单',
                 null,
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => PlaylistsPage(app: app)),

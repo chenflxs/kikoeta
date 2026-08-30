@@ -1752,7 +1752,7 @@ class _ResetConfirmDialogState extends State<_ResetConfirmDialog> {
       content: const Text(
         '将清除本机全部数据，且不可恢复：\n\n'
         '· ASMR.ONE 账号与自建站点配置\n'
-        '· 收藏 / 播放历史 / 播放列表 / 黑名单\n'
+        '· 收藏 / 播放历史 / 歌单 / 黑名单\n'
         '· 翻译结果、均衡器、桌面歌词、定时关闭等全部设置\n\n'
         '请确认是否继续。',
         style: TextStyle(fontSize: 13.5, height: 1.5),

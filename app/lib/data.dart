@@ -99,7 +99,7 @@ class CustomSite {
   });
 }
 
-/// 播放列表中的可播放音频文件快照。
+/// 歌单中的可播放音频文件快照。
 ///
 /// URL 一并保存，避免歌单展示时再次请求整棵媒体树；若旧数据只有
 /// 文件名，则 url/path 为空，仍可正常展示但无法从歌单直接播放。
@@ -117,7 +117,7 @@ class PlaylistTrack {
   });
 }
 
-/// 播放列表条目（一个作品及其音频文件）
+/// 歌单条目（一个作品及其音频文件）
 class PlaylistEntry {
   final String rj;
   final String title;
@@ -187,7 +187,7 @@ class AppState extends ChangeNotifier {
   bool playing = false;
   int resumePosition = 0; // 上次播放位置（秒），重启恢复用（默认暂停）
 
-  // 收藏 / 历史 / 播放列表 / 黑名单 / 标签
+  // 收藏 / 历史 / 歌单 / 黑名单 / 标签
   final List<String> favoriteRjs = [];
   final Set<int> favIds = {}; // 服务器收藏的作品 API id
   int favVersion = 0; // 收藏变更版本（供收藏页刷新）
@@ -1023,6 +1023,12 @@ class AppState extends ChangeNotifier {
 
   void setDoNotRememberPlaybackProgress(bool value) {
     if (doNotRememberPlaybackProgress == value) return;
+    if (!value && AppPlayer.instance.opened && queue.isNotEmpty) {
+      final current = queue[trackIdx.clamp(0, queue.length - 1)];
+      if (AppPlayer.instance.openedUrl == current.url) {
+        resumePosition = AppPlayer.instance.currentPosition;
+      }
+    }
     doNotRememberPlaybackProgress = value;
     SettingsStore.set('do_not_remember_playback_progress', value ? '1' : '0');
     // 立即覆盖已保存的进度，确保刚切换后关闭程序也遵循新设置。

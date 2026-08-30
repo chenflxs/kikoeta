@@ -677,7 +677,7 @@ class _WorkPageState extends State<WorkPage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const Text(
-                    '添加到播放列表',
+                    '添加到歌单',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 4),
@@ -724,10 +724,7 @@ class _WorkPageState extends State<WorkPage> {
                             color: newMode ? p.accent : p.dim,
                           ),
                           const SizedBox(width: 10),
-                          const Text(
-                            '新建播放列表',
-                            style: TextStyle(fontSize: 13.5),
-                          ),
+                          const Text('新建歌单', style: TextStyle(fontSize: 13.5)),
                         ],
                       ),
                     ),
@@ -738,7 +735,7 @@ class _WorkPageState extends State<WorkPage> {
                       autofocus: true,
                       style: TextStyle(fontSize: 13, color: p.text),
                       decoration: InputDecoration(
-                        hintText: '播放列表名称',
+                        hintText: '歌单名称',
                         hintStyle: TextStyle(fontSize: 13, color: p.dim),
                         filled: true,
                         fillColor: p.surface2,
@@ -758,7 +755,7 @@ class _WorkPageState extends State<WorkPage> {
                       final name = newMode ? nameCtrl.text.trim() : chosen;
                       if (name.isEmpty) {
                         ScaffoldMessenger.of(ctx).showSnackBar(
-                          const SnackBar(content: Text('请输入播放列表名称')),
+                          const SnackBar(content: Text('请输入歌单名称')),
                         );
                         return;
                       }
@@ -1100,7 +1097,7 @@ class _WorkPageState extends State<WorkPage> {
                       onPressed: _addToPlaylist,
                       icon: const Icon(Icons.playlist_add, size: 17),
                       label: const Text(
-                        '添加至播放列表',
+                        '添加至歌单',
                         style: TextStyle(fontSize: 13),
                       ),
                       style: OutlinedButton.styleFrom(
