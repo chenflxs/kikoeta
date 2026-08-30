@@ -46,7 +46,6 @@ class _WorkPageState extends State<WorkPage> {
   bool _tracksFailed = false;
   final Set<String> _selected = {};
   final Set<String> _expanded = {};
-  final Map<String, String> _titleByPath = {};
   List<String>? _smartTarget; // 智能路径自动进入的目录（标题链），用于「查看全部文件」
   late int _seenLoginEpoch;
   bool _translating = false;
@@ -86,8 +85,6 @@ class _WorkPageState extends State<WorkPage> {
         setState(() {
           _tree = t;
           _tracksFailed = false;
-          _titleByPath.clear();
-          _indexTree(t);
           _applySmartPath();
         });
       }
@@ -188,13 +185,6 @@ class _WorkPageState extends State<WorkPage> {
     );
   }
 
-  void _indexTree(List<MediaNode> nodes) {
-    for (final n in nodes) {
-      _titleByPath[n.path] = n.title;
-      _indexTree(n.children);
-    }
-  }
-
   // ---------- 智能路径（对齐 asmr.one Auto initial path） ----------
 
   /// 树加载完成后应用智能路径：展开到最佳目录并记录目标（供「查看全部文件」）
@@ -244,7 +234,7 @@ class _WorkPageState extends State<WorkPage> {
       for (final n in nodes) {
         if (n.isDir) {
           walk(n.children, [...folderPath, n.title]);
-        } else if (_isAudio(n)) {
+        } else if (_isAudio(n) && n.url != null && n.url!.isNotEmpty) {
           final key = folderPath.join('/');
           final hit = stats.where((x) => x.path.join('/') == key).firstOrNull;
           if (hit != null) {
@@ -619,12 +609,58 @@ class _WorkPageState extends State<WorkPage> {
     if (!ok) _toast('打开失败');
   }
 
+  List<PlaylistTrack> _selectedAudioTracks() {
+    final tree = _tree;
+    if (tree == null) return const [];
+    final byPath = <String, PlaylistTrack>{};
+
+    void collect(Iterable<MediaNode> nodes) {
+      for (final n in nodes) {
+        if (n.isDir) {
+          collect(n.children);
+        } else if (_isAudio(n)) {
+          byPath[n.path] = PlaylistTrack(
+            title: n.title,
+            path: n.path,
+            url: n.url,
+            duration: n.duration,
+          );
+        }
+      }
+    }
+
+    void walk(Iterable<MediaNode> nodes) {
+      for (final n in nodes) {
+        if (_selected.contains(n.path)) {
+          if (n.isDir) {
+            collect(n.children);
+          } else if (_isAudio(n) && n.url != null && n.url!.isNotEmpty) {
+            byPath[n.path] = PlaylistTrack(
+              title: n.title,
+              path: n.path,
+              url: n.url,
+              duration: n.duration,
+            );
+          }
+        }
+        if (n.isDir) walk(n.children);
+      }
+    }
+
+    walk(tree);
+    return byPath.values.toList();
+  }
+
   void _addToPlaylist() {
     if (_selected.isEmpty) {
       _toast('请先勾选文件或文件夹');
       return;
     }
-    final titles = _selected.map((p) => _titleByPath[p] ?? p).toList();
+    final tracks = _selectedAudioTracks();
+    if (tracks.isEmpty) {
+      _toast('所选项目中没有可播放的音频文件');
+      return;
+    }
     final existing = app.playlists.keys.toList();
     var newMode = existing.isEmpty;
     var chosen = existing.isEmpty ? '' : existing.first;
@@ -646,7 +682,7 @@ class _WorkPageState extends State<WorkPage> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '已选择 ${_selected.length} 个项目',
+                    '已选择 ${tracks.length} 个音频文件',
                     style: TextStyle(fontSize: 12, color: p.muted),
                   ),
                   const SizedBox(height: 10),
@@ -726,7 +762,7 @@ class _WorkPageState extends State<WorkPage> {
                         );
                         return;
                       }
-                      app.addWorkToPlaylist(name, work, titles);
+                      app.addWorkToPlaylist(name, work, tracks);
                       Navigator.pop(ctx);
                       _selected.clear();
                       setState(() {});

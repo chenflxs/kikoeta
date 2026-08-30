@@ -99,12 +99,30 @@ class CustomSite {
   });
 }
 
-/// 播放列表条目（关联作品信息）
+/// 播放列表中的可播放音频文件快照。
+///
+/// URL 一并保存，避免歌单展示时再次请求整棵媒体树；若旧数据只有
+/// 文件名，则 url/path 为空，仍可正常展示但无法从歌单直接播放。
+class PlaylistTrack {
+  final String title;
+  final String path;
+  final String? url;
+  final int duration;
+
+  const PlaylistTrack({
+    required this.title,
+    required this.path,
+    this.url,
+    this.duration = 0,
+  });
+}
+
+/// 播放列表条目（一个作品及其音频文件）
 class PlaylistEntry {
   final String rj;
   final String title;
   final String circle;
-  final List<String> tracks;
+  final List<PlaylistTrack> tracks;
   const PlaylistEntry({
     required this.rj,
     required this.title,
@@ -467,18 +485,38 @@ class AppState extends ChangeNotifier {
 
   void addToPlaylist(String name, List<String> titles) {
     // 兼容旧调用：无作品上下文时仅存标题
-    addWorkToPlaylist(name, null, titles);
+    addWorkToPlaylist(
+      name,
+      null,
+      titles.map((title) => PlaylistTrack(title: title, path: title)).toList(),
+    );
   }
 
-  void addWorkToPlaylist(String name, Work? w, List<String> tracks) {
+  void addWorkToPlaylist(String name, Work? w, List<PlaylistTrack> tracks) {
     final list = playlists.putIfAbsent(name, () => []);
-    final entry = PlaylistEntry(
-      rj: w?.rj ?? '',
-      title: w?.title ?? (tracks.isNotEmpty ? tracks.first : name),
-      circle: w?.circle ?? '',
-      tracks: List.of(tracks),
-    );
-    list.add(entry);
+    final rj = w?.rj ?? '';
+    PlaylistEntry? existing;
+    if (rj.isNotEmpty) {
+      for (final entry in list) {
+        if (entry.rj == rj) {
+          existing = entry;
+          break;
+        }
+      }
+    }
+    if (existing != null) {
+      final known = existing.tracks.map((track) => track.path).toSet();
+      existing.tracks.addAll(tracks.where((track) => known.add(track.path)));
+    } else {
+      list.add(
+        PlaylistEntry(
+          rj: rj,
+          title: w?.title ?? (tracks.isNotEmpty ? tracks.first.title : name),
+          circle: w?.circle ?? '',
+          tracks: List.of(tracks),
+        ),
+      );
+    }
     _persistPlaylists();
     notifyListeners();
   }
@@ -757,16 +795,28 @@ class AppState extends ChangeNotifier {
         final raw = jsonDecode(pl) as Map<String, dynamic>;
         playlists.clear();
         raw.forEach((name, entries) {
-          playlists[name] = (entries as List)
-              .map(
-                (e) => PlaylistEntry(
-                  rj: (e as Map<String, dynamic>)['rj'] as String? ?? '',
-                  title: e['title'] as String? ?? '',
-                  circle: e['circle'] as String? ?? '',
-                  tracks: ((e['tracks'] as List?) ?? const []).cast<String>(),
-                ),
-              )
-              .toList();
+          playlists[name] = (entries as List).map((rawEntry) {
+            final e = rawEntry as Map<String, dynamic>;
+            final rawTracks = (e['tracks'] as List?) ?? const [];
+            final tracks = rawTracks.map<PlaylistTrack>((rawTrack) {
+              if (rawTrack is String) {
+                return PlaylistTrack(title: rawTrack, path: rawTrack);
+              }
+              final t = rawTrack as Map<String, dynamic>;
+              return PlaylistTrack(
+                title: t['title'] as String? ?? '',
+                path: t['path'] as String? ?? t['title'] as String? ?? '',
+                url: t['url'] as String?,
+                duration: (t['duration'] as num?)?.toInt() ?? 0,
+              );
+            }).toList();
+            return PlaylistEntry(
+              rj: e['rj'] as String? ?? '',
+              title: e['title'] as String? ?? '',
+              circle: e['circle'] as String? ?? '',
+              tracks: tracks,
+            );
+          }).toList();
         });
       } catch (_) {}
     }
@@ -1352,7 +1402,16 @@ class AppState extends ChangeNotifier {
                   'rj': e.rj,
                   'title': e.title,
                   'circle': e.circle,
-                  'tracks': e.tracks,
+                  'tracks': e.tracks
+                      .map(
+                        (t) => {
+                          'title': t.title,
+                          'path': t.path,
+                          if (t.url != null) 'url': t.url,
+                          if (t.duration > 0) 'duration': t.duration,
+                        },
+                      )
+                      .toList(),
                 },
               )
               .toList(),

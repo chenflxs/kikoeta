@@ -349,24 +349,22 @@ class ApiService {
       if (match != null) return _loadLyricCandidate(match);
       return const [];
     }
+    // TXT 仅能由用户手动选择，避免将作品说明等普通文本误判为歌词。
+    final automaticCandidates = candidates
+        .where((candidate) => !_isPlainTextLyric(candidate.title))
+        .toList();
+    if (automaticCandidates.isEmpty) return const [];
     final matched = _trackMatchedLyrics(
-      candidates,
+      automaticCandidates,
       trackTitle: trackTitle,
       trackPath: trackPath,
     );
-    // 自动匹配优先使用带时间轴的格式；TXT 只在当前曲目没有其它匹配歌词
-    // 时作为兼容兜底，避免只有 TXT 的旧作品失去自动歌词。
-    final timedMatched = matched
-        .where((candidate) => !_isPlainTextLyric(candidate.title))
-        .toList();
     // 多个歌词文件时不回退到其它曲目歌词；唯一歌词仍可作为整部作品通用歌词。
-    final selected = timedMatched.isNotEmpty
-        ? timedMatched
-        : (matched.isNotEmpty
-              ? matched
-              : (candidates.length == 1
-                    ? candidates
-                    : const <_LyricCandidate>[]));
+    final selected = matched.isNotEmpty
+        ? matched
+        : (automaticCandidates.length == 1
+                    ? automaticCandidates
+                    : const <_LyricCandidate>[]);
     // 按曲目匹配、格式优先级和语言评分尝试，直到解析出带时间轴的歌词。
     for (final c in selected) {
       final lrc = await _loadLyricCandidate(c);
@@ -567,7 +565,7 @@ class ApiService {
   };
 
   /// 歌词格式优先级：LRC > SRT > VTT > ASS/SSA > TXT。
-  /// TXT 在自动匹配中仅作为没有其它同曲目歌词时的兼容兜底。
+  /// TXT 仅供用户手动选择歌词时使用。
   @visibleForTesting
   static int lyricFormatPriority(String name) {
     final lower = name.toLowerCase();
