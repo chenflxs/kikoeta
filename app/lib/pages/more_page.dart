@@ -152,6 +152,15 @@ class _MorePageState extends State<MorePage> {
               ),
               _row(
                 context,
+                Icons.translate_outlined,
+                '翻译',
+                null,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const TranslationPage()),
+                ),
+              ),
+              _row(
+                context,
                 Icons.settings_outlined,
                 '设置',
                 null,
@@ -225,6 +234,23 @@ class _MorePageState extends State<MorePage> {
               Icon(Icons.chevron_right, size: 18, color: p.dim),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class TranslationPage extends StatelessWidget {
+  const TranslationPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('翻译'),
+        leading: const BackButton(),
+      ),
+      body: const Center(
+        child: Text('功能构建中'),
       ),
     );
   }
