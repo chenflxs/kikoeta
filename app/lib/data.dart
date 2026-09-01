@@ -875,6 +875,19 @@ class AppState extends ChangeNotifier {
     if (hs != null && hs.isNotEmpty) sort = hs;
     final ho = SettingsStore.get('home_order_asc');
     if (ho != null) orderAsc = ho == '1';
+    final hc = SettingsStore.get('home_category');
+    if (hc != null && const ['all', 'hot', 'rec'].contains(hc)) {
+      category = hc;
+    }
+    final haf = SettingsStore.get('home_age_filter');
+    if (haf != null && haf.isNotEmpty) {
+      final value = int.tryParse(haf);
+      if (value != null && value >= 0 && value <= 2) ageFilter = value;
+    }
+    final hso = SettingsStore.get('home_sub_only');
+    if (hso != null) subOnly = hso == '1';
+    // SFW 始终优先于已保存的年龄筛选。
+    if (sfwMode) ageFilter = 0;
     final doNotRememberProgress = SettingsStore.get(
       'do_not_remember_playback_progress',
     );
@@ -1129,6 +1142,30 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setCategory(String v) {
+    if (!const ['all', 'hot', 'rec'].contains(v)) return;
+    category = v;
+    SettingsStore.set('home_category', v);
+    notifyListeners();
+  }
+
+  void setAgeFilter(int? v) {
+    if (v != null && (v < 0 || v > 2)) return;
+    // SFW 模式下不允许切换到 R15/R18。
+    if (sfwMode && v != null && v != 0) return;
+    if (ageFilter == v) return;
+    ageFilter = v;
+    SettingsStore.set('home_age_filter', v?.toString() ?? '');
+    notifyListeners();
+  }
+
+  void setSubOnly(bool v) {
+    if (subOnly == v) return;
+    subOnly = v;
+    SettingsStore.set('home_sub_only', v ? '1' : '0');
+    notifyListeners();
+  }
+
   void setOrderAsc(bool v) {
     orderAsc = v;
     SettingsStore.set('home_order_asc', v ? '1' : '0');
@@ -1140,6 +1177,7 @@ class AppState extends ChangeNotifier {
     sfwMode = !sfwMode;
     ageFilter = sfwMode ? 0 : null;
     SettingsStore.set('sfw', sfwMode ? '1' : '0');
+    SettingsStore.set('home_age_filter', ageFilter?.toString() ?? '');
     if (sfwMode) {
       currentWork = null;
       queue.clear();

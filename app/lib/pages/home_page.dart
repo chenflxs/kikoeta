@@ -322,12 +322,11 @@ class _HomePageState extends State<HomePage> {
                         label: e.value,
                         selected: app.category == e.key,
                         onTap: () {
-                          app.category = e.key;
                           if (e.key == 'rec') {
                             app.randomSeed =
                                 DateTime.now().millisecondsSinceEpoch % 1000000;
                           }
-                          app.notify();
+                          app.setCategory(e.key);
                         },
                       ),
                     ),

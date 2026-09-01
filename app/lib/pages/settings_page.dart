@@ -19,7 +19,9 @@ import '../widgets.dart';
 
 class SettingsPage extends StatefulWidget {
   final AppState app;
-  const SettingsPage({super.key, required this.app});
+  final String? sectionKey;
+
+  const SettingsPage({super.key, required this.app, this.sectionKey});
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -53,6 +55,8 @@ class _SettingsPageState extends State<SettingsPage> {
   late final TextEditingController _proxyCtrl;
 
   AppState get app => widget.app;
+
+  String? get _sectionKey => widget.sectionKey;
 
   @override
   void initState() {
@@ -241,609 +245,786 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('设置'), leading: const BackButton()),
+      appBar: AppBar(
+        title: Text(_sectionKey == null ? '设置' : _sectionTitle(_sectionKey!)),
+        leading: const BackButton(),
+      ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 40),
+        padding: EdgeInsets.fromLTRB(16, _sectionKey == null ? 4 : 8, 16, 40),
         children: [
-          _sec('账号设置'),
-          _group([
-            _row(
-              icon: Icons.dns_outlined,
-              title: 'ASMR.ONE',
-              sub: app.asmrUser.isEmpty ? '未配置账号' : '账号：${app.asmrUser}',
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _healthBadge('asmr') ?? const SizedBox.shrink(),
-                  _loginDot('asmr'),
-                  _miniBtn(
-                    '检测',
-                    () => _autoCheck(
-                      'asmr',
-                      'https://api.asmr.one',
-                      app.asmrUser,
-                      app.asmrPass,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  _miniBtn('配置', () async {
-                    await showOneConfigSheet(context, app);
-                    _autoCheck(
-                      'asmr',
-                      'https://api.asmr.one',
-                      app.asmrUser,
-                      app.asmrPass,
-                    );
-                  }),
-                ],
-              ),
-            ),
-            ...app.customSites.asMap().entries.map((e) {
-              final s = e.value;
-              final i = e.key;
-              return _row(
+          _section(
+            'account',
+            '账号设置',
+            _group([
+              _row(
                 icon: Icons.dns_outlined,
-                title: s.alias,
-                sub: s.url + (s.user.isEmpty ? '' : ' · ${s.user}'),
+                title: 'ASMR.ONE',
+                sub: app.asmrUser.isEmpty ? '未配置账号' : '账号：${app.asmrUser}',
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _healthBadge('site$i') ?? const SizedBox.shrink(),
-                    _loginDot('site$i'),
+                    _healthBadge('asmr') ?? const SizedBox.shrink(),
+                    _loginDot('asmr'),
                     _miniBtn(
                       '检测',
-                      () => _autoCheck('site$i', s.url, s.user, s.pass),
+                      () => _autoCheck(
+                        'asmr',
+                        'https://api.asmr.one',
+                        app.asmrUser,
+                        app.asmrPass,
+                      ),
                     ),
-                    const SizedBox(width: 4),
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      icon: Icon(Icons.edit_outlined, size: 17, color: p.dim),
-                      onPressed: () async {
-                        await showSiteSheet(context, app, editIndex: i);
-                        final fresh = app.customSites[i];
-                        _autoCheck('site$i', fresh.url, fresh.user, fresh.pass);
-                      },
-                    ),
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      icon: Icon(Icons.delete_outline, size: 17, color: p.dim),
-                      onPressed: () {
-                        app.removeSite(i);
-                      },
-                    ),
+                    const SizedBox(width: 8),
+                    _miniBtn('配置', () async {
+                      await showOneConfigSheet(context, app);
+                      _autoCheck(
+                        'asmr',
+                        'https://api.asmr.one',
+                        app.asmrUser,
+                        app.asmrPass,
+                      );
+                    }),
                   ],
                 ),
-              );
-            }),
-            Padding(
-              padding: const EdgeInsets.all(14),
-              child: OutlinedButton.icon(
-                onPressed: () async {
-                  await showSiteSheet(context, app);
-                  if (app.customSites.isNotEmpty) {
-                    final fresh = app.customSites.last;
-                    _autoCheck(
-                      'site${app.customSites.length - 1}',
-                      fresh.url,
-                      fresh.user,
-                      fresh.pass,
-                    );
-                  }
-                },
-                icon: const Icon(Icons.add, size: 17),
-                label: const Text('添加自建站点', style: TextStyle(fontSize: 13)),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: p.muted,
-                  side: BorderSide(color: p.line),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
               ),
-            ),
-          ]),
-          _sec('翻译'),
-          _group([
-            _row(
-              icon: Icons.translate,
-              title: '翻译引擎',
-              sub: 'Google / Microsoft 免费 · DeepL 免费 Key · OpenAI 兼容',
-              trailing: _engineDropdown(),
-            ),
-            if (app.engine == 'deepl') ...[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-                child: Column(
-                  children: [
-                    _input(
-                      _deeplKey,
-                      'DeepL 免费版 API Key',
-                      '在 deepl.com 免费注册后获取（api-free）',
-                      obscure: true,
-                      onChanged: (_) => app.setDeeplKey(_deeplKey.text),
-                    ),
-                    OutlinedButton(
-                      onPressed: () async {
-                        _toast('正在检测 DeepL…');
-                        try {
-                          final r = await apiTranslateDeepl(
-                            text: 'こんにちは',
-                            src: 'ja',
-                            dst: 'zh-CN',
-                            apiKey: _deeplKey.text,
+              ...app.customSites.asMap().entries.map((e) {
+                final s = e.value;
+                final i = e.key;
+                return _row(
+                  icon: Icons.dns_outlined,
+                  title: s.alias,
+                  sub: s.url + (s.user.isEmpty ? '' : ' · ${s.user}'),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _healthBadge('site$i') ?? const SizedBox.shrink(),
+                      _loginDot('site$i'),
+                      _miniBtn(
+                        '检测',
+                        () => _autoCheck('site$i', s.url, s.user, s.pass),
+                      ),
+                      const SizedBox(width: 4),
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        icon: Icon(Icons.edit_outlined, size: 17, color: p.dim),
+                        onPressed: () async {
+                          await showSiteSheet(context, app, editIndex: i);
+                          final fresh = app.customSites[i];
+                          _autoCheck(
+                            'site$i',
+                            fresh.url,
+                            fresh.user,
+                            fresh.pass,
                           );
-                          if (mounted) _toast('DeepL 连接正常：$r');
-                        } catch (e) {
-                          if (mounted) _toast('DeepL 连接失败：$e');
-                        }
-                      },
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: p.muted,
-                        side: BorderSide(color: p.line),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                        },
+                      ),
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        icon: Icon(
+                          Icons.delete_outline,
+                          size: 17,
+                          color: p.dim,
                         ),
-                      ),
-                      child: const Text('测试连接', style: TextStyle(fontSize: 13)),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            if (app.engine == 'openai') ...[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-                child: Column(
-                  children: [
-                    _input(
-                      _aiBase,
-                      'API 地址 (Base URL)',
-                      'https://api.openai.com/v1 或 http://127.0.0.1:11434/v1',
-                    ),
-                    _aiModelInput(),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: _detectOpenAiModels,
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: p.muted,
-                              side: BorderSide(color: p.line),
-                            ),
-                            child: const Text(
-                              '检测模型列表',
-                              style: TextStyle(fontSize: 13),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    _input(_aiKey, 'API Key（本地服务可留空）', 'sk-...', obscure: true),
-                    OutlinedButton(
-                      onPressed: () async {
-                        _toast('正在检测连接…');
-                        try {
-                          final r = await apiTranslateTest(
-                            baseUrl: _aiBase.text,
-                            model: _aiModel.text,
-                            apiKey: _aiKey.text,
-                          );
-                          if (mounted) _toast(r);
-                        } catch (e) {
-                          if (mounted) _toast('连接失败：$e');
-                        }
-                      },
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: p.muted,
-                        side: BorderSide(color: p.line),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: const Text('测试连接', style: TextStyle(fontSize: 13)),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            _row(
-              icon: null,
-              title: '源语言 / 目标语言',
-              sub: '日语 → ${_translationTargetLabel(app.translationTarget)}',
-              trailing: _translationTargetDropdown(),
-            ),
-          ]),
-          _sec('歌词'),
-          _group([
-            _row(
-              icon: null,
-              title: '繁简转换',
-              sub: '歌词中文部分自动转换',
-              trailing: _convDropdown(),
-            ),
-          ]),
-          _sec('桌面歌词'),
-          _group([
-            _switchRow(
-              Icons.lyrics_outlined,
-              '桌面歌词',
-              '最顶层悬浮歌词窗',
-              app.desktopLyricsOn,
-              (v) async {
-                if (v && Platform.isAndroid) {
-                  // 开启时先请求悬浮窗权限（未授权会拉起系统授权页）
-                  final ok = await AndroidLyricsOverlay.instance
-                      .requestPermission();
-                  if (!ok) {
-                    if (mounted) _toast('未授予悬浮窗权限，桌面歌词无法显示');
-                    return; // 保持关闭
-                  }
-                }
-                app.setDesktopLyricsOn(v);
-              },
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 4, 14, 4),
-              child: Row(
-                children: [
-                  Icon(Icons.format_size, size: 17, color: p.accent),
-                  const SizedBox(width: 12),
-                  const Text(
-                    '字体大小',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                  ),
-                  const Spacer(),
-                  Text(
-                    '${app.lyricsFontSize.round()}',
-                    style: TextStyle(fontSize: 12, color: p.dim),
-                  ),
-                  Expanded(
-                    child: Slider(
-                      value: app.lyricsFontSize,
-                      min: 12,
-                      max: 64,
-                      activeColor: p.accent,
-                      onChanged: (v) => app.setLyricsFontSize(v),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            _colorRow(
-              icon: Icons.palette_outlined,
-              label: '字体颜色',
-              value: app.lyricsColor,
-              onChanged: (v) => app.setLyricsColor(v),
-              hexCtrl: _colorHexCtrl,
-            ),
-            _colorRow(
-              icon: Icons.border_color_outlined,
-              label: '描边颜色',
-              value: app.lyricsOutlineColor,
-              onChanged: (v) => app.setLyricsOutlineColor(v),
-              hexCtrl: _outlineHexCtrl,
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-              child: Row(
-                children: [
-                  Icon(Icons.line_weight, size: 17, color: p.accent),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text(
-                      '描边宽度',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    app.lyricsOutlineWidth.toStringAsFixed(1),
-                    style: TextStyle(fontSize: 12, color: p.dim),
-                  ),
-                  SizedBox(
-                    width: 120,
-                    child: Slider(
-                      value: app.lyricsOutlineWidth,
-                      min: 0,
-                      max: 4,
-                      divisions: 8,
-                      activeColor: p.accent,
-                      onChanged: (v) => app.setLyricsOutlineWidth(v),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            _lockRow('桌面端', app.lyricsLockedDesktop, () {
-              app.setLyricsLockedDesktop(false);
-            }),
-            _lockRow('安卓（竖屏）', app.lyricsLockedPortrait, () {
-              app.setLyricsLockedPortrait(false);
-            }),
-            _lockRow('安卓（横屏）', app.lyricsLockedLandscape, () {
-              app.setLyricsLockedLandscape(false);
-            }),
-          ]),
-          _sec('播放'),
-          _group([
-            _switchRow(
-              Icons.content_paste_search,
-              '剪贴板检测',
-              '自动识别复制的 RJ 链接',
-              app.clipboardDetect,
-              (v) {
-                app.setClipboardDetect(v);
-              },
-            ),
-            _switchRow(
-              Icons.restart_alt_outlined,
-              '不记忆播放进度',
-              '重启程序后恢复上次曲目，但从头开始播放',
-              app.doNotRememberPlaybackProgress,
-              app.setDoNotRememberPlaybackProgress,
-            ),
-            if (Platform.isAndroid) ...[
-              _switchRow(
-                Icons.headphones_outlined,
-                '拔出耳机自动暂停',
-                '拔出耳机或断开蓝牙时自动暂停',
-                app.earPause,
-                (v) => app.setEarPause(v),
-              ),
-              _switchRow(
-                Icons.speaker_group_outlined,
-                '忽略音频焦点',
-                '其他应用抢占音频焦点时不暂停',
-                app.ignoreAudioFocus,
-                (v) => app.setIgnoreAudioFocus(v),
-              ),
-            ],
-            if (Platform.isAndroid)
-              _row(
-                icon: _batteryIgnoring == true
-                    ? Icons.battery_saver
-                    : Icons.battery_alert_outlined,
-                title: '关闭省电优化',
-                sub: _batteryIgnoring == true
-                    ? '已加入白名单，后台播放不受省电限制'
-                    : '防止后台播放被系统中断',
-                onTap: _requestBatteryIgnore,
-                trailing: _batteryIgnoring == null
-                    ? null
-                    : _miniBtn(
-                        _batteryIgnoring! ? '已关闭' : '去关闭',
-                        _requestBatteryIgnore,
-                      ),
-              ),
-            if (Platform.isWindows)
-              _switchRow(
-                Icons.desktop_windows_outlined,
-                '关闭窗口后保留托盘',
-                app.keepTrayOnClose
-                    ? '关闭后继续在后台播放，可从系统托盘恢复'
-                    : '关闭窗口时将停止后台运行并退出程序',
-                app.keepTrayOnClose,
-                app.setKeepTrayOnClose,
-              ),
-            _mediaCacheLimitRow(),
-          ]),
-          _sec('曲目'),
-          _group([
-            _switchRow(
-              Icons.route_outlined,
-              '智能路径',
-              '打开作品自动进入最佳目录',
-              app.initialPathBehavior == 'auto',
-              (v) => app.setInitialPathBehavior(v ? 'auto' : 'root'),
-            ),
-            if (app.initialPathBehavior == 'auto') ...[
-              _switchRow(
-                Icons.hearing_outlined,
-                '效果音偏好',
-                '优先进入包含效果音的目录',
-                app.sePreference,
-                (v) => app.setSePreference(v),
-              ),
-              _row(
-                icon: Icons.audiotrack_outlined,
-                title: '音频类型偏好',
-                sub: app.audioTypePreference.join(' > '),
-                onTap: _editAudioTypePreference,
-                trailing: Icon(Icons.drag_indicator, size: 18, color: p.dim),
-              ),
-            ],
-          ]),
-          _sec('网络'),
-          _group([_proxySettings()]),
-          _sec('隐私'),
-          _group([
-            _switchRow(
-              Icons.notifications_off_outlined,
-              '不显示通知栏媒体卡片',
-              '播放时不在通知栏显示媒体卡片',
-              app.lsCover,
-              app.setLsCover,
-            ),
-            _switchRow(
-              Icons.branding_watermark_outlined,
-              '通知栏封面显示项目 logo',
-              '开启后封面位置显示项目 logo，不显示真实封面',
-              app.notifCover,
-              (v) {
-                app.notifCover = v;
-                app.notify();
-              },
-            ),
-            _switchRow(
-              Icons.privacy_tip_outlined,
-              '定时关闭后释放系统接口',
-              '到点清除锁屏媒体卡片与通知',
-              app.releaseInterface,
-              (v) {
-                app.releaseInterface = v;
-                app.notify();
-              },
-            ),
-          ]),
-          _sec('外观'),
-          _group([
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
-              child: Row(
-                children: [
-                  Icon(Icons.zoom_out_map_outlined, size: 17, color: p.accent),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text(
-                      '界面缩放',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    '${app.uiScalePercent}%',
-                    style: TextStyle(fontSize: 12, color: p.dim),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
-              child: Slider(
-                value: (app.uiScalePercent / 25 - 1).toDouble(),
-                min: 0,
-                max: 7,
-                divisions: 7,
-                label: '${app.uiScalePercent}%',
-                activeColor: p.accent,
-                onChanged: (value) =>
-                    app.setUiScalePercent((value.round() + 1) * 25),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              child: Row(
-                children: [
-                  Icon(
-                    app.themeMode == ThemeMode.system
-                        ? Icons.brightness_auto_outlined
-                        : app.themeMode == ThemeMode.light
-                        ? Icons.light_mode_outlined
-                        : Icons.dark_mode_outlined,
-                    size: 17,
-                    color: p.accent,
-                  ),
-                  const SizedBox(width: 12),
-                  const Text(
-                    '主题',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                  ),
-                  const Spacer(),
-                  // 三段按钮按内容自适应宽度，不撑满整行
-                  SegmentedButton<ThemeMode>(
-                    segments: const [
-                      ButtonSegment(
-                        value: ThemeMode.system,
-                        label: Text('跟随系统', style: TextStyle(fontSize: 12)),
-                      ),
-                      ButtonSegment(
-                        value: ThemeMode.light,
-                        label: Text('浅色', style: TextStyle(fontSize: 12)),
-                      ),
-                      ButtonSegment(
-                        value: ThemeMode.dark,
-                        label: Text('深色', style: TextStyle(fontSize: 12)),
+                        onPressed: () {
+                          app.removeSite(i);
+                        },
                       ),
                     ],
-                    selected: {app.themeMode},
-                    showSelectedIcon: false,
-                    style: ButtonStyle(
-                      backgroundColor: WidgetStateProperty.resolveWith(
-                        (states) => states.contains(WidgetState.selected)
-                            ? p.accent.withValues(alpha: .12)
-                            : p.surface2,
-                      ),
-                      foregroundColor: WidgetStateProperty.resolveWith(
-                        (states) => states.contains(WidgetState.selected)
-                            ? p.accent
-                            : p.muted,
-                      ),
-                      // 边框粗细与设置页其他选项一致（p.line 1px）
-                      side: WidgetStatePropertyAll(
-                        BorderSide(color: p.line, width: 1),
-                      ),
-                      textStyle: WidgetStatePropertyAll(
-                        const TextStyle(fontSize: 11.5),
-                      ),
-                      padding: WidgetStatePropertyAll(
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      ),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    onSelectionChanged: (s) => app.setThemeMode(s.first),
                   ),
-                ],
+                );
+              }),
+              Padding(
+                padding: const EdgeInsets.all(14),
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    await showSiteSheet(context, app);
+                    if (app.customSites.isNotEmpty) {
+                      final fresh = app.customSites.last;
+                      _autoCheck(
+                        'site${app.customSites.length - 1}',
+                        fresh.url,
+                        fresh.user,
+                        fresh.pass,
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.add, size: 17),
+                  label: const Text('添加自建站点', style: TextStyle(fontSize: 13)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: p.muted,
+                    side: BorderSide(color: p.line),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
               ),
-            ),
+            ]),
+            rootVisible: true,
+          ),
+          _section(
+            'translation',
+            '翻译',
+            _group([
+              _row(
+                icon: Icons.translate,
+                title: '翻译引擎',
+                sub: 'Google / Microsoft 免费 · DeepL 免费 Key · OpenAI 兼容',
+                trailing: _engineDropdown(),
+                showDivider: false,
+              ),
+              if (app.engine == 'deepl') ...[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                  child: Column(
+                    children: [
+                      _input(
+                        _deeplKey,
+                        'DeepL 免费版 API Key',
+                        '在 deepl.com 免费注册后获取（api-free）',
+                        obscure: true,
+                        onChanged: (_) => app.setDeeplKey(_deeplKey.text),
+                      ),
+                      OutlinedButton(
+                        onPressed: () async {
+                          _toast('正在检测 DeepL…');
+                          try {
+                            final r = await apiTranslateDeepl(
+                              text: 'こんにちは',
+                              src: 'ja',
+                              dst: 'zh-CN',
+                              apiKey: _deeplKey.text,
+                            );
+                            if (mounted) _toast('DeepL 连接正常：$r');
+                          } catch (e) {
+                            if (mounted) _toast('DeepL 连接失败：$e');
+                          }
+                        },
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: p.muted,
+                          side: BorderSide(color: p.line),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text(
+                          '测试连接',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              if (app.engine == 'openai') ...[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                  child: Column(
+                    children: [
+                      _input(
+                        _aiBase,
+                        'API 地址 (Base URL)',
+                        'https://api.openai.com/v1 或 http://127.0.0.1:11434/v1',
+                      ),
+                      _aiModelInput(),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: _detectOpenAiModels,
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: p.muted,
+                                side: BorderSide(color: p.line),
+                              ),
+                              child: const Text(
+                                '检测模型列表',
+                                style: TextStyle(fontSize: 13),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      _input(
+                        _aiKey,
+                        'API Key（本地服务可留空）',
+                        'sk-...',
+                        obscure: true,
+                      ),
+                      OutlinedButton(
+                        onPressed: () async {
+                          _toast('正在检测连接…');
+                          try {
+                            final r = await apiTranslateTest(
+                              baseUrl: _aiBase.text,
+                              model: _aiModel.text,
+                              apiKey: _aiKey.text,
+                            );
+                            if (mounted) _toast(r);
+                          } catch (e) {
+                            if (mounted) _toast('连接失败：$e');
+                          }
+                        },
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: p.muted,
+                          side: BorderSide(color: p.line),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text(
+                          '测试连接',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              _row(
+                icon: null,
+                title: '源语言 / 目标语言',
+                sub: '日语 → ${_translationTargetLabel(app.translationTarget)}',
+                trailing: _translationTargetDropdown(),
+              ),
           ]),
-          _sec('危险操作'),
-          _group([
-            _row(
-              icon: Icons.restart_alt,
-              title: '完全重置软件',
-              sub: '清除本机全部数据，恢复初始状态',
-              onTap: _confirmReset,
-              trailing: Text(
-                '重置',
-                style: TextStyle(fontSize: 12, color: p.red),
+            rootVisible: false,
+            rootCardRadius: const BorderRadius.vertical(
+              top: Radius.circular(16),
+            ),
+            rootCardMargin: const EdgeInsets.only(top: 14),
+          ),
+          _section(
+            'lyrics_desktop',
+            '歌词',
+            _group([
+              _row(
+                icon: null,
+                title: '繁简转换',
+                sub: '歌词中文部分自动转换',
+                trailing: _convDropdown(),
               ),
-            ),
-          ]),
-          _sec('关于'),
-          _group([
-            _switchRow(
-              Icons.system_update_outlined,
-              '自动检测更新',
-              '启动后 3 秒请求更新服务',
-              app.updateCheckEnabled,
-              app.setUpdateCheckEnabled,
-            ),
-            _row(
-              icon: Icons.refresh_outlined,
-              title: '检查更新',
-              sub: '手动请求更新服务',
-              onTap: () => UpdateService.checkManually(context, app),
-            ),
-            _row(
-              icon: null,
-              title: '版本',
-              sub: null,
-              trailing: Text(
-                'Kikoeta ${UpdateService.currentVersion}',
-                style: TextStyle(fontSize: 12),
+            ]),
+            rootVisible: false,
+            rootEntry: false,
+          ),
+          _section(
+            'lyrics_desktop',
+            '歌词与桌面歌词',
+            _group([
+              _switchRow(
+                Icons.lyrics_outlined,
+                '桌面歌词',
+                '最顶层悬浮歌词窗',
+                app.desktopLyricsOn,
+                (v) async {
+                  if (v && Platform.isAndroid) {
+                    // 开启时先请求悬浮窗权限（未授权会拉起系统授权页）
+                    final ok = await AndroidLyricsOverlay.instance
+                        .requestPermission();
+                    if (!ok) {
+                      if (mounted) _toast('未授予悬浮窗权限，桌面歌词无法显示');
+                      return; // 保持关闭
+                    }
+                  }
+                  app.setDesktopLyricsOn(v);
+                },
               ),
-              onTap: _onVersionTap,
-            ),
-            _row(
-              icon: null,
-              title: '仓库',
-              sub: null,
-              trailing: const Text(
-                'https://github.com/chenflxs/kikoeta',
-                style: TextStyle(fontSize: 12),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 4, 14, 4),
+                child: Row(
+                  children: [
+                    Icon(Icons.format_size, size: 17, color: p.accent),
+                    const SizedBox(width: 12),
+                    const Text(
+                      '字体大小',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '${app.lyricsFontSize.round()}',
+                      style: TextStyle(fontSize: 12, color: p.dim),
+                    ),
+                    Expanded(
+                      child: Slider(
+                        value: app.lyricsFontSize,
+                        min: 12,
+                        max: 64,
+                        activeColor: p.accent,
+                        onChanged: (v) => app.setLyricsFontSize(v),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              onTap: _openRepo,
+              _colorRow(
+                icon: Icons.palette_outlined,
+                label: '字体颜色',
+                value: app.lyricsColor,
+                onChanged: (v) => app.setLyricsColor(v),
+                hexCtrl: _colorHexCtrl,
+              ),
+              _colorRow(
+                icon: Icons.border_color_outlined,
+                label: '描边颜色',
+                value: app.lyricsOutlineColor,
+                onChanged: (v) => app.setLyricsOutlineColor(v),
+                hexCtrl: _outlineHexCtrl,
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+                child: Row(
+                  children: [
+                    Icon(Icons.line_weight, size: 17, color: p.accent),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        '描边宽度',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      app.lyricsOutlineWidth.toStringAsFixed(1),
+                      style: TextStyle(fontSize: 12, color: p.dim),
+                    ),
+                    SizedBox(
+                      width: 120,
+                      child: Slider(
+                        value: app.lyricsOutlineWidth,
+                        min: 0,
+                        max: 4,
+                        divisions: 8,
+                        activeColor: p.accent,
+                        onChanged: (v) => app.setLyricsOutlineWidth(v),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _lockRow('桌面端', app.lyricsLockedDesktop, () {
+                app.setLyricsLockedDesktop(false);
+              }),
+              _lockRow('安卓（竖屏）', app.lyricsLockedPortrait, () {
+                app.setLyricsLockedPortrait(false);
+              }),
+              _lockRow('安卓（横屏）', app.lyricsLockedLandscape, () {
+                app.setLyricsLockedLandscape(false);
+              }),
+            ]),
+            rootVisible: false,
+            rootCardRadius: BorderRadius.zero,
+          ),
+          _section(
+            'playback',
+            '播放',
+            _group([
+              _switchRow(
+                Icons.content_paste_search,
+                '剪贴板检测',
+                '自动识别复制的 RJ 链接',
+                app.clipboardDetect,
+                (v) {
+                  app.setClipboardDetect(v);
+                },
+              ),
+              _switchRow(
+                Icons.restart_alt_outlined,
+                '不记忆播放进度',
+                '重启程序后恢复上次曲目，但从头开始播放',
+                app.doNotRememberPlaybackProgress,
+                app.setDoNotRememberPlaybackProgress,
+              ),
+              if (Platform.isAndroid) ...[
+                _switchRow(
+                  Icons.headphones_outlined,
+                  '拔出耳机自动暂停',
+                  '拔出耳机或断开蓝牙时自动暂停',
+                  app.earPause,
+                  (v) => app.setEarPause(v),
+                ),
+                _switchRow(
+                  Icons.speaker_group_outlined,
+                  '忽略音频焦点',
+                  '其他应用抢占音频焦点时不暂停',
+                  app.ignoreAudioFocus,
+                  (v) => app.setIgnoreAudioFocus(v),
+                ),
+              ],
+              if (Platform.isAndroid)
+                _row(
+                  icon: _batteryIgnoring == true
+                      ? Icons.battery_saver
+                      : Icons.battery_alert_outlined,
+                  title: '关闭省电优化',
+                  sub: _batteryIgnoring == true
+                      ? '已加入白名单，后台播放不受省电限制'
+                      : '防止后台播放被系统中断',
+                  onTap: _requestBatteryIgnore,
+                  trailing: _batteryIgnoring == null
+                      ? null
+                      : _miniBtn(
+                          _batteryIgnoring! ? '已关闭' : '去关闭',
+                          _requestBatteryIgnore,
+                        ),
+                ),
+              if (Platform.isWindows)
+                _switchRow(
+                  Icons.desktop_windows_outlined,
+                  '关闭窗口后保留托盘',
+                  app.keepTrayOnClose
+                      ? '关闭后继续在后台播放，可从系统托盘恢复'
+                      : '关闭窗口时将停止后台运行并退出程序',
+                  app.keepTrayOnClose,
+                  app.setKeepTrayOnClose,
+                ),
+              _mediaCacheLimitRow(),
+            ]),
+            rootVisible: false,
+            rootEntry: true,
+            rootCardRadius: BorderRadius.zero,
+          ),
+          _section(
+            'tracks',
+            '曲目',
+            _group([
+              _switchRow(
+                Icons.route_outlined,
+                '智能路径',
+                '打开作品自动进入最佳目录',
+                app.initialPathBehavior == 'auto',
+                (v) => app.setInitialPathBehavior(v ? 'auto' : 'root'),
+              ),
+              if (app.initialPathBehavior == 'auto') ...[
+                _switchRow(
+                  Icons.hearing_outlined,
+                  '效果音偏好',
+                  '优先进入包含效果音的目录',
+                  app.sePreference,
+                  (v) => app.setSePreference(v),
+                ),
+                _row(
+                  icon: Icons.audiotrack_outlined,
+                  title: '音频类型偏好',
+                  sub: app.audioTypePreference.join(' > '),
+                  onTap: _editAudioTypePreference,
+                  trailing: Icon(Icons.drag_indicator, size: 18, color: p.dim),
+                ),
+              ],
+            ]),
+            rootVisible: false,
+            rootEntry: true,
+            rootCardRadius: BorderRadius.zero,
+          ),
+          _section(
+            'other',
+            '其他',
+            _group([_proxySettings()]),
+            rootVisible: false,
+            rootEntry: true,
+            rootCardRadius: BorderRadius.zero,
+          ),
+          _section(
+            'privacy',
+            '隐私',
+            _group([
+              _switchRow(
+                Icons.notifications_off_outlined,
+                '不显示通知栏媒体卡片',
+                '播放时不在通知栏显示媒体卡片',
+                app.lsCover,
+                app.setLsCover,
+              ),
+              _switchRow(
+                Icons.branding_watermark_outlined,
+                '通知栏封面显示项目 logo',
+                '开启后封面位置显示项目 logo，不显示真实封面',
+                app.notifCover,
+                (v) {
+                  app.notifCover = v;
+                  app.notify();
+                },
+              ),
+              _switchRow(
+                Icons.privacy_tip_outlined,
+                '定时关闭后释放系统接口',
+                '到点清除锁屏媒体卡片与通知',
+                app.releaseInterface,
+                (v) {
+                  app.releaseInterface = v;
+                  app.notify();
+                },
+              ),
+            ]),
+            rootVisible: false,
+            rootCardRadius: const BorderRadius.vertical(
+              bottom: Radius.circular(16),
             ),
-          ]),
+            rootCardMargin: const EdgeInsets.only(bottom: 14),
+          ),
+          _section(
+            'appearance',
+            '外观',
+            _group([
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.zoom_out_map_outlined,
+                      size: 17,
+                      color: p.accent,
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        '界面缩放',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '${app.uiScalePercent}%',
+                      style: TextStyle(fontSize: 12, color: p.dim),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+                child: Slider(
+                  value: (app.uiScalePercent / 25 - 1).toDouble(),
+                  min: 0,
+                  max: 7,
+                  divisions: 7,
+                  label: '${app.uiScalePercent}%',
+                  activeColor: p.accent,
+                  onChanged: (value) =>
+                      app.setUiScalePercent((value.round() + 1) * 25),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      app.themeMode == ThemeMode.system
+                          ? Icons.brightness_auto_outlined
+                          : app.themeMode == ThemeMode.light
+                          ? Icons.light_mode_outlined
+                          : Icons.dark_mode_outlined,
+                      size: 17,
+                      color: p.accent,
+                    ),
+                    const SizedBox(width: 12),
+                    const Text(
+                      '主题',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const Spacer(),
+                    // 三段按钮按内容自适应宽度，不撑满整行
+                    SegmentedButton<ThemeMode>(
+                      segments: const [
+                        ButtonSegment(
+                          value: ThemeMode.system,
+                          label: Text('跟随系统', style: TextStyle(fontSize: 12)),
+                        ),
+                        ButtonSegment(
+                          value: ThemeMode.light,
+                          label: Text('浅色', style: TextStyle(fontSize: 12)),
+                        ),
+                        ButtonSegment(
+                          value: ThemeMode.dark,
+                          label: Text('深色', style: TextStyle(fontSize: 12)),
+                        ),
+                      ],
+                      selected: {app.themeMode},
+                      showSelectedIcon: false,
+                      style: ButtonStyle(
+                        backgroundColor: WidgetStateProperty.resolveWith(
+                          (states) => states.contains(WidgetState.selected)
+                              ? p.accent.withValues(alpha: .12)
+                              : p.surface2,
+                        ),
+                        foregroundColor: WidgetStateProperty.resolveWith(
+                          (states) => states.contains(WidgetState.selected)
+                              ? p.accent
+                              : p.muted,
+                        ),
+                        // 边框粗细与设置页其他选项一致（p.line 1px）
+                        side: WidgetStatePropertyAll(
+                          BorderSide(color: p.line, width: 1),
+                        ),
+                        textStyle: WidgetStatePropertyAll(
+                          const TextStyle(fontSize: 11.5),
+                        ),
+                        padding: WidgetStatePropertyAll(
+                          const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                        ),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onSelectionChanged: (s) => app.setThemeMode(s.first),
+                    ),
+                  ],
+                ),
+              ),
+            ]),
+            rootVisible: true,
+          ),
+          _section(
+            'other',
+            '其他',
+            _group([
+              _row(
+                icon: Icons.restart_alt,
+                title: '完全重置软件',
+                sub: '清除本机全部数据，恢复初始状态',
+                onTap: _confirmReset,
+                trailing: Text(
+                  '重置',
+                  style: TextStyle(fontSize: 12, color: p.red),
+                ),
+              ),
+            ]),
+            rootVisible: false,
+            rootEntry: false,
+          ),
+          _section(
+            'about',
+            '关于',
+            _group([
+              _switchRow(
+                Icons.system_update_outlined,
+                '自动检测更新',
+                '启动后 3 秒请求更新服务',
+                app.updateCheckEnabled,
+                app.setUpdateCheckEnabled,
+              ),
+              _row(
+                icon: Icons.refresh_outlined,
+                title: '检查更新',
+                sub: '手动请求更新服务',
+                onTap: () => UpdateService.checkManually(context, app),
+              ),
+              _row(
+                icon: null,
+                title: '版本',
+                sub: null,
+                trailing: Text(
+                  'Kikoeta ${UpdateService.currentVersion}',
+                  style: TextStyle(fontSize: 12),
+                ),
+                onTap: _onVersionTap,
+              ),
+              _row(
+                icon: null,
+                title: '仓库',
+                sub: null,
+                trailing: const Text(
+                  'https://github.com/chenflxs/kikoeta',
+                  style: TextStyle(fontSize: 12),
+                ),
+                onTap: _openRepo,
+              ),
+            ]),
+          ),
         ],
       ),
     );
   }
+
+  String _sectionTitle(String key) => switch (key) {
+    'translation' => '翻译',
+    'lyrics_desktop' => '歌词与桌面歌词',
+    'playback' => '播放',
+    'tracks' => '曲目',
+    'privacy' => '隐私',
+    'other' => '其他',
+    _ => key,
+  };
+
+  Widget _section(
+    String key,
+    String title,
+    Widget content, {
+    bool rootVisible = true,
+    bool rootEntry = true,
+    BorderRadius? rootCardRadius,
+    EdgeInsets? rootCardMargin,
+  }) {
+    if (_sectionKey != null) {
+      return _sectionKey == key
+          ? Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: content,
+            )
+          : const SizedBox.shrink();
+    }
+    if (rootVisible) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [_sec(title), content],
+      );
+    }
+    if (!rootEntry) return const SizedBox.shrink();
+    final row = _row(
+      icon: _sectionIcon(key),
+      title: title,
+      sub: '点击进入设置',
+      trailing: Icon(Icons.chevron_right, size: 20, color: p.dim),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => SettingsPage(app: app, sectionKey: key),
+        ),
+      ),
+    );
+    if (rootCardRadius == null) return row;
+    final hasTopRadius =
+        rootCardRadius.topLeft.x > 0 || rootCardRadius.topRight.x > 0;
+    final hasBottomRadius =
+        rootCardRadius.bottomLeft.x > 0 || rootCardRadius.bottomRight.x > 0;
+    return Container(
+      margin: rootCardMargin,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: p.surface,
+        border: Border(
+          left: BorderSide(color: p.line),
+          right: BorderSide(color: p.line),
+          top: hasTopRadius ? BorderSide(color: p.line) : BorderSide.none,
+          bottom: hasBottomRadius ? BorderSide(color: p.line) : BorderSide.none,
+        ),
+        borderRadius: rootCardRadius,
+      ),
+      child: row,
+    );
+  }
+
+  IconData _sectionIcon(String key) => switch (key) {
+    'translation' => Icons.translate_outlined,
+    'lyrics_desktop' => Icons.lyrics_outlined,
+    'playback' => Icons.play_arrow_outlined,
+    'tracks' => Icons.audiotrack_outlined,
+    'privacy' => Icons.privacy_tip_outlined,
+    'other' => Icons.tune_outlined,
+    _ => Icons.settings_outlined,
+  };
 
   Widget _sec(String t) => Padding(
     padding: const EdgeInsets.fromLTRB(4, 18, 4, 8),
@@ -859,6 +1040,8 @@ class _SettingsPageState extends State<SettingsPage> {
   );
 
   Widget _group(List<Widget> children) => Container(
+    width: double.infinity,
+    clipBehavior: Clip.antiAlias,
     decoration: BoxDecoration(
       color: p.surface,
       borderRadius: BorderRadius.circular(16),
@@ -873,12 +1056,13 @@ class _SettingsPageState extends State<SettingsPage> {
     String? sub,
     Widget? trailing,
     VoidCallback? onTap,
+    bool showDivider = true,
   }) {
     final content = Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: p.line)),
-      ),
+      decoration: showDivider
+          ? BoxDecoration(border: Border(bottom: BorderSide(color: p.line)))
+          : null,
       child: Row(
         children: [
           if (icon != null) ...[

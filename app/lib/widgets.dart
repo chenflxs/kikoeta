@@ -1020,13 +1020,12 @@ class _HomeSearchBarState extends State<HomeSearchBar> {
           tooltip: '筛选',
           onSelected: (v) {
             if (v == 10) {
-              app.subOnly = !app.subOnly;
+              app.setSubOnly(!app.subOnly);
             } else {
               // SFW 模式下不允许切到 R15/R18
               if (app.sfwMode && v != 0) return;
-              app.ageFilter = app.ageFilter == v ? null : v;
+              app.setAgeFilter(app.ageFilter == v ? null : v);
             }
-            app.notify();
           },
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
