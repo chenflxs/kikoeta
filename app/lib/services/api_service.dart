@@ -1002,6 +1002,9 @@ class ApiService {
       va: vas.isEmpty ? 'CV. 未知' : 'CV. $vas',
       age: age,
       dur: _fmtDuration((m['duration'] as num?)?.toInt() ?? 0),
+      releaseDate: _formatReleaseDate(
+        m['release'] ?? m['release_date'] ?? m['releaseDate'],
+      ),
       tags: tags,
       grayTags: grayTags,
       grad: i % 8,
@@ -1019,6 +1022,27 @@ class ApiService {
       hasReview: hasReview,
       languageEditions: languageEditions,
     );
+  }
+
+  static String _formatReleaseDate(Object? raw) {
+    if (raw == null) return '';
+    if (raw is num) {
+      final value = raw.toInt();
+      final millis = value.abs() < 100000000000 ? value * 1000 : value;
+      final date = DateTime.fromMillisecondsSinceEpoch(millis, isUtc: true);
+      return '${date.year.toString().padLeft(4, '0')}-'
+          '${date.month.toString().padLeft(2, '0')}-'
+          '${date.day.toString().padLeft(2, '0')}';
+    }
+    final text = raw.toString().trim();
+    if (text.isEmpty) return '';
+    final date = DateTime.tryParse(text);
+    if (date != null) {
+      return '${date.year.toString().padLeft(4, '0')}-'
+          '${date.month.toString().padLeft(2, '0')}-'
+          '${date.day.toString().padLeft(2, '0')}';
+    }
+    return text.length >= 10 ? text.substring(0, 10) : text;
   }
 
   static List<LanguageEdition> _mapLanguageEditions(

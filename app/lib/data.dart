@@ -31,6 +31,7 @@ class Work {
   final String va;
   final Age age;
   final String dur;
+  final String releaseDate;
   final List<String> tags;
   final List<String> grayTags; // 低愿力标签（需投票，显示为灰色）
   final int grad; // 封面渐变索引
@@ -48,6 +49,7 @@ class Work {
     required this.va,
     required this.age,
     required this.dur,
+    this.releaseDate = '',
     required this.tags,
     this.grayTags = const [],
     required this.grad,
@@ -442,6 +444,7 @@ class AppState extends ChangeNotifier {
           'va': w.va,
           'age': w.age.index,
           'dur': w.dur,
+          'releaseDate': w.releaseDate,
           'tags': w.tags,
           'grayTags': w.grayTags,
           'grad': w.grad,
@@ -907,6 +910,7 @@ class AppState extends ChangeNotifier {
           va: wm['va'] as String,
           age: Age.values[(wm['age'] as int?) ?? 0],
           dur: wm['dur'] as String? ?? '',
+          releaseDate: wm['releaseDate'] as String? ?? '',
           tags: List<String>.from((wm['tags'] as List?) ?? const []),
           grayTags: List<String>.from((wm['grayTags'] as List?) ?? const []),
           grad: (wm['grad'] as int?) ?? 0,

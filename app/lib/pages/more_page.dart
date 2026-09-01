@@ -152,6 +152,15 @@ class _MorePageState extends State<MorePage> {
               ),
               _row(
                 context,
+                Icons.download_outlined,
+                '下载',
+                null,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const DownloadPage()),
+                ),
+              ),
+              _row(
+                context,
                 Icons.translate_outlined,
                 '翻译',
                 null,
@@ -247,6 +256,23 @@ class TranslationPage extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('翻译'),
+        leading: const BackButton(),
+      ),
+      body: const Center(
+        child: Text('功能构建中'),
+      ),
+    );
+  }
+}
+
+class DownloadPage extends StatelessWidget {
+  const DownloadPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('下载'),
         leading: const BackButton(),
       ),
       body: const Center(

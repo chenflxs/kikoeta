@@ -315,7 +315,33 @@ class WorkCard extends StatelessWidget {
         children: [
           AspectRatio(
             aspectRatio: 4 / 3,
-            child: CoverArt(work: work),
+            child: CoverArt(
+              work: work,
+              child: work.releaseDate.isEmpty
+                  ? null
+                  : Positioned(
+                      right: 8,
+                      bottom: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(7),
+                        ),
+                        child: Text(
+                          work.releaseDate,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+            ),
           ),
           const SizedBox(height: 7),
           Text(

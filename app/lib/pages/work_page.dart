@@ -960,6 +960,10 @@ class _WorkPageState extends State<WorkPage> {
                             ),
                             const SizedBox(width: 8),
                             AgeBadge(age: work.age),
+                            if (work.releaseDate.isNotEmpty) ...[
+                              const SizedBox(width: 6),
+                              _releaseDateChip(work.releaseDate),
+                            ],
                             if (_languageEditions.isNotEmpty) ...[
                               const SizedBox(width: 6),
                               SizedBox(
@@ -1280,6 +1284,21 @@ class _WorkPageState extends State<WorkPage> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _releaseDateChip(String date) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: p.surface2,
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: p.line),
+      ),
+      child: Text(
+        date,
+        style: TextStyle(fontSize: 11.5, color: p.muted),
       ),
     );
   }
