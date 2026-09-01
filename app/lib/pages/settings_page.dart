@@ -722,14 +722,6 @@ class _SettingsPageState extends State<SettingsPage> {
             rootCardRadius: BorderRadius.zero,
           ),
           _section(
-            'other',
-            '其他',
-            _group([_proxySettings()]),
-            rootVisible: false,
-            rootEntry: true,
-            rootCardRadius: BorderRadius.zero,
-          ),
-          _section(
             'privacy',
             '隐私',
             _group([
@@ -762,6 +754,14 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ]),
             rootVisible: false,
+            rootCardRadius: BorderRadius.zero,
+          ),
+          _section(
+            'other',
+            '其他',
+            _group([_proxySettings()]),
+            rootVisible: false,
+            rootEntry: true,
             rootCardRadius: const BorderRadius.vertical(
               bottom: Radius.circular(16),
             ),
