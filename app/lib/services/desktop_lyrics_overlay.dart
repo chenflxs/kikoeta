@@ -564,7 +564,7 @@ class DesktopLyricsOverlay {
           final twoLineHeight = (_fontSize * _textScale * dpi / 72 * 2.4)
               .ceil();
           final multiline = contentHeight >= twoLineHeight;
-          final sourceText = _text.isEmpty ? '暂无歌词' : _text;
+          final sourceText = _text;
           final multilineOverflow =
               multiline &&
               _measureMultilineText(sourceText, contentWidth) > twoLineHeight;

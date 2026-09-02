@@ -114,7 +114,7 @@ void _syncDesktopLyrics() {
   if (appState.desktopLyricsOn) {
     final line = LyricsHub.instance.currentLine;
     ov.show(
-      text: line.isEmpty ? '暂无歌词' : line,
+      text: line,
       fontSize: appState.lyricsFontSize,
       color: appState.lyricsColor,
       outlineColor: appState.lyricsOutlineColor,

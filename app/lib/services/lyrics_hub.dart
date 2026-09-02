@@ -46,7 +46,7 @@ class LyricsHub {
     _conv = conv;
     _convCache.clear();
     _lastSent = '';
-    // 新曲目没有歌词时也必须发送空文本，桌面悬浮窗才能从上一句刷新为“暂无歌词”。
+    // 新曲目没有歌词时也必须发送空文本，桌面悬浮窗才能清除上一句。
     _tick(force: true);
   }
 
