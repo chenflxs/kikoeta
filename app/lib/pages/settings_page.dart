@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../data.dart';
@@ -487,7 +488,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 sub: '日语 → ${_translationTargetLabel(app.translationTarget)}',
                 trailing: _translationTargetDropdown(),
               ),
-          ]),
+            ]),
             rootVisible: false,
             rootCardRadius: const BorderRadius.vertical(
               top: Radius.circular(16),
@@ -639,6 +640,48 @@ class _SettingsPageState extends State<SettingsPage> {
                 '重启程序后恢复上次曲目，但从头开始播放',
                 app.doNotRememberPlaybackProgress,
                 app.setDoNotRememberPlaybackProgress,
+              ),
+              _playbackShortcutRow(
+                icon: Icons.play_circle_outline,
+                title: '播放/暂停快捷键',
+                action: 'toggle',
+                keyId: app.playbackToggleShortcutKey,
+                onChanged: app.setPlaybackToggleShortcutKey,
+              ),
+              _playbackShortcutRow(
+                icon: Icons.skip_previous_outlined,
+                title: '上一曲快捷键',
+                action: 'previous',
+                keyId: app.playbackPreviousShortcutKey,
+                onChanged: app.setPlaybackPreviousShortcutKey,
+              ),
+              _playbackShortcutRow(
+                icon: Icons.skip_next_outlined,
+                title: '下一曲快捷键',
+                action: 'next',
+                keyId: app.playbackNextShortcutKey,
+                onChanged: app.setPlaybackNextShortcutKey,
+              ),
+              _playbackShortcutRow(
+                icon: Icons.fast_rewind,
+                title: '快退快捷键',
+                action: 'seek_backward',
+                keyId: app.playbackSeekBackwardShortcutKey,
+                onChanged: app.setPlaybackSeekBackwardShortcutKey,
+              ),
+              _playbackShortcutRow(
+                icon: Icons.fast_forward,
+                title: '快进快捷键',
+                action: 'seek_forward',
+                keyId: app.playbackSeekForwardShortcutKey,
+                onChanged: app.setPlaybackSeekForwardShortcutKey,
+              ),
+              _row(
+                icon: Icons.restart_alt_outlined,
+                title: '恢复默认快捷键',
+                sub: 'Space / PageUp / PageDown / 方向键←→',
+                trailing: Icon(Icons.refresh, size: 18, color: p.dim),
+                onTap: app.resetPlaybackShortcutKeys,
               ),
               if (Platform.isAndroid) ...[
                 _switchRow(
@@ -970,10 +1013,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }) {
     if (_sectionKey != null) {
       return _sectionKey == key
-          ? Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: content,
-            )
+          ? Padding(padding: const EdgeInsets.only(bottom: 10), child: content)
           : const SizedBox.shrink();
     }
     if (rootVisible) {
@@ -1061,7 +1101,9 @@ class _SettingsPageState extends State<SettingsPage> {
     final content = Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
       decoration: showDivider
-          ? BoxDecoration(border: Border(bottom: BorderSide(color: p.line)))
+          ? BoxDecoration(
+              border: Border(bottom: BorderSide(color: p.line)),
+            )
           : null,
       child: Row(
         children: [
@@ -1165,6 +1207,150 @@ class _SettingsPageState extends State<SettingsPage> {
       ),
     );
   }
+
+  Widget _playbackShortcutRow({
+    required IconData icon,
+    required String title,
+    required String action,
+    required int keyId,
+    bool physical = false,
+    required ValueChanged<int> onChanged,
+  }) {
+    return _row(
+      icon: icon,
+      title: title,
+      sub: '播放器页获得焦点时生效',
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            _shortcutLabel(keyId, physical: physical),
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: p.accent,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Icon(Icons.chevron_right, size: 18, color: p.dim),
+        ],
+      ),
+      onTap: () => _editPlaybackShortcut(
+        action: action,
+        title: title,
+        keyId: keyId,
+        physical: physical,
+        onChanged: onChanged,
+      ),
+    );
+  }
+
+  String _shortcutLabel(int keyId, {bool physical = false}) {
+    final key = LogicalKeyboardKey.findKeyByKeyId(keyId);
+    if (key == LogicalKeyboardKey.space) return 'Space';
+    if (key == LogicalKeyboardKey.pageUp) return 'PageUp';
+    if (key == LogicalKeyboardKey.pageDown) return 'PageDown';
+    if (key == LogicalKeyboardKey.arrowLeft) return '方向键←';
+    if (key == LogicalKeyboardKey.arrowRight) return '方向键→';
+    return key?.debugName ?? key?.keyLabel ?? '未设置';
+  }
+
+  Future<void> _editPlaybackShortcut({
+    required String action,
+    required String title,
+    required int keyId,
+    required bool physical,
+    required ValueChanged<int> onChanged,
+  }) async {
+    final focusNode = FocusNode();
+    try {
+      final nextKeyId = await showDialog<int>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: p.surface,
+          title: Text(
+            title,
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+          ),
+          content: KeyboardListener(
+            focusNode: focusNode,
+            autofocus: true,
+            onKeyEvent: (event) {
+              if (event is! KeyDownEvent) return;
+              final key = event.logicalKey;
+              if (key == LogicalKeyboardKey.escape) {
+                Navigator.of(ctx).pop();
+              } else if (!_isModifierKey(key)) {
+                Navigator.of(
+                  ctx,
+                ).pop(physical ? event.physicalKey.usbHidUsage : key.keyId);
+              }
+            },
+            child: SizedBox(
+              width: 260,
+              child: Text(
+                '当前按键：${_shortcutLabel(keyId, physical: physical)}\n\n按下新的单个按键',
+                style: TextStyle(fontSize: 13, color: p.text),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('取消'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || nextKeyId == null) return;
+      final conflict = _shortcutConflict(action, nextKeyId, physical: physical);
+      if (conflict != null) {
+        _toast('该按键已用于$conflict');
+        return;
+      }
+      onChanged(nextKeyId);
+    } finally {
+      focusNode.dispose();
+    }
+  }
+
+  String? _shortcutConflict(
+    String action,
+    int keyId, {
+    required bool physical,
+  }) {
+    if (physical) {
+      if (action != 'seek_forward' &&
+          keyId == app.playbackSeekForwardShortcutKey) {
+        return '快进';
+      }
+      if (action != 'seek_backward' &&
+          keyId == app.playbackSeekBackwardShortcutKey) {
+        return '快退';
+      }
+      return null;
+    }
+    if (action != 'toggle' && keyId == app.playbackToggleShortcutKey) {
+      return '播放/暂停';
+    }
+    if (action != 'previous' && keyId == app.playbackPreviousShortcutKey) {
+      return '上一曲';
+    }
+    if (action != 'next' && keyId == app.playbackNextShortcutKey) {
+      return '下一曲';
+    }
+    return null;
+  }
+
+  bool _isModifierKey(LogicalKeyboardKey key) =>
+      key == LogicalKeyboardKey.controlLeft ||
+      key == LogicalKeyboardKey.controlRight ||
+      key == LogicalKeyboardKey.shiftLeft ||
+      key == LogicalKeyboardKey.shiftRight ||
+      key == LogicalKeyboardKey.altLeft ||
+      key == LogicalKeyboardKey.altRight ||
+      key == LogicalKeyboardKey.metaLeft ||
+      key == LogicalKeyboardKey.metaRight;
 
   Widget _mediaCacheLimitRow() {
     final limit = app.mediaCacheLimitMb;

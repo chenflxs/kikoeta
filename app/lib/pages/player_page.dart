@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart' hide Track;
 
 import '../data.dart';
@@ -497,6 +498,34 @@ class _PlayerPageState extends State<PlayerPage> {
     setState(() {});
   }
 
+  Future<void> _togglePlayback() async {
+    await _restoreFuture;
+    if (!mounted) return;
+    if (app.playing) {
+      await _player.pause();
+      app.playing = false;
+    } else {
+      if (_opened) {
+        final resume = app.resumePosition;
+        final current = AppPlayer.instance.currentPosition;
+        if (resume > current + 1) {
+          try {
+            await _player.seek(Duration(seconds: resume));
+          } catch (_) {}
+        }
+        await _player.play();
+      } else {
+        await _openCurrent();
+      }
+      app.playing = true;
+    }
+    app.notify();
+    if (mounted) setState(() {});
+  }
+
+  LogicalKeyboardKey _shortcutKey(int keyId, LogicalKeyboardKey fallback) =>
+      LogicalKeyboardKey.findKeyByKeyId(keyId) ?? fallback;
+
   @override
   Widget build(BuildContext context) {
     final w = app.playWork;
@@ -508,43 +537,81 @@ class _PlayerPageState extends State<PlayerPage> {
         ),
       );
     }
-    return Scaffold(
-      backgroundColor: p.bg,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: IgnorePointer(
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    radius: 1.3,
-                    colors: [
-                      p.accent.withValues(alpha: .16),
-                      Colors.transparent,
-                    ],
+    return CallbackShortcuts(
+      bindings: {
+        SingleActivator(
+          _shortcutKey(app.playbackToggleShortcutKey, LogicalKeyboardKey.space),
+        ): () {
+          unawaited(_togglePlayback());
+        },
+        SingleActivator(
+          _shortcutKey(
+            app.playbackPreviousShortcutKey,
+            LogicalKeyboardKey.pageUp,
+          ),
+        ): _prev,
+        SingleActivator(
+          _shortcutKey(
+            app.playbackNextShortcutKey,
+            LogicalKeyboardKey.pageDown,
+          ),
+        ): _next,
+        SingleActivator(
+          _shortcutKey(
+            app.playbackSeekBackwardShortcutKey,
+            LogicalKeyboardKey.arrowLeft,
+          ),
+        ): () =>
+            _seekRelative(-10),
+        SingleActivator(
+          _shortcutKey(
+            app.playbackSeekForwardShortcutKey,
+            LogicalKeyboardKey.arrowRight,
+          ),
+        ): () =>
+            _seekRelative(10),
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          backgroundColor: p.bg,
+          body: Stack(
+            children: [
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: RadialGradient(
+                        radius: 1.3,
+                        colors: [
+                          p.accent.withValues(alpha: .16),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ),
-          SafeArea(
-            child: LayoutBuilder(
-              builder: (context, c) {
-                if (c.maxWidth >= 700) return _landscape();
-                return _portrait();
-              },
-            ),
-          ),
-          if (_opening || _buffering)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: Container(
-                  color: Colors.black26,
-                  child: const Center(child: CircularProgressIndicator()),
+              SafeArea(
+                child: LayoutBuilder(
+                  builder: (context, c) {
+                    if (c.maxWidth >= 700) return _landscape();
+                    return _portrait();
+                  },
                 ),
               ),
-            ),
-        ],
+              if (_opening || _buffering)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Container(
+                      color: Colors.black26,
+                      child: const Center(child: CircularProgressIndicator()),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -796,30 +863,7 @@ class _PlayerPageState extends State<PlayerPage> {
             ],
           ),
           child: IconButton(
-            onPressed: () async {
-              await _restoreFuture;
-              if (!mounted) return;
-              if (app.playing) {
-                await _player.pause();
-                app.playing = false;
-              } else {
-                if (_opened) {
-                  final resume = app.resumePosition;
-                  final current = AppPlayer.instance.currentPosition;
-                  if (resume > current + 1) {
-                    try {
-                      await _player.seek(Duration(seconds: resume));
-                    } catch (_) {}
-                  }
-                  await _player.play();
-                } else {
-                  await _openCurrent();
-                }
-                app.playing = true;
-              }
-              app.notify();
-              setState(() {});
-            },
+            onPressed: _togglePlayback,
             icon: Icon(
               app.playing ? Icons.pause : Icons.play_arrow,
               size: 30,

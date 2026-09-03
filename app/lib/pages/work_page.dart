@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../data.dart';
 import '../routes.dart';
 import '../services/api_service.dart';
+import '../services/media_selection.dart';
 import '../src/rust/api/kikoeru_api.dart';
 import '../src/rust/api/textcodec.dart';
 import '../src/rust/api/translate.dart';
@@ -44,7 +45,7 @@ class _WorkPageState extends State<WorkPage> {
 
   List<MediaNode>? _tree;
   bool _tracksFailed = false;
-  final Set<String> _selected = {};
+  final MediaSelection _selection = MediaSelection();
   final Set<String> _expanded = {};
   List<String>? _smartTarget; // 智能路径自动进入的目录（标题链），用于「查看全部文件」
   late int _seenLoginEpoch;
@@ -631,7 +632,7 @@ class _WorkPageState extends State<WorkPage> {
 
     void walk(Iterable<MediaNode> nodes) {
       for (final n in nodes) {
-        if (_selected.contains(n.path)) {
+        if (_selection.paths.contains(n.path)) {
           if (n.isDir) {
             collect(n.children);
           } else if (_isAudio(n) && n.url != null && n.url!.isNotEmpty) {
@@ -652,7 +653,7 @@ class _WorkPageState extends State<WorkPage> {
   }
 
   void _addToPlaylist() {
-    if (_selected.isEmpty) {
+    if (_selection.paths.isEmpty) {
       _toast('请先勾选文件或文件夹');
       return;
     }
@@ -761,7 +762,7 @@ class _WorkPageState extends State<WorkPage> {
                       }
                       app.addWorkToPlaylist(name, work, tracks);
                       Navigator.pop(ctx);
-                      _selected.clear();
+                      _selection.clear();
                       setState(() {});
                       _toast('已添加到「$name」');
                     },
@@ -801,7 +802,7 @@ class _WorkPageState extends State<WorkPage> {
   }
 
   Widget _nodeRow(MediaNode n, int depth, List<MediaNode> siblings) {
-    final checked = _selected.contains(n.path);
+    final checked = _selection.state(n);
     final open = _expanded.contains(n.path);
     final translatedName = app.translatedTrack(work.rj, n.path);
     return Column(
@@ -863,14 +864,12 @@ class _WorkPageState extends State<WorkPage> {
                   ),
                 ),
                 Checkbox(
+                  tristate: n.isDir,
                   value: checked,
                   activeColor: p.accent,
                   visualDensity: VisualDensity.compact,
-                  onChanged: (v) => setState(() {
-                    v == true
-                        ? _selected.add(n.path)
-                        : _selected.remove(n.path);
-                  }),
+                  onChanged: (_) =>
+                      setState(() => _selection.toggle(n, _tree ?? const [])),
                 ),
               ],
             ),

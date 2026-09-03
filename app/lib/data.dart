@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'services/android_audio.dart';
 import 'services/player_service.dart';
@@ -226,6 +227,11 @@ class AppState extends ChangeNotifier {
   // 安卓音频（默认关闭）
   bool earPause = false; // 拔出耳机自动暂停
   bool ignoreAudioFocus = false; // 忽略音频焦点
+  int playbackToggleShortcutKey = LogicalKeyboardKey.space.keyId;
+  int playbackPreviousShortcutKey = LogicalKeyboardKey.pageUp.keyId;
+  int playbackNextShortcutKey = LogicalKeyboardKey.pageDown.keyId;
+  int playbackSeekBackwardShortcutKey = LogicalKeyboardKey.arrowLeft.keyId;
+  int playbackSeekForwardShortcutKey = LogicalKeyboardKey.arrowRight.keyId;
 
   // 智能路径（对齐 asmr.one：打开作品自动进入最佳目录）
   String initialPathBehavior = 'auto'; // auto / root
@@ -718,6 +724,26 @@ class AppState extends ChangeNotifier {
     if (ep != null) earPause = ep == '1';
     final iae = SettingsStore.get('ignore_audio_focus');
     if (iae != null) ignoreAudioFocus = iae == '1';
+    playbackToggleShortcutKey = _readShortcutKey(
+      'playback_shortcut_toggle',
+      LogicalKeyboardKey.space.keyId,
+    );
+    playbackPreviousShortcutKey = _readShortcutKey(
+      'playback_shortcut_previous',
+      LogicalKeyboardKey.pageUp.keyId,
+    );
+    playbackNextShortcutKey = _readShortcutKey(
+      'playback_shortcut_next',
+      LogicalKeyboardKey.pageDown.keyId,
+    );
+    playbackSeekBackwardShortcutKey = _readShortcutKey(
+      'playback_shortcut_seek_backward',
+      LogicalKeyboardKey.arrowLeft.keyId,
+    );
+    playbackSeekForwardShortcutKey = _readShortcutKey(
+      'playback_shortcut_seek_forward',
+      LogicalKeyboardKey.arrowRight.keyId,
+    );
     final ipb = SettingsStore.get('initial_path_behavior');
     if (ipb != null && ipb.isNotEmpty) initialPathBehavior = ipb;
     final sep = SettingsStore.get('se_preference');
@@ -970,6 +996,13 @@ class AppState extends ChangeNotifier {
     return (clamped / 25).round() * 25;
   }
 
+  int _readShortcutKey(String setting, int fallback) {
+    final keyId = int.tryParse(SettingsStore.get(setting) ?? '');
+    return keyId == null || LogicalKeyboardKey.findKeyByKeyId(keyId) == null
+        ? fallback
+        : keyId;
+  }
+
   void setVolume(double v) {
     volume = v.clamp(0, volumeMax).toDouble();
     SettingsStore.set('volume', volume.clamp(0, 100).toStringAsFixed(0));
@@ -1050,6 +1083,59 @@ class AppState extends ChangeNotifier {
     SettingsStore.set('do_not_remember_playback_progress', value ? '1' : '0');
     // 立即覆盖已保存的进度，确保刚切换后关闭程序也遵循新设置。
     savePlayState();
+    notifyListeners();
+  }
+
+  void setPlaybackToggleShortcutKey(int keyId) {
+    playbackToggleShortcutKey = keyId;
+    SettingsStore.set('playback_shortcut_toggle', '$keyId');
+    notifyListeners();
+  }
+
+  void setPlaybackPreviousShortcutKey(int keyId) {
+    playbackPreviousShortcutKey = keyId;
+    SettingsStore.set('playback_shortcut_previous', '$keyId');
+    notifyListeners();
+  }
+
+  void setPlaybackNextShortcutKey(int keyId) {
+    playbackNextShortcutKey = keyId;
+    SettingsStore.set('playback_shortcut_next', '$keyId');
+    notifyListeners();
+  }
+
+  void setPlaybackSeekBackwardShortcutKey(int keyId) {
+    playbackSeekBackwardShortcutKey = keyId;
+    SettingsStore.set('playback_shortcut_seek_backward', '$keyId');
+    notifyListeners();
+  }
+
+  void setPlaybackSeekForwardShortcutKey(int keyId) {
+    playbackSeekForwardShortcutKey = keyId;
+    SettingsStore.set('playback_shortcut_seek_forward', '$keyId');
+    notifyListeners();
+  }
+
+  void resetPlaybackShortcutKeys() {
+    playbackToggleShortcutKey = LogicalKeyboardKey.space.keyId;
+    playbackPreviousShortcutKey = LogicalKeyboardKey.pageUp.keyId;
+    playbackNextShortcutKey = LogicalKeyboardKey.pageDown.keyId;
+    playbackSeekBackwardShortcutKey = LogicalKeyboardKey.arrowLeft.keyId;
+    playbackSeekForwardShortcutKey = LogicalKeyboardKey.arrowRight.keyId;
+    SettingsStore.set('playback_shortcut_toggle', '$playbackToggleShortcutKey');
+    SettingsStore.set(
+      'playback_shortcut_previous',
+      '$playbackPreviousShortcutKey',
+    );
+    SettingsStore.set('playback_shortcut_next', '$playbackNextShortcutKey');
+    SettingsStore.set(
+      'playback_shortcut_seek_backward',
+      '$playbackSeekBackwardShortcutKey',
+    );
+    SettingsStore.set(
+      'playback_shortcut_seek_forward',
+      '$playbackSeekForwardShortcutKey',
+    );
     notifyListeners();
   }
 
@@ -1345,6 +1431,11 @@ class AppState extends ChangeNotifier {
     doNotRememberPlaybackProgress = false;
     earPause = false;
     ignoreAudioFocus = false;
+    playbackToggleShortcutKey = LogicalKeyboardKey.space.keyId;
+    playbackPreviousShortcutKey = LogicalKeyboardKey.pageUp.keyId;
+    playbackNextShortcutKey = LogicalKeyboardKey.pageDown.keyId;
+    playbackSeekBackwardShortcutKey = LogicalKeyboardKey.arrowLeft.keyId;
+    playbackSeekForwardShortcutKey = LogicalKeyboardKey.arrowRight.keyId;
     initialPathBehavior = 'auto';
     sePreference = true;
     audioTypePreference
