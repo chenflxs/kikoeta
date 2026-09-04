@@ -131,7 +131,7 @@ kikoeta/
 
 - [ ] Linux 与 macOS 客户端
 - [ ] 基于 [VoiceTransl](https://github.com/shinnpuru/VoiceTransl) 或[海南鸡饭特化听写模型衍生](https://github.com/TransWithAI/Faster-Whisper-TransWithAI-ChickenRice)的翻译功能
-- [ ] 音声下载功能 ( *短期内无计划* )
+- [x] 音声下载功能 ( *短期内无计划* )
 - [ ] ...
 ## 致谢
 

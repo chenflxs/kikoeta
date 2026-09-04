@@ -260,6 +260,7 @@ class AppState extends ChangeNotifier {
 
   // 桌面歌词
   bool desktopLyricsOn = false;
+  bool lyricsLibraryAuto = false;
   double lyricsFontSize = 20;
   int lyricsColor = 0xFFFFFFFF;
   int lyricsOutlineColor = 0xFF000000;
@@ -767,6 +768,8 @@ class AppState extends ChangeNotifier {
     }
     final dl = SettingsStore.get('desktop_lyrics');
     if (dl != null) desktopLyricsOn = dl == '1';
+    final lla = SettingsStore.get('lyrics_library_auto');
+    if (lla != null) lyricsLibraryAuto = lla == '1';
     final lfs = SettingsStore.get('lyrics_font_size');
     if (lfs != null) {
       lyricsFontSize = (double.tryParse(lfs) ?? 20).clamp(12, 64);
@@ -1152,6 +1155,12 @@ class AppState extends ChangeNotifier {
   void setDesktopLyricsOn(bool v) {
     desktopLyricsOn = v;
     SettingsStore.set('desktop_lyrics', v ? '1' : '0');
+    notifyListeners();
+  }
+
+  void setLyricsLibraryAuto(bool v) {
+    lyricsLibraryAuto = v;
+    SettingsStore.set('lyrics_library_auto', v ? '1' : '0');
     notifyListeners();
   }
 

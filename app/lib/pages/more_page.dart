@@ -5,6 +5,7 @@ import 'history_page.dart';
 import 'playlists_page.dart';
 import 'blacklist_page.dart';
 import 'downloads_page.dart';
+import 'lyrics_library_page.dart';
 import '../routes.dart';
 import '../services/api_service.dart';
 import '../theme.dart';
@@ -158,6 +159,15 @@ class _MorePageState extends State<MorePage> {
                 null,
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => DownloadPage(app: app)),
+                ),
+              ),
+              _row(
+                context,
+                Icons.lyrics_outlined,
+                '歌词库',
+                null,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const LyricsLibraryPage()),
                 ),
               ),
               _row(
