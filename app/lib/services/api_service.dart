@@ -363,8 +363,8 @@ class ApiService {
     final selected = matched.isNotEmpty
         ? matched
         : (automaticCandidates.length == 1
-                    ? automaticCandidates
-                    : const <_LyricCandidate>[]);
+              ? automaticCandidates
+              : const <_LyricCandidate>[]);
     // 按曲目匹配、格式优先级和语言评分尝试，直到解析出带时间轴的歌词。
     for (final c in selected) {
       final lrc = await _loadLyricCandidate(c);
@@ -862,18 +862,32 @@ class ApiService {
       final path = parentPath.isEmpty ? title : '$parentPath/$title';
       final raw = m['children'];
       final hash = m['hash']?.toString();
-      final rawUrl =
+      final rawDownloadUrl =
+          m['mediaDownloadUrl'] as String? ??
+          m['downloadUrl'] as String? ??
           m['mediaUrl'] as String? ??
           m['mediaStreamUrl'] as String? ??
           m['streamUrl'] as String? ??
           m['url'] as String? ??
           (hash != null ? '/api/media/stream/$hash' : null);
-      final url = rawUrl == null ? null : _resolveMediaUrl(base, rawUrl);
+      final rawStreamUrl =
+          m['mediaStreamUrl'] as String? ??
+          m['streamUrl'] as String? ??
+          m['mediaUrl'] as String? ??
+          m['url'] as String? ??
+          rawDownloadUrl;
+      final url = rawStreamUrl == null
+          ? null
+          : _resolveMediaUrl(base, rawStreamUrl);
+      final downloadUrl = rawDownloadUrl == null
+          ? null
+          : _resolveMediaUrl(base, rawDownloadUrl);
       return MediaNode(
         title: title,
         type: type,
         path: path,
         url: url,
+        downloadUrl: downloadUrl,
         duration: (m['duration'] as num?)?.toInt() ?? 0,
         children: _parseNodes(raw is List ? raw : null, path, base),
       );

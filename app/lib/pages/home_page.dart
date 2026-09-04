@@ -454,6 +454,7 @@ class _HomePageState extends State<HomePage> {
                         return WorkCard(
                           work: w,
                           index: idx,
+                          cardBackground: true,
                           onTap: () => Navigator.of(
                             context,
                           ).push(buildWorkRoute(app, w)),
@@ -676,6 +677,7 @@ class _HomePageState extends State<HomePage> {
                 return WorkCard(
                   work: w,
                   index: i,
+                  cardBackground: true,
                   onTap: () =>
                       Navigator.of(context).push(buildWorkRoute(app, w)),
                 );

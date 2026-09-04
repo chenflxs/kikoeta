@@ -5,7 +5,9 @@ import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../data.dart';
+import 'api_service.dart';
 import 'desktop_lyrics_overlay.dart';
+import 'download_service.dart';
 import 'player_service.dart';
 
 class WindowsTrayService with TrayListener, WindowListener {
@@ -110,9 +112,21 @@ class WindowsTrayService with TrayListener, WindowListener {
     }
     if (!AppPlayer.instance.opened) {
       if (_app.queue.isEmpty) return;
-      final url = _app.queue[_app.trackIdx].url;
-      if (url == null) return;
-      await AppPlayer.instance.openMediaUrl(url);
+      final node = _app.queue[_app.trackIdx];
+      final local = _app.currentWork == null
+          ? null
+          : DownloadManager.instance.localPathFor(
+              server: ApiService.resolveBase(_app),
+              work: _app.currentWork!,
+              node: node,
+            );
+      if (local != null) {
+        await AppPlayer.instance.openLocalPath(local);
+      } else {
+        final url = node.url;
+        if (url == null) return;
+        await AppPlayer.instance.openMediaUrl(url);
+      }
       await AppPlayer.instance.player.setVolume(_app.volume);
       await AppPlayer.instance.applyEqualizer(
         enabled: _app.eqOn,

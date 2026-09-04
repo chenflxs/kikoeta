@@ -2,14 +2,19 @@ import 'package:flutter/material.dart';
 
 import 'data.dart';
 import 'pages/work_page.dart';
+import 'services/download_service.dart';
 
 /// 作品详情页路由：缩放 + 淡入的展开动画
-Route<void> buildWorkRoute(AppState app, Work w) {
+Route<void> buildWorkRoute(
+  AppState app,
+  Work w, {
+  VoiceDownload? downloadItem,
+}) {
   return PageRouteBuilder<void>(
     transitionDuration: const Duration(milliseconds: 320),
     reverseTransitionDuration: const Duration(milliseconds: 220),
     pageBuilder: (context, animation, secondaryAnimation) =>
-        WorkPage(app: app, work: w),
+        WorkPage(app: app, work: w, downloadItem: downloadItem),
     transitionsBuilder: (context, animation, secondaryAnimation, child) {
       final curved = CurvedAnimation(
         parent: animation,

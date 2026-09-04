@@ -541,6 +541,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
                   return WorkCard(
                     work: w,
                     index: i,
+                    cardBackground: true,
                     onTap: () =>
                         Navigator.of(context).push(buildWorkRoute(app, w)),
                   );

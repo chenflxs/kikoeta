@@ -139,6 +139,15 @@ class AppPlayer {
     openedUrl = url;
   }
 
+  /// 打开已下载的真实文件，不经过网络代理。
+  Future<void> openLocalPath(String path, {bool autoplay = true}) async {
+    final generation = _releaseGeneration;
+    await stop();
+    if (generation != _releaseGeneration) return;
+    await open(Media(path), autoplay: autoplay);
+    openedUrl = path;
+  }
+
   /// 停止播放（抑制 stop 后短时间内残留的 completed，避免被误判为播放完成）
   Future<void> stop() async {
     _suppressCompletedUntil = DateTime.now().add(_suppressWindow);

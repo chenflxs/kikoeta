@@ -3,6 +3,11 @@ import '../data.dart';
 /// Maintains checked states for a hierarchical media tree.
 class MediaSelection {
   final Set<String> paths = {};
+  final Set<String> selectedProjects = {};
+
+  /// Explicit user selections. Unlike [paths], this does not contain every
+  /// descendant of a selected directory.
+  Set<String> get projects => Set.unmodifiable(selectedProjects);
 
   /// Returns true, false, or null for a partially checked folder.
   bool? state(MediaNode node) {
@@ -18,11 +23,16 @@ class MediaSelection {
 
   /// Toggles a node and keeps all ancestor folder states consistent.
   void toggle(MediaNode node, Iterable<MediaNode> roots) {
-    _setSubtree(node, state(node) != true);
+    final selected = state(node) == true;
+    _setSubtree(node, !selected);
     _syncFolders(roots);
+    _rebuildProjects(roots);
   }
 
-  void clear() => paths.clear();
+  void clear() {
+    paths.clear();
+    selectedProjects.clear();
+  }
 
   void _setSubtree(MediaNode node, bool selected) {
     if (selected) {
@@ -48,5 +58,20 @@ class MediaSelection {
         paths.remove(node.path);
       }
     }
+  }
+
+  void _rebuildProjects(Iterable<MediaNode> roots) {
+    selectedProjects.clear();
+    void walk(Iterable<MediaNode> nodes) {
+      for (final node in nodes) {
+        if (state(node) == true) {
+          selectedProjects.add(node.path);
+        } else if (node.isDir) {
+          walk(node.children);
+        }
+      }
+    }
+
+    walk(roots);
   }
 }

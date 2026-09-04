@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../data.dart';
 import '../routes.dart';
 import '../services/api_service.dart';
+import '../services/download_service.dart';
 import '../services/media_selection.dart';
 import '../src/rust/api/kikoeru_api.dart';
 import '../src/rust/api/textcodec.dart';
@@ -17,7 +18,13 @@ import '../widgets.dart';
 class WorkPage extends StatefulWidget {
   final AppState app;
   final Work work;
-  const WorkPage({super.key, required this.app, required this.work});
+  final VoiceDownload? downloadItem;
+  const WorkPage({
+    super.key,
+    required this.app,
+    required this.work,
+    this.downloadItem,
+  });
 
   @override
   State<WorkPage> createState() => _WorkPageState();
@@ -39,6 +46,7 @@ class _WorkPageState extends State<WorkPage> {
 
   AppState get app => widget.app;
   Work get work => widget.work;
+  VoiceDownload? get downloadItem => widget.downloadItem;
   Palette get p => Theme.of(context).brightness == Brightness.dark
       ? AppColors.dark
       : AppColors.light;
@@ -58,8 +66,13 @@ class _WorkPageState extends State<WorkPage> {
     super.initState();
     _seenLoginEpoch = app.loginEpoch;
     _languageEditions = work.languageEditions;
+    if (downloadItem != null) {
+      _tree = downloadItem!.tree;
+      _tracksFailed = false;
+      _applyDownloadSmartPath();
+    }
     app.addListener(_onAppChanged);
-    _loadTracks();
+    if (downloadItem == null) _loadTracks();
     _loadLanguageEditions();
   }
 
@@ -70,7 +83,7 @@ class _WorkPageState extends State<WorkPage> {
   }
 
   void _onAppChanged() {
-    if (app.loginEpoch != _seenLoginEpoch) {
+    if (downloadItem == null && app.loginEpoch != _seenLoginEpoch) {
       _seenLoginEpoch = app.loginEpoch;
       _loadTracks();
     }
@@ -91,6 +104,43 @@ class _WorkPageState extends State<WorkPage> {
       }
     } catch (_) {
       if (mounted) setState(() => _tracksFailed = true);
+    }
+  }
+
+  void _applyDownloadSmartPath() {
+    final tree = _tree;
+    final item = downloadItem;
+    if (tree == null || item == null || tree.isEmpty) return;
+    _smartTarget = null;
+    _expanded.clear();
+    var current = tree;
+    while (current.length == 1 && current.first.isDir) {
+      _expanded.add(current.first.path);
+      current = current.first.children;
+    }
+    final manager = DownloadManager.instance;
+    List<MediaNode>? best;
+    var count = 0;
+    void scan(List<MediaNode> nodes, List<MediaNode> parents) {
+      var local = 0;
+      for (final node in nodes) {
+        if (node.isDir) {
+          scan(node.children, [...parents, node]);
+        } else if (manager.isDownloaded(item, node)) {
+          local++;
+        }
+      }
+      if (local > count && parents.isNotEmpty) {
+        count = local;
+        best = parents;
+      }
+    }
+
+    scan(current, []);
+    if (best != null) {
+      for (final node in best!) {
+        _expanded.add(node.path);
+      }
     }
   }
 
@@ -356,6 +406,30 @@ class _WorkPageState extends State<WorkPage> {
     }
     app.startPlayback(work, [n]);
     Navigator.of(context).pushNamed('/player');
+  }
+
+  Future<void> _downloadSelected() async {
+    final tree = _tree;
+    if (tree == null) {
+      _toast('曲目列表尚未加载');
+      return;
+    }
+    final selected = Set<String>.of(_selection.projects);
+    if (selected.isEmpty) {
+      _toast('请先勾选要下载的项目或文件夹');
+      return;
+    }
+    try {
+      await DownloadManager.instance.enqueue(
+        app: app,
+        work: work,
+        tree: tree,
+        selectedPaths: selected,
+      );
+      if (mounted) _toast('已加入下载队列');
+    } catch (e) {
+      if (mounted) _toast('加入下载失败：$e');
+    }
   }
 
   Future<void> _copyRj() async {
@@ -801,10 +875,37 @@ class _WorkPageState extends State<WorkPage> {
     );
   }
 
+  bool _hasDownloadedContent(MediaNode node) {
+    if (downloadItem == null) return true;
+    final manager = DownloadManager.instance;
+    for (final child in node.children) {
+      if (child.isDir) {
+        if (_hasDownloadedContent(child)) return true;
+      } else if (manager.isDownloaded(downloadItem!, child)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   Widget _nodeRow(MediaNode n, int depth, List<MediaNode> siblings) {
     final checked = _selection.state(n);
     final open = _expanded.contains(n.path);
     final translatedName = app.translatedTrack(work.rj, n.path);
+    final downloaded = downloadItem == null
+        ? true
+        : DownloadManager.instance.isDownloaded(downloadItem!, n);
+    final hasDownloadedContent = n.isDir
+        ? _hasDownloadedContent(n)
+        : downloaded;
+    final fileStyle = TextStyle(
+      fontSize: 12.5,
+      color: hasDownloadedContent ? p.text : p.dim,
+      decoration: hasDownloadedContent
+          ? TextDecoration.none
+          : TextDecoration.lineThrough,
+      decorationColor: p.dim,
+    );
     return Column(
       children: [
         InkWell(
@@ -851,14 +952,21 @@ class _WorkPageState extends State<WorkPage> {
                         n.title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 12.5),
+                        style: fileStyle,
                       ),
                       if (translatedName != null && translatedName != n.title)
                         Text(
                           translatedName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 10.5, color: p.accent),
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            color: p.accent,
+                            decoration: hasDownloadedContent
+                                ? TextDecoration.none
+                                : TextDecoration.lineThrough,
+                            decorationColor: p.dim,
+                          ),
                         ),
                     ],
                   ),
@@ -1112,6 +1220,24 @@ class _WorkPageState extends State<WorkPage> {
                       ),
                     ),
                   ),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _downloadSelected,
+                      icon: const Icon(Icons.download_outlined, size: 17),
+                      label: const Text(
+                        '下载选中项目',
+                        style: TextStyle(fontSize: 13),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: p.text,
+                        side: BorderSide(color: p.line),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 14),
@@ -1295,10 +1421,7 @@ class _WorkPageState extends State<WorkPage> {
         borderRadius: BorderRadius.circular(7),
         border: Border.all(color: p.line),
       ),
-      child: Text(
-        date,
-        style: TextStyle(fontSize: 11.5, color: p.muted),
-      ),
+      child: Text(date, style: TextStyle(fontSize: 11.5, color: p.muted)),
     );
   }
 

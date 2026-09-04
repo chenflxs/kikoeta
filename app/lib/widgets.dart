@@ -292,11 +292,15 @@ class WorkCard extends StatelessWidget {
   final Work work;
   final int index;
   final VoidCallback onTap;
+  final bool showBadges;
+  final bool cardBackground;
   const WorkCard({
     super.key,
     required this.work,
     required this.index,
     required this.onTap,
+    this.showBadges = true,
+    this.cardBackground = false,
   });
 
   @override
@@ -307,78 +311,90 @@ class WorkCard extends StatelessWidget {
     final tags = work.tags
         .map((t) => _TagMini(t, p, gray: work.grayTags.contains(t)))
         .toList();
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          AspectRatio(
-            aspectRatio: 4 / 3,
-            child: CoverArt(
-              work: work,
-              child: work.releaseDate.isEmpty
-                  ? null
-                  : Positioned(
-                      right: 8,
-                      bottom: 8,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black54,
-                          borderRadius: BorderRadius.circular(7),
-                        ),
-                        child: Text(
-                          work.releaseDate,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w600,
-                          ),
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AspectRatio(
+          aspectRatio: 4 / 3,
+          child: CoverArt(
+            work: work,
+            showBadges: showBadges,
+            child: work.releaseDate.isEmpty
+                ? null
+                : Positioned(
+                    right: 8,
+                    bottom: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(7),
+                      ),
+                      child: Text(
+                        work.releaseDate,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
-            ),
+                  ),
           ),
-          const SizedBox(height: 7),
-          Text(
-            work.title,
-            style: TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w600,
-              color: p.text,
-            ),
+        ),
+        const SizedBox(height: 7),
+        Text(
+          work.title,
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            color: p.text,
           ),
-          const SizedBox(height: 3),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  work.circle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 10.5, color: p.muted),
-                ),
+        ),
+        const SizedBox(height: 3),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                work.circle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 10.5, color: p.muted),
               ),
-              Text(work.dur, style: TextStyle(fontSize: 10.5, color: p.dim)),
-            ],
-          ),
-          if (work.va.trim().isNotEmpty) ...[
-            const SizedBox(height: 2),
-            Text(
-              work.va,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 10.5, color: p.muted),
             ),
+            Text(work.dur, style: TextStyle(fontSize: 10.5, color: p.dim)),
           ],
-          const SizedBox(height: 6),
-          Wrap(spacing: 4, runSpacing: 4, children: tags),
+        ),
+        if (work.va.trim().isNotEmpty) ...[
+          const SizedBox(height: 2),
+          Text(
+            work.va,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 10.5, color: p.muted),
+          ),
         ],
-      ),
+        const SizedBox(height: 6),
+        Wrap(spacing: 4, runSpacing: 4, children: tags),
+      ],
+    );
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: cardBackground
+          ? Container(
+              padding: const EdgeInsets.all(9),
+              decoration: BoxDecoration(
+                color: p.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: p.line),
+              ),
+              child: content,
+            )
+          : content,
     );
   }
 }

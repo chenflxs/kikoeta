@@ -25,6 +25,17 @@ class AppPaths {
     return dir;
   }
 
+  /// Persistent downloaded files live beside the app, in the root `voice`
+  /// directory. Non-file work metadata stays in the database.
+  static Future<String> voiceDir() async {
+    final root = Platform.isWindows
+        ? File(Platform.resolvedExecutable).parent.path
+        : await dataDir();
+    final dir = '$root${Platform.pathSeparator}voice';
+    await Directory(dir).create(recursive: true);
+    return dir;
+  }
+
   /// Windows 便携目录：`<exe 所在目录>/kikoeta_data`
   static Future<String> _portableDir() async {
     final exeDir = File(Platform.resolvedExecutable).parent.path;

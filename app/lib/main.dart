@@ -26,6 +26,8 @@ import 'services/android_notification.dart';
 import 'services/windows_tray_service.dart';
 import 'services/lyrics_hub.dart';
 import 'services/update_service.dart';
+import 'services/download_service.dart';
+import 'services/api_service.dart';
 import 'src/rust/api/kikoeru_api.dart';
 import 'theme.dart';
 import 'widgets.dart';
@@ -37,6 +39,7 @@ final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SettingsStore.init();
+  await DownloadManager.instance.init();
   await appState.loadFromRust();
   await UpdateService.initialize();
   // Windows 首次运行：自动创建桌面/开始菜单快捷方式（仅 release，幂等）
@@ -163,6 +166,25 @@ double _portraitWidthDp() {
 
 bool _autoAdvancing = false;
 
+Future<bool> _openAppTrack(MediaNode track) async {
+  final work = appState.currentWork;
+  final local = work == null
+      ? null
+      : DownloadManager.instance.localPathFor(
+          server: ApiService.resolveBase(appState),
+          work: work,
+          node: track,
+        );
+  if (local != null) {
+    await AppPlayer.instance.openLocalPath(local);
+    return true;
+  }
+  final url = track.url;
+  if (url == null || url.isEmpty) return false;
+  await AppPlayer.instance.openMediaUrl(url);
+  return true;
+}
+
 Future<void> _advanceAfterCompletion() async {
   final queue = appState.queue;
   if (_autoAdvancing || queue.isEmpty) return;
@@ -189,13 +211,11 @@ Future<void> _advanceAfterCompletion() async {
     appState.playing = true;
     appState.resumePosition = 0;
     appState.notify();
-    final url = queue[appState.trackIdx].url;
-    if (url == null) {
+    if (!await _openAppTrack(queue[appState.trackIdx])) {
       appState.playing = false;
       appState.notify();
       return;
     }
-    await AppPlayer.instance.openMediaUrl(url);
     await AppPlayer.instance.applyEqualizer(
       enabled: appState.eqOn,
       gains: appState.eqGains,
@@ -249,10 +269,8 @@ Future<void> _mediaNext() async {
   appState.playing = true;
   appState.resumePosition = 0;
   appState.notify();
-  final url = q[appState.trackIdx].url;
-  if (url != null) {
+  if (await _openAppTrack(q[appState.trackIdx])) {
     try {
-      await AppPlayer.instance.openMediaUrl(url);
       AppPlayer.instance.applyEqualizer(
         enabled: appState.eqOn,
         gains: appState.eqGains,
@@ -270,10 +288,8 @@ Future<void> _mediaPrev() async {
   appState.playing = true;
   appState.resumePosition = 0;
   appState.notify();
-  final url = q[appState.trackIdx].url;
-  if (url != null) {
+  if (await _openAppTrack(q[appState.trackIdx])) {
     try {
-      await AppPlayer.instance.openMediaUrl(url);
       AppPlayer.instance.applyEqualizer(
         enabled: appState.eqOn,
         gains: appState.eqGains,

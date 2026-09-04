@@ -11,6 +11,7 @@ import 'package:media_kit/media_kit.dart' hide Track;
 import '../data.dart';
 import '../routes.dart';
 import '../services/api_service.dart';
+import '../services/download_service.dart';
 import '../services/android_lyrics_overlay.dart';
 import '../services/lyrics_hub.dart';
 import '../services/player_service.dart';
@@ -287,8 +288,15 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   Future<void> _openCurrent({bool autoplay = true}) async {
+    final localPath = app.currentWork == null
+        ? null
+        : DownloadManager.instance.localPathFor(
+            server: ApiService.resolveBase(app),
+            work: app.currentWork!,
+            node: track,
+          );
     final url = track.url;
-    if (url == null) {
+    if (localPath == null && url == null) {
       app.playing = false;
       app.notify();
       _toast('文件流需登录后可用');
@@ -296,7 +304,17 @@ class _PlayerPageState extends State<PlayerPage> {
     }
     if (mounted) setState(() => _opening = true);
     try {
-      await _openMedia(url, autoplay: autoplay);
+      if (localPath != null) {
+        await AppPlayer.instance.openLocalPath(localPath, autoplay: autoplay);
+        _syncPlayerSnapshot(rebuild: true);
+        _applyVolume();
+        AppPlayer.instance.applyEqualizer(
+          enabled: app.eqOn,
+          gains: app.eqGains,
+        );
+      } else {
+        await _openMedia(url!, autoplay: autoplay);
+      }
     } finally {
       if (mounted) setState(() => _opening = false);
     }

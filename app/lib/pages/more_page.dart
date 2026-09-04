@@ -4,6 +4,7 @@ import '../data.dart';
 import 'history_page.dart';
 import 'playlists_page.dart';
 import 'blacklist_page.dart';
+import 'downloads_page.dart';
 import '../routes.dart';
 import '../services/api_service.dart';
 import '../theme.dart';
@@ -156,7 +157,7 @@ class _MorePageState extends State<MorePage> {
                 '下载',
                 null,
                 onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const DownloadPage()),
+                  MaterialPageRoute(builder: (_) => DownloadPage(app: app)),
                 ),
               ),
               _row(
@@ -254,30 +255,8 @@ class TranslationPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('翻译'),
-        leading: const BackButton(),
-      ),
-      body: const Center(
-        child: Text('功能构建中'),
-      ),
-    );
-  }
-}
-
-class DownloadPage extends StatelessWidget {
-  const DownloadPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('下载'),
-        leading: const BackButton(),
-      ),
-      body: const Center(
-        child: Text('功能构建中'),
-      ),
+      appBar: AppBar(title: const Text('翻译'), leading: const BackButton()),
+      body: const Center(child: Text('功能构建中')),
     );
   }
 }

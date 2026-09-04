@@ -69,6 +69,7 @@ class MediaNode {
   final String path;
   final List<MediaNode> children;
   final String? url;
+  final String? downloadUrl;
   final int duration; // 音频时长（秒），文件夹为 0
   const MediaNode({
     required this.title,
@@ -76,6 +77,7 @@ class MediaNode {
     required this.path,
     this.children = const [],
     this.url,
+    this.downloadUrl,
     this.duration = 0,
   });
 
@@ -478,6 +480,7 @@ class AppState extends ChangeNotifier {
     'path': n.path,
     'children': n.children.map(_nodeToJson).toList(),
     if (n.url != null) 'url': n.url,
+    if (n.downloadUrl != null) 'downloadUrl': n.downloadUrl,
     if (n.duration > 0) 'duration': n.duration,
   };
 
@@ -489,6 +492,7 @@ class AppState extends ChangeNotifier {
         .map((e) => _nodeFromJson(e as Map<String, dynamic>))
         .toList(),
     url: m['url'] as String?,
+    downloadUrl: m['downloadUrl'] as String?,
     duration: (m['duration'] as num?)?.toInt() ?? 0,
   );
 
