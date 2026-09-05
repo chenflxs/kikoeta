@@ -17,8 +17,10 @@ class DownloadPage extends StatefulWidget {
 }
 
 class _DownloadPageState extends State<DownloadPage> {
+  static const _batchSize = 50;
   bool _selecting = false;
   bool _searching = false;
+  int _visibleCount = _batchSize;
   final Set<String> _selected = {};
   final TextEditingController _search = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
@@ -64,6 +66,12 @@ class _DownloadPageState extends State<DownloadPage> {
     });
   }
 
+  void _loadMore(int total) {
+    setState(() {
+      _visibleCount = (_visibleCount + _batchSize).clamp(0, total).toInt();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -80,6 +88,7 @@ class _DownloadPageState extends State<DownloadPage> {
                         item.work.title.toLowerCase().contains(query),
                   )
                   .toList();
+        final visibleItems = items.take(_visibleCount).toList();
         return Scaffold(
           appBar: AppBar(
             title: const Text('下载'),
@@ -98,6 +107,7 @@ class _DownloadPageState extends State<DownloadPage> {
                   onPressed: () => setState(() {
                     _searching = false;
                     _search.clear();
+                    _visibleCount = _batchSize;
                   }),
                 )
               else
@@ -160,7 +170,7 @@ class _DownloadPageState extends State<DownloadPage> {
                     return GridView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      itemCount: items.length,
+                      itemCount: visibleItems.length,
                       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: columns,
                         crossAxisSpacing: 13,
@@ -168,7 +178,7 @@ class _DownloadPageState extends State<DownloadPage> {
                         childAspectRatio: .68,
                       ),
                       itemBuilder: (context, index) {
-                        final item = items[index];
+                        final item = visibleItems[index];
                         return _VoiceCard(
                           item: item,
                           selecting: _selecting,
@@ -195,6 +205,19 @@ class _DownloadPageState extends State<DownloadPage> {
                       },
                     );
                   },
+                ),
+              if (visibleItems.length < items.length)
+                Padding(
+                  padding: const EdgeInsets.only(top: 16),
+                  child: Center(
+                    child: TextButton.icon(
+                      onPressed: () => _loadMore(items.length),
+                      icon: const Icon(Icons.expand_more, size: 18),
+                      label: Text(
+                        '加载更多（${items.length - visibleItems.length}）',
+                      ),
+                    ),
+                  ),
                 ),
             ],
           ),
@@ -239,7 +262,7 @@ class _DownloadPageState extends State<DownloadPage> {
                 border: InputBorder.none,
                 isDense: true,
               ),
-              onChanged: (_) => setState(() {}),
+              onChanged: (_) => setState(() => _visibleCount = _batchSize),
             ),
           ),
           if (_search.text.isNotEmpty)

@@ -237,6 +237,7 @@ class AppState extends ChangeNotifier {
 
   // 智能路径（对齐 asmr.one：打开作品自动进入最佳目录）
   String initialPathBehavior = 'auto'; // auto / root
+  bool mediaFilesOnly = false; // 作品详情只显示音频/视频文件
   bool sePreference = true; // 效果音偏好
   final List<String> audioTypePreference = [
     'mp3',
@@ -751,6 +752,8 @@ class AppState extends ChangeNotifier {
     );
     final ipb = SettingsStore.get('initial_path_behavior');
     if (ipb != null && ipb.isNotEmpty) initialPathBehavior = ipb;
+    final mediaOnly = SettingsStore.get('media_files_only');
+    if (mediaOnly != null) mediaFilesOnly = mediaOnly == '1';
     final sep = SettingsStore.get('se_preference');
     if (sep != null) sePreference = sep == '1';
     final atp = SettingsStore.get('audio_type_preference');
@@ -1315,6 +1318,12 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setMediaFilesOnly(bool value) {
+    mediaFilesOnly = value;
+    SettingsStore.set('media_files_only', value ? '1' : '0');
+    notifyListeners();
+  }
+
   /// 效果音偏好
   void setSePreference(bool v) {
     sePreference = v;
@@ -1450,6 +1459,7 @@ class AppState extends ChangeNotifier {
     playbackSeekBackwardShortcutKey = LogicalKeyboardKey.arrowLeft.keyId;
     playbackSeekForwardShortcutKey = LogicalKeyboardKey.arrowRight.keyId;
     initialPathBehavior = 'auto';
+    mediaFilesOnly = false;
     sePreference = true;
     audioTypePreference
       ..clear()

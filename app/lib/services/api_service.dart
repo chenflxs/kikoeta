@@ -826,11 +826,12 @@ class ApiService {
 
   static Future<List<MediaNode>> fetchTracks(
     AppState app,
-    int workApiId,
-  ) async {
+    int workApiId, {
+    bool forceRefresh = false,
+  }) async {
     final key = _tracksKey(app, workApiId);
     final cached = _tracksCache[key];
-    if (cached != null) return cached;
+    if (!forceRefresh && cached != null) return cached;
     final json = await apiGetTracks(base: resolveBase(app), rj: '$workApiId');
     final nodes = parseMediaNodes(jsonDecode(json), base: resolveBase(app));
     if (_tracksCache.length >= 10) _tracksCache.remove(_tracksCache.keys.first);

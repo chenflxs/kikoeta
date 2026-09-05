@@ -141,6 +141,7 @@ class DownloadManager extends ChangeNotifier {
               download.status = VoiceDownloadStatus.queued;
             }
             await _moveToCurrentVoiceRoot(download, root);
+            _normalizeItemPaths(download);
             download.voiceRoot = root;
             _downloads.add(download);
           } catch (_) {
@@ -217,24 +218,30 @@ class DownloadManager extends ChangeNotifier {
     final id = '$server|${work.rj}';
     final root = await AppPaths.voiceDir();
     var item = _find(id);
+    final normalizedTree = normalizeDownloadTree(tree);
+    final normalizedPaths = normalizeDownloadSelectionPaths(
+      selectedPaths,
+      tree,
+    );
     if (item == null) {
       item = VoiceDownload(
         id: id,
         server: server,
         voiceRoot: root,
         work: work,
-        tree: tree,
+        tree: normalizedTree,
         selectedPaths: <String>{},
         pausedPaths: <String>{},
         fileSizes: <String, int>{},
       );
       _downloads.insert(0, item);
     } else {
+      final mergedTree = mergeDownloadTrees(item.tree, normalizedTree);
       item.tree
         ..clear()
-        ..addAll(tree);
+        ..addAll(mergedTree);
     }
-    item.selectedPaths.addAll(selectedPaths);
+    item.selectedPaths.addAll(normalizedPaths);
     item.status = VoiceDownloadStatus.queued;
     item.error = null;
     item.updatedAt = DateTime.now();
@@ -344,6 +351,49 @@ class DownloadManager extends ChangeNotifier {
       }
     }
     await _persistAndNotify();
+  }
+
+  /// Deletes completed local files selected in a work detail view and removes
+  /// their download records. Missing files and partial downloads are ignored.
+  Future<int> deleteDownloadedFiles(
+    VoiceDownload item,
+    Set<String> selectedPaths,
+  ) async {
+    if (selectedPaths.isEmpty || !_downloads.contains(item)) return 0;
+    final deleted = <String>{};
+    for (final node in _filesAtPaths(item.tree, selectedPaths)) {
+      if (!isDownloaded(item, node)) continue;
+      final file = File(_localPath(item, node));
+      try {
+        await file.delete();
+        deleted.add(node.path);
+        item.fileSizes.remove(node.path);
+      } catch (_) {
+        // Continue deleting the remaining selected files when one is locked.
+      }
+    }
+    if (deleted.isEmpty) return 0;
+
+    final remaining = selectedFiles(item)
+        .where((node) => !deleted.contains(node.path))
+        .map((node) => node.path)
+        .toSet();
+    if (remaining.isEmpty) {
+      item.selectedPaths.clear();
+      item.pausedPaths.clear();
+      item.status = VoiceDownloadStatus.completed;
+      item.error = null;
+    } else {
+      item.selectedPaths
+        ..clear()
+        ..addAll(remaining);
+      item.pausedPaths.removeWhere((path) => !remaining.contains(path));
+    }
+    item.downloadedBytes = _completedBytes(item);
+    item.totalBytes = item.fileSizes.values.fold(0, (sum, size) => sum + size);
+    item.updatedAt = DateTime.now();
+    await _persistAndNotify();
+    return deleted.length;
   }
 
   Future<void> deleteWorks(Set<String> ids) async {
@@ -666,22 +716,46 @@ class DownloadManager extends ChangeNotifier {
     return walk(item.tree);
   }
 
+  /// Older records used the API's optional display-only root folder in their
+  /// paths. Normalize them after the on-disk migration so later top-level
+  /// changes from the API cannot hide already downloaded files.
+  void _normalizeItemPaths(VoiceDownload item) {
+    final originalTree = List<MediaNode>.from(item.tree);
+    final normalizedTree = normalizeDownloadTree(originalTree);
+    String normalize(String path) =>
+        normalizeDownloadSelectionPaths({path}, originalTree).single;
+    final selectedPaths = item.selectedPaths.map(normalize).toSet();
+    final pausedPaths = item.pausedPaths.map(normalize).toSet();
+
+    item.tree
+      ..clear()
+      ..addAll(normalizedTree);
+    item.selectedPaths
+      ..clear()
+      ..addAll(selectedPaths);
+    item.pausedPaths
+      ..clear()
+      ..addAll(pausedPaths);
+    final fileSizes = Map<String, int>.from(item.fileSizes);
+    item.fileSizes
+      ..clear()
+      ..addEntries(
+        fileSizes.entries.map(
+          (entry) => MapEntry(normalize(entry.key), entry.value),
+        ),
+      );
+    if (item.currentPath != null) {
+      item.currentPath = normalize(item.currentPath!);
+    }
+  }
+
   String _localPath(VoiceDownload item, MediaNode node) {
     final folder = _safePart('${item.work.rj} ${item.work.title}');
-    var parts = node.path
+    final parts = node.path
         .split('/')
         .where((part) => part.isNotEmpty)
         .map(_safePart)
         .toList();
-    // The API sometimes wraps the whole work in one display-only root folder
-    // (for example a language/short-title directory). The work folder already
-    // supplies that context, so keep only the actual work structure below it.
-    if (item.tree.length == 1 &&
-        item.tree.first.isDir &&
-        parts.isNotEmpty &&
-        parts.first == _safePart(item.tree.first.title)) {
-      parts = parts.sublist(1);
-    }
     return [item.voiceRoot, folder, ...parts].join(Platform.pathSeparator);
   }
 
@@ -690,6 +764,36 @@ class DownloadManager extends ChangeNotifier {
 
   bool _isSelected(VoiceDownload item, String path) {
     for (final selected in item.selectedPaths) {
+      if (selected.isEmpty ||
+          path == selected ||
+          path.startsWith('$selected/')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  List<MediaNode> _filesAtPaths(
+    Iterable<MediaNode> nodes,
+    Set<String> selectedPaths,
+  ) {
+    final result = <MediaNode>[];
+    void walk(Iterable<MediaNode> current) {
+      for (final node in current) {
+        if (node.isDir) {
+          walk(node.children);
+        } else if (_pathIsSelected(selectedPaths, node.path)) {
+          result.add(node);
+        }
+      }
+    }
+
+    walk(nodes);
+    return result;
+  }
+
+  bool _pathIsSelected(Set<String> selectedPaths, String path) {
+    for (final selected in selectedPaths) {
       if (selected.isEmpty ||
           path == selected ||
           path.startsWith('$selected/')) {
@@ -716,6 +820,82 @@ class DownloadManager extends ChangeNotifier {
       _persisting = false;
     }
   }
+}
+
+/// Removes the optional single display root returned by some media APIs.
+/// Download storage already has a work directory, so retaining that root makes
+/// a later API response with a different root name point at a different file.
+List<MediaNode> normalizeDownloadTree(List<MediaNode> tree) {
+  if (tree.length != 1 || !tree.first.isDir) return tree;
+  final rootPath = tree.first.path;
+  return tree.first.children
+      .map((node) => _rebaseMediaNode(node, rootPath))
+      .toList();
+}
+
+/// Applies [normalizeDownloadTree]'s path mapping to selections made against
+/// the original API tree. Selecting the display root becomes an all-files
+/// selection, represented by the empty path.
+Set<String> normalizeDownloadSelectionPaths(
+  Iterable<String> paths,
+  List<MediaNode> tree,
+) {
+  if (tree.length != 1 || !tree.first.isDir) return paths.toSet();
+  final rootPath = tree.first.path;
+  final prefix = '$rootPath/';
+  return paths.map((path) {
+    if (path == rootPath) return '';
+    return path.startsWith(prefix) ? path.substring(prefix.length) : path;
+  }).toSet();
+}
+
+/// Combines a refreshed media tree with the stored tree. Files omitted by a
+/// transient or changed API response are retained so their local records and
+/// playback paths continue to work; refreshed nodes supply current URLs.
+List<MediaNode> mergeDownloadTrees(
+  List<MediaNode> stored,
+  List<MediaNode> refreshed,
+) {
+  final remaining = {for (final node in stored) node.path: node};
+  final merged = <MediaNode>[];
+  for (final node in refreshed) {
+    final previous = remaining.remove(node.path);
+    if (previous != null && previous.isDir && node.isDir) {
+      merged.add(
+        MediaNode(
+          title: node.title,
+          type: node.type,
+          path: node.path,
+          children: mergeDownloadTrees(previous.children, node.children),
+          url: node.url,
+          downloadUrl: node.downloadUrl,
+          duration: node.duration,
+        ),
+      );
+    } else {
+      merged.add(node);
+    }
+  }
+  merged.addAll(remaining.values);
+  return merged;
+}
+
+MediaNode _rebaseMediaNode(MediaNode node, String rootPath) {
+  final prefix = '$rootPath/';
+  final path = node.path.startsWith(prefix)
+      ? node.path.substring(prefix.length)
+      : node.path;
+  return MediaNode(
+    title: node.title,
+    type: node.type,
+    path: path,
+    children: node.children
+        .map((child) => _rebaseMediaNode(child, rootPath))
+        .toList(),
+    url: node.url,
+    downloadUrl: node.downloadUrl,
+    duration: node.duration,
+  );
 }
 
 class _DownloadCancelled implements Exception {

@@ -30,6 +30,30 @@ class WorkPage extends StatefulWidget {
   State<WorkPage> createState() => _WorkPageState();
 }
 
+class _WorkMenuEntry extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool destructive;
+
+  const _WorkMenuEntry({
+    required this.icon,
+    required this.label,
+    this.destructive = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = destructive ? Theme.of(context).colorScheme.error : null;
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: color),
+        const SizedBox(width: 12),
+        Text(label, style: TextStyle(color: color)),
+      ],
+    );
+  }
+}
+
 class _WorkPageState extends State<WorkPage> {
   static const _textEncodings = [
     'UTF-8',
@@ -90,11 +114,15 @@ class _WorkPageState extends State<WorkPage> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _loadTracks() async {
+  Future<void> _loadTracks({bool forceRefresh = false}) async {
     final id = work.apiId;
     if (id == null) return;
     try {
-      final t = await ApiService.fetchTracks(app, id);
+      final t = await ApiService.fetchTracks(
+        app,
+        id,
+        forceRefresh: forceRefresh,
+      );
       if (mounted) {
         setState(() {
           _tree = t;
@@ -448,6 +476,137 @@ class _WorkPageState extends State<WorkPage> {
   bool _isVideo(MediaNode n) => n.title.toLowerCase().contains(
     RegExp(r'\.(mp4|mkv|webm|avi|mov|wmv|flv|ts|m4v)$'),
   );
+
+  bool _isMediaFile(MediaNode n) => _isAudio(n) || _isVideo(n);
+
+  List<MediaNode> _mediaOnlyTree(Iterable<MediaNode> nodes) {
+    final visible = <MediaNode>[];
+    for (final node in nodes) {
+      if (!node.isDir) {
+        if (_isMediaFile(node)) visible.add(node);
+        continue;
+      }
+      final children = _mediaOnlyTree(node.children);
+      if (children.isNotEmpty) {
+        visible.add(
+          MediaNode(
+            title: node.title,
+            type: node.type,
+            path: node.path,
+            children: children,
+            url: node.url,
+            downloadUrl: node.downloadUrl,
+            duration: node.duration,
+          ),
+        );
+      }
+    }
+    return visible;
+  }
+
+  Future<void> _refreshWork() async {
+    if (downloadItem != null) {
+      setState(() {
+        _tree = downloadItem!.tree;
+        _tracksFailed = false;
+        _applyDownloadSmartPath();
+      });
+      _toast('已刷新本地下载记录');
+      return;
+    }
+    await Future.wait([
+      _loadTracks(forceRefresh: true),
+      _loadLanguageEditions(),
+    ]);
+    if (mounted) _toast(_tracksFailed ? '刷新失败' : '已刷新');
+  }
+
+  Future<void> _openExternalWork(String url) async {
+    final ok = await launchUrl(
+      Uri.parse(url),
+      mode: LaunchMode.externalApplication,
+    );
+    if (!ok && mounted) _toast('打开失败');
+  }
+
+  Future<void> _deleteSelectedLocalFiles() async {
+    final item = downloadItem;
+    final selected = Set<String>.of(_selection.projects);
+    if (item == null || selected.isEmpty) {
+      _toast('请先勾选要删除的本地文件');
+      return;
+    }
+    final deleted = await DownloadManager.instance.deleteDownloadedFiles(
+      item,
+      selected,
+    );
+    if (!mounted) return;
+    if (deleted == 0) {
+      _toast('所选项目中没有已下载文件');
+      return;
+    }
+    setState(() => _selection.clear());
+    _toast('已删除 $deleted 个本地文件');
+  }
+
+  Future<void> _confirmDeleteWork() async {
+    final item = downloadItem;
+    if (item == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('删除作品'),
+        content: Text('确定删除“${item.work.title}”的全部本地文件吗？此操作无法撤销。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await DownloadManager.instance.deleteWorks({item.id});
+    if (!mounted) return;
+    if (DownloadManager.instance.downloads.any(
+      (entry) => entry.id == item.id,
+    )) {
+      _toast('删除失败，请关闭正在占用该作品的程序后重试');
+      return;
+    }
+    Navigator.of(context).pop();
+  }
+
+  void _onDeleteWorkLongPress() {
+    Navigator.of(context).pop();
+    Future<void>.delayed(Duration.zero, _confirmDeleteWork);
+  }
+
+  Future<void> _onMoreAction(String action) async {
+    switch (action) {
+      case 'deleteLocal':
+        await _deleteSelectedLocalFiles();
+        return;
+      case 'refresh':
+        await _refreshWork();
+        return;
+      case 'asmr':
+        await _openExternalWork('https://asmr.one/work/${work.rj}');
+        return;
+      case 'dlsite':
+        await _openExternalWork(
+          'https://www.dlsite.com/maniax/work/=/product_id/${work.rj}.html',
+        );
+        return;
+      case 'mediaOnly':
+        app.setMediaFilesOnly(!app.mediaFilesOnly);
+        return;
+    }
+  }
 
   void _openFile(MediaNode n) {
     if (_isImage(n)) {
@@ -994,8 +1153,64 @@ class _WorkPageState extends State<WorkPage> {
     final fav = app.isFavorited(work);
     final zhTitle = app.translatedTitle(work.rj);
     final miniVisible = app.playing || app.hasQueue;
+    final visibleTree = _tree == null
+        ? null
+        : app.mediaFilesOnly
+        ? _mediaOnlyTree(_tree!)
+        : _tree!;
     return Scaffold(
-      appBar: AppBar(title: const Text('作品详情'), leading: const BackButton()),
+      appBar: AppBar(
+        title: const Text('作品详情'),
+        leading: const BackButton(),
+        actions: [
+          PopupMenuButton<String>(
+            tooltip: '更多',
+            icon: const Icon(Icons.more_vert),
+            onSelected: _onMoreAction,
+            itemBuilder: (_) => [
+              if (downloadItem != null)
+                PopupMenuItem(
+                  value: 'deleteLocal',
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onLongPress: _onDeleteWorkLongPress,
+                    child: const _WorkMenuEntry(
+                      icon: Icons.delete_outline,
+                      label: '删除',
+                      destructive: true,
+                    ),
+                  ),
+                ),
+              const PopupMenuItem(
+                value: 'refresh',
+                child: _WorkMenuEntry(icon: Icons.refresh, label: '刷新'),
+              ),
+              const PopupMenuItem(
+                value: 'asmr',
+                child: _WorkMenuEntry(
+                  icon: Icons.open_in_new,
+                  label: '跳转 asmr.one',
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'dlsite',
+                child: _WorkMenuEntry(
+                  icon: Icons.open_in_new,
+                  label: '跳转 DLsite',
+                ),
+              ),
+              PopupMenuItem(
+                value: 'mediaOnly',
+                child: MenuItem(
+                  label: '仅显示媒体文件',
+                  selected: app.mediaFilesOnly,
+                  checkbox: true,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
       body: Stack(
         children: [
           ListView(
@@ -1265,7 +1480,7 @@ class _WorkPageState extends State<WorkPage> {
                 ),
               ),
               const SizedBox(height: 6),
-              if (_tree != null && _tree!.isNotEmpty)
+              if (visibleTree != null && visibleTree.isNotEmpty)
                 Container(
                   decoration: BoxDecoration(
                     color: p.surface,
@@ -1313,7 +1528,7 @@ class _WorkPageState extends State<WorkPage> {
                             ),
                           ),
                         ),
-                      _treeView(_tree!, 0),
+                      _treeView(visibleTree, 0),
                     ],
                   ),
                 )
@@ -1354,7 +1569,11 @@ class _WorkPageState extends State<WorkPage> {
                   ),
                   child: Center(
                     child: Text(
-                      _tracksFailed ? '无网络连接，无法获取曲目列表' : '该作品暂无曲目',
+                      _tracksFailed
+                          ? '无网络连接，无法获取曲目列表'
+                          : app.mediaFilesOnly
+                          ? '该作品没有音频或视频文件'
+                          : '该作品暂无曲目',
                       style: TextStyle(fontSize: 12.5, color: p.dim),
                     ),
                   ),
