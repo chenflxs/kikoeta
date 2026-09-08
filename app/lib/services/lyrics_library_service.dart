@@ -187,6 +187,7 @@ class LyricsLibraryService {
         path,
       ).list(recursive: true, followLinks: false)) {
         if (entity is! File) continue;
+        if (!_isLyricFile(entity.path)) continue;
         fileCount++;
         totalBytes += await entity.length();
         if (totalBytes >= largeImportBytes || fileCount >= largeImportFileCount)
@@ -511,6 +512,7 @@ class LyricsLibraryService {
         followLinks: false,
       )) {
         if (item is! File) continue;
+        if (!_isLyricFile(item.path)) continue;
         final relative = item.path
             .substring(source.path.length)
             .replaceAll('\\', '/')
@@ -651,11 +653,6 @@ class LyricsLibraryService {
         await target.parent.create(recursive: true);
         await target.writeAsBytes(entry.content as List<int>, flush: true);
         entry.clear();
-      } else {
-        final output = _archiveOutputPath(clean, workIds, isFile: false);
-        if (output != null) {
-          await Directory(_join(base, output)).create(recursive: true);
-        }
       }
     }
   }
@@ -684,6 +681,7 @@ class LyricsLibraryService {
           onProgress: onProgress,
         );
       } else if (entity is File) {
+        if (!_isLyricFile(entity.path)) continue;
         if (await dst.exists() && conflict == LyricsImportConflict.skip)
           continue;
         if (await dst.exists() && conflict == LyricsImportConflict.cancel)
@@ -762,6 +760,7 @@ class LyricsLibraryService {
     Set<String> workIds, {
     required bool isFile,
   }) {
+    if (isFile && !_isLyricFile(clean)) return null;
     final parts = clean.split('/');
     final index = parts.indexWhere(_isWorkId);
     if (index >= 0) {
