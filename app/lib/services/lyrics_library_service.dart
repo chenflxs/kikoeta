@@ -218,14 +218,33 @@ class LyricsLibraryService {
     await _load();
     final base = Directory(await root);
     final discovered = <LyricsLibraryRecord>[];
+    final discoveredPaths = <String>{};
+    final existingAiPaths = {
+      for (final record in _records)
+        '${record.workId}\u0000${record.relativePath}': record.isAi,
+    };
     if (await base.exists()) {
       if (deep) await _pruneInvalidRootDirectories(base);
+
+      // 正常刷新只检查歌词库的顶层作品目录。导入流程会把作品目录放在
+      // 这里，因此无需为发现变化而递归读取每个歌词文件。保留已建立的
+      // 嵌套目录索引，以兼容旧版本留下的目录结构；长按的深度刷新仍会
+      // 完整扫描并清理无效目录。
+      if (!deep) {
+        for (final record in _records) {
+          final dir = Directory(_join(base.path, record.relativePath));
+          if (!await dir.exists()) continue;
+          discovered.add(record);
+          discoveredPaths.add(record.relativePath);
+        }
+      }
       await for (final entity in base.list(
-        recursive: true,
+        recursive: deep,
         followLinks: false,
       )) {
         if (entity is! Directory) continue;
         final rel = _relative(base.path, entity.path);
+        if (!discoveredPaths.add(rel)) continue;
         final parts = rel.split('/');
         final idPart = parts.where(_isWorkId).toList();
         if (idPart.isEmpty || idPart.last != parts.last) continue;
@@ -240,9 +259,7 @@ class LyricsLibraryService {
           LyricsLibraryRecord(
             workId: workId,
             relativePath: rel,
-            isAi: _records.any(
-              (r) => r.workId == workId && r.relativePath == rel && r.isAi,
-            ),
+            isAi: existingAiPaths['$workId\u0000$rel'] ?? false,
           ),
         );
       }
@@ -269,6 +286,23 @@ class LyricsLibraryService {
     await _load();
     final base = await root;
     final id = workId.toUpperCase();
+    return _listFiles(base, id);
+  }
+
+  /// 批量统计首页卡片的文件数。共享一次索引和根目录解析，避免首批卡片
+  /// 同时重复创建歌词库目录并分别读取相同的作品目录记录。
+  Future<Map<String, int>> countFilesForWorks(Iterable<String> workIds) async {
+    await _load();
+    final base = await root;
+    final ids = workIds.map((id) => id.toUpperCase()).toSet();
+    final result = <String, int>{};
+    for (final id in ids) {
+      result[id] = await _countFiles(base, id);
+    }
+    return result;
+  }
+
+  Future<List<LyricsLibraryFile>> _listFiles(String base, String id) async {
     final out = <LyricsLibraryFile>[];
     for (final record in _records.where((r) => r.workId == id)) {
       final dir = Directory(_join(base, record.relativePath));
@@ -295,6 +329,24 @@ class LyricsLibraryService {
       }
     }
     return out;
+  }
+
+  Future<int> _countFiles(String base, String id) async {
+    var count = 0;
+    for (final record in _records.where((r) => r.workId == id)) {
+      final dir = Directory(_join(base, record.relativePath));
+      if (!await dir.exists()) continue;
+      await for (final entity in dir.list(
+        recursive: true,
+        followLinks: false,
+      )) {
+        if (entity is File &&
+            supportedExtensions.contains(_extension(entity.path))) {
+          count++;
+        }
+      }
+    }
+    return count;
   }
 
   Future<List<LyricsLibraryEntry>> listEntries({required String workId}) =>

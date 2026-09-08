@@ -15,7 +15,9 @@ class LyricsLibraryPage extends StatefulWidget {
 class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
   static const _batchSize = 50;
   final _service = LyricsLibraryService.instance;
-  List<LyricsLibraryRecord> _records = [];
+  List<String> _workIds = [];
+  Map<String, int> _directoryCounts = {};
+  Set<String> _aiWorkIds = {};
   Map<String, List<LyricsLibraryFile>> _files = {};
   bool _loading = false;
   bool _importing = false;
@@ -33,7 +35,7 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
   @override
   void initState() {
     super.initState();
-    _refresh();
+    _loadInitialRecords();
   }
 
   @override
@@ -104,20 +106,56 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
     }
   }
 
+  /// 索引会在导入、删除和刷新后保存。优先用它绘制首屏，避免每次进入
+  /// 页面都等待整个歌词目录的递归扫描完成。
+  Future<void> _loadInitialRecords() async {
+    final records = await _service.records();
+    if (!mounted) return;
+    _applyRecords(records);
+
+    if (records.isEmpty) {
+      // 首次使用时没有索引，只能立即扫描以发现已有的歌词目录。
+      await _refresh();
+      return;
+    }
+
+    // 确保缓存内容至少完成一帧绘制后才扫描磁盘；扫描期间仍保留已显示的
+    // 条目，外部新增或删除的文件夹会在后台同步回来。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _refresh();
+    });
+  }
+
+  void _applyRecords(List<LyricsLibraryRecord> records) {
+    final directoryCounts = <String, int>{};
+    final aiWorkIds = <String>{};
+    for (final record in records) {
+      directoryCounts.update(
+        record.workId,
+        (count) => count + 1,
+        ifAbsent: () => 1,
+      );
+      if (record.isAi) aiWorkIds.add(record.workId);
+    }
+    final ids = directoryCounts.keys.toList()..sort();
+    setState(() {
+      _workIds = ids;
+      _directoryCounts = directoryCounts;
+      _aiWorkIds = aiWorkIds;
+      _files = {};
+      _fileCounts.clear();
+      _visibleCount = _batchSize;
+    });
+    _loadCounts(ids.take(_batchSize).toList());
+  }
+
   Future<void> _refresh({bool deep = false}) async {
     if (_loading && !deep) return;
     setState(() => _loading = true);
     try {
       final records = await _service.refresh(deep: deep);
       if (mounted) {
-        setState(() {
-          _records = records;
-          _files = {};
-          _fileCounts.clear();
-          _visibleCount = _batchSize;
-        });
-        final ids = records.map((e) => e.workId).toSet().toList()..sort();
-        _loadCounts(ids.take(_batchSize).toList());
+        _applyRecords(records);
       }
     } finally {
       if (mounted) {
@@ -128,12 +166,7 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
 
   Future<void> _loadCounts(List<String> ids) async {
     final token = ++_countLoadToken;
-    final result = <String, int>{};
-    await Future.wait(
-      ids.map((id) async {
-        result[id] = (await _service.listFiles(workId: id)).length;
-      }),
-    );
+    final result = await _service.countFilesForWorks(ids);
     if (!mounted || token != _countLoadToken) return;
     setState(() => _fileCounts.addAll(result));
   }
@@ -373,13 +406,9 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
         ? AppColors.dark
         : AppColors.light;
     final query = _search.text.trim().toLowerCase();
-    final ids =
-        _records
-            .map((e) => e.workId)
-            .toSet()
-            .where((id) => query.isEmpty || id.toLowerCase().contains(query))
-            .toList()
-          ..sort();
+    final ids = _workIds
+        .where((id) => query.isEmpty || id.toLowerCase().contains(query))
+        .toList();
     final visibleIds = ids.take(_visibleCount).toList();
     return Scaffold(
       appBar: AppBar(
@@ -521,13 +550,9 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
                           itemCount: visibleIds.length,
                           itemBuilder: (_, i) {
                             final id = visibleIds[i];
-                            final records = _records
-                                .where((e) => e.workId == id)
-                                .toList();
                             final fileCount = _fileCounts[id];
-                            final isAi = _records.any(
-                              (e) => e.workId == id && e.isAi,
-                            );
+                            final directoryCount = _directoryCounts[id] ?? 0;
+                            final isAi = _aiWorkIds.contains(id);
                             return Stack(
                               children: [
                                 InkWell(
@@ -591,8 +616,8 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
                                               const SizedBox(height: 3),
                                               Text(
                                                 fileCount == null
-                                                    ? '正在统计文件 · ${records.length} 个目录'
-                                                    : '$fileCount 个歌词/字幕文件 · ${records.length} 个目录',
+                                                    ? '正在统计文件 · $directoryCount 个目录'
+                                                    : '$fileCount 个歌词/字幕文件 · $directoryCount 个目录',
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
                                                 style: TextStyle(
