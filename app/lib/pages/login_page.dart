@@ -160,7 +160,7 @@ class _LoginPageState extends State<LoginPage> {
                     decoration: InputDecoration(
                       labelText: '代理服务器',
                       labelStyle: TextStyle(fontSize: 12, color: p.muted),
-                      hintText: '127.0.0.1:7890 或 http://127.0.0.1:7890',
+                      hintText: '例如 http://代理地址:端口',
                       hintStyle: TextStyle(fontSize: 12, color: p.dim),
                       helperText: '仅支持 HTTP 代理',
                       helperStyle: TextStyle(fontSize: 11, color: p.dim),
