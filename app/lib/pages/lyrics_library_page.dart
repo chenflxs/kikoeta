@@ -412,13 +412,30 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
     final visibleIds = ids.take(_visibleCount).toList();
     return Scaffold(
       appBar: AppBar(
+        leadingWidth: 112,
         leading: _selecting
-            ? IconButton(
-                tooltip: '退出多选',
-                icon: const Icon(Icons.arrow_back),
-                onPressed: _toggleSelecting,
+            ? Row(
+                children: [
+                  IconButton(
+                    tooltip: '退出多选',
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: _toggleSelecting,
+                  ),
+                  Text(
+                    '${_workIds.length} 个',
+                    style: TextStyle(fontSize: 12, color: p.dim),
+                  ),
+                ],
               )
-            : const BackButton(),
+            : Row(
+                children: [
+                  const BackButton(),
+                  Text(
+                    '${_workIds.length} 个',
+                    style: TextStyle(fontSize: 12, color: p.dim),
+                  ),
+                ],
+              ),
         title: const Text('歌词库'),
         actions: [
           if (_searching)
@@ -506,20 +523,7 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
           if (_searching)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-              child: TextField(
-                controller: _search,
-                focusNode: _searchFocus,
-                autofocus: true,
-                decoration: const InputDecoration(
-                  hintText: '搜索作品 ID',
-                  prefixIcon: Icon(Icons.search),
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-                onChanged: (_) => setState(() {
-                  _visibleCount = _batchSize;
-                }),
-              ),
+              child: _searchField(p),
             ),
           Expanded(
             child: ids.isEmpty
@@ -678,6 +682,67 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
                 width: 18,
                 height: 18,
                 child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _searchField(Palette p) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      height: 46,
+      padding: const EdgeInsets.only(left: 13, right: 8),
+      decoration: BoxDecoration(
+        color: p.surface,
+        border: Border.all(color: p.accent),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: .24),
+            blurRadius: 32,
+            offset: const Offset(0, 14),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.search, size: 19, color: p.dim),
+          const SizedBox(width: 9),
+          Expanded(
+            child: TextField(
+              controller: _search,
+              focusNode: _searchFocus,
+              autofocus: true,
+              style: TextStyle(fontSize: 14, color: p.text),
+              decoration: InputDecoration(
+                hintText: '搜索作品 ID',
+                hintStyle: TextStyle(fontSize: 14, color: p.dim),
+                border: InputBorder.none,
+                isDense: true,
+              ),
+              onChanged: (_) => setState(() {
+                _visibleCount = _batchSize;
+              }),
+            ),
+          ),
+          if (_search.text.isNotEmpty)
+            GestureDetector(
+              onTap: () {
+                _search.clear();
+                setState(() {
+                  _visibleCount = _batchSize;
+                });
+              },
+              child: Container(
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                  color: p.surface3,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.close, size: 13, color: Colors.white70),
               ),
             ),
         ],

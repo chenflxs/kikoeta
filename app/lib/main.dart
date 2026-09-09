@@ -58,6 +58,11 @@ Future<void> main() async {
   }
   MediaKit.ensureInitialized();
   await AppPlayer.instance.setMediaCacheLimitMb(appState.mediaCacheLimitMb);
+  // 在首次加载媒体前配置 Android 音频后端与输出缓冲，降低 UI 交互/后台
+  // 调度波动引发的环境声变淡和爆音。
+  if (!kIsWeb && Platform.isAndroid) {
+    await AppPlayer.instance.configureAndroidAudioStability();
+  }
   // Jetpack Media3：锁屏/通知媒体控制（桥接到 mpv；service 在首次播放时才启动）
   // 注意：必须放在 MediaKit.ensureInitialized() 之后（AppPlayer 依赖 media_kit）
   if (!kIsWeb && Platform.isAndroid) {

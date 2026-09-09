@@ -45,6 +45,7 @@ class _PlayerPageState extends State<PlayerPage> {
   bool _lyricAutoFollow = true;
   bool _lyricProgrammatic = false;
   bool _lyricNeedsLayoutSync = true;
+  bool _lyricSyncQueued = false;
   int _lyricScrollToken = 0;
   int _lastAutoIdx = -1;
   int _lrcOffsetMs = 0; // 字幕偏移（毫秒，正数表示歌词提前显示）
@@ -185,11 +186,13 @@ class _PlayerPageState extends State<PlayerPage> {
     if (mounted) {
       setState(() {
         _lyrics.clear();
+        _lyricKeys.clear();
         _lastAutoIdx = -1;
         _lyricNeedsLayoutSync = true;
       });
     } else {
       _lyrics.clear();
+      _lyricKeys.clear();
       _lastAutoIdx = -1;
       _lyricNeedsLayoutSync = true;
     }
@@ -232,6 +235,7 @@ class _PlayerPageState extends State<PlayerPage> {
           _lyrics
             ..clear()
             ..addAll(l);
+          _lyricKeys.clear();
           _lastAutoIdx = -1;
           _lyricNeedsLayoutSync = true;
         });
@@ -670,6 +674,7 @@ class _PlayerPageState extends State<PlayerPage> {
   Widget _portrait() {
     return PageView(
       controller: _pageCtrl,
+      onPageChanged: _onPlayerPageChanged,
       children: [
         Column(
           children: [
@@ -680,6 +685,17 @@ class _PlayerPageState extends State<PlayerPage> {
         _lyricsPanel(showTopBar: true),
       ],
     );
+  }
+
+  void _onPlayerPageChanged(int page) {
+    if (page != 1) return;
+    // PageView 保留歌词页的 ScrollPosition。重新进入时必须以当前播放行
+    // 为准，不能把上次离开时的 offset 当成已经完成的自动定位。
+    _lyricAutoFollow = true;
+    _lyricFollowTimer?.cancel();
+    _lastAutoIdx = -1;
+    _lyricNeedsLayoutSync = true;
+    _queueLyricLayoutSync();
   }
 
   // ---------- 横屏：左封面上 + 下控件，右歌词 ----------
@@ -1205,20 +1221,7 @@ class _PlayerPageState extends State<PlayerPage> {
                     _lyricPanelWidth = c.maxWidth;
                     final h = c.maxHeight;
                     _lyricViewportHeight = h * 0.6;
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (!mounted ||
-                          !_lyricAutoFollow ||
-                          !_lyricScroll.hasClients ||
-                          _lyrics.isEmpty ||
-                          !_lyricNeedsLayoutSync) {
-                        return;
-                      }
-                      // 刷新或字号/翻译变化后，旧的 offset 可能已失准；
-                      // 在对应的新布局完成后重新校准到中心。
-                      _lyricNeedsLayoutSync = false;
-                      _lastAutoIdx = _currentLyricIdx();
-                      _scrollLyricTo(_lastAutoIdx, animated: false);
-                    });
+                    _queueLyricLayoutSync();
                     return Stack(
                       children: [
                         // 歌词仅在垂直居中的 60% 面积内展示（上下各 20% 留白）
@@ -1242,8 +1245,14 @@ class _PlayerPageState extends State<PlayerPage> {
                             ).createShader(bounds),
                             child: NotificationListener<ScrollNotification>(
                               onNotification: (n) {
-                                if (n is UserScrollNotification &&
-                                    n.direction != ScrollDirection.idle) {
+                                // 用户在自动滚动过程中接管列表时，先到达的
+                                // ScrollStartNotification 仍需取消自动跟随。
+                                if (n is ScrollStartNotification &&
+                                    n.dragDetails != null) {
+                                  _onLyricUserScroll();
+                                } else if (n is UserScrollNotification &&
+                                    n.direction != ScrollDirection.idle &&
+                                    !_lyricProgrammatic) {
                                   _onLyricUserScroll();
                                 }
                                 return false;
@@ -1758,6 +1767,7 @@ class _PlayerPageState extends State<PlayerPage> {
       _lyrics
         ..clear()
         ..addAll(l);
+      _lyricKeys.clear();
       _lyricSourceName = pick?.title;
       _lastAutoIdx = -1;
       _lyricNeedsLayoutSync = true;
@@ -1792,6 +1802,7 @@ class _PlayerPageState extends State<PlayerPage> {
         _lyrics
           ..clear()
           ..addAll(l);
+        _lyricKeys.clear();
         _lyricSourceName = f.name;
         _lastAutoIdx = -1;
         _lyricNeedsLayoutSync = true;
@@ -1845,6 +1856,7 @@ class _PlayerPageState extends State<PlayerPage> {
       _lyrics
         ..clear()
         ..addAll(l);
+      _lyricKeys.clear();
       _lyricSourceName = selected.relativePath;
       _lastAutoIdx = -1;
       _lyricNeedsLayoutSync = true;
@@ -1867,6 +1879,35 @@ class _PlayerPageState extends State<PlayerPage> {
     return 0;
   }
 
+  void _queueLyricLayoutSync([int attempt = 0]) {
+    if (!_lyricNeedsLayoutSync ||
+        !_lyricAutoFollow ||
+        _lyrics.isEmpty ||
+        _lyricSyncQueued) {
+      return;
+    }
+    _lyricSyncQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _lyricSyncQueued = false;
+      if (!mounted ||
+          !_lyricAutoFollow ||
+          _lyrics.isEmpty ||
+          !_lyricNeedsLayoutSync) {
+        return;
+      }
+      // 页面刚从 PageView 的非当前页切入时，ListView 可能还没有 attach。
+      // 多等几帧，避免把“没有 client”误判成已经完成定位。
+      if (!_lyricScroll.hasClients) {
+        if (attempt < 4) _queueLyricLayoutSync(attempt + 1);
+        return;
+      }
+      _lyricNeedsLayoutSync = false;
+      final idx = _currentLyricIdx();
+      _lastAutoIdx = idx;
+      _scrollLyricTo(idx, animated: false);
+    });
+  }
+
   /// 播放位置变化时：若处于自动跟随状态，把当前行滚到中间
   void _maybeAutoScrollLyric() {
     if (!_lyricAutoFollow || _lyrics.isEmpty || !_lyricScroll.hasClients) {
@@ -1882,7 +1923,29 @@ class _PlayerPageState extends State<PlayerPage> {
   /// 把第 idx 行滚动到列表中间
   void _scrollLyricTo(int idx, {bool animated = true}) {
     if (!_lyricScroll.hasClients || _lyrics.isEmpty) return;
+    idx = idx.clamp(0, _lyrics.length - 1).toInt();
     final token = ++_lyricScrollToken;
+    final target = _lyricScrollTarget(idx);
+    _lyricProgrammatic = true;
+    if (animated) {
+      _lyricScroll
+          .animateTo(
+            target,
+            duration: const Duration(milliseconds: 320),
+            curve: Curves.easeOutCubic,
+          )
+          .whenComplete(() {
+            if (token == _lyricScrollToken) {
+              _settleLyricScroll(idx, token);
+            }
+          });
+    } else {
+      _lyricScroll.jumpTo(target);
+      _settleLyricScroll(idx, token);
+    }
+  }
+
+  double _lyricScrollTarget(int idx) {
     final width = math.max(_lyricPanelWidth, 100.0);
     final viewportHeight = _lyricViewportHeight > 0
         ? _lyricViewportHeight
@@ -1908,21 +1971,32 @@ class _PlayerPageState extends State<PlayerPage> {
           .clamp(0.0, _lyricScroll.position.maxScrollExtent)
           .toDouble();
     }
-    _lyricProgrammatic = true;
-    if (animated) {
-      _lyricScroll
-          .animateTo(
-            target,
-            duration: const Duration(milliseconds: 320),
-            curve: Curves.easeOutCubic,
-          )
-          .whenComplete(() {
-            if (token == _lyricScrollToken) _lyricProgrammatic = false;
-          });
-    } else {
-      _lyricScroll.jumpTo(target);
-      _lyricProgrammatic = false;
-    }
+    return target;
+  }
+
+  void _settleLyricScroll(int idx, int token, [int attempt = 0]) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || token != _lyricScrollToken) return;
+      if (!_lyricScroll.hasClients || _lyrics.isEmpty) {
+        _lyricProgrammatic = false;
+        return;
+      }
+
+      // 第一次跳转时目标行可能还没被 ListView 建出来，只能使用估算位置。
+      // 等它建出来后再用真实 RenderObject 位置校准，避免累计行高误差。
+      final itemContext = _lyricKeys[idx]?.currentContext;
+      if (itemContext != null) {
+        final target = _lyricScrollTarget(idx);
+        if ((target - _lyricScroll.offset).abs() > 0.5) {
+          _lyricScroll.jumpTo(target);
+        }
+      }
+      if (attempt < 2) {
+        _settleLyricScroll(idx, token, attempt + 1);
+      } else {
+        _lyricProgrammatic = false;
+      }
+    });
   }
 
   /// 计算歌词实际排版后的行高，避免按字符数估算造成累计滚动误差。

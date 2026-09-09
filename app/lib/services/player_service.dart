@@ -206,6 +206,30 @@ class AppPlayer {
     }
   }
 
+  /// Android 的音频输出优先使用 AudioTrack，并在不可用时回退到 OpenSL ES。
+  ///
+  /// AudioTrack 由 Android 音频服务直接管理，在前台界面高频重绘、切换后台
+  /// 等调度抖动场景中通常比自动选择的后端更稳定。1 秒缓冲是为音声播放
+  /// 取的保守值：牺牲少量 seek/倍速切换响应，换取不把短暂 underrun 听成
+  /// 环境声缺失或爆音。必须在首次 open 前调用。
+  Future<void> configureAndroidAudioStability() async {
+    if (!Platform.isAndroid) return;
+    final platform = player.platform;
+    if (platform is! NativePlayer) return;
+    const options = <String, String>{
+      // 列表中前一个后端不可用时，mpv 会继续尝试后面的后端。
+      'ao': 'audiotrack,opensles',
+      'audio-buffer': '1.0',
+    };
+    for (final entry in options.entries) {
+      try {
+        await platform.setProperty(entry.key, entry.value);
+      } catch (_) {
+        // 不同 media_kit/libmpv 构建支持的后端不同，保持原后端可用。
+      }
+    }
+  }
+
   /// 应用退出时释放（平时播放器常驻，不随页面销毁）
   void dispose() {
     for (final s in _subs) {
