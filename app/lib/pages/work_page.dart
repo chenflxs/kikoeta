@@ -14,6 +14,7 @@ import '../src/rust/api/textcodec.dart';
 import '../src/rust/api/translate.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import 'dictation_translation_page.dart';
 
 class WorkPage extends StatefulWidget {
   final AppState app;
@@ -593,6 +594,31 @@ class _WorkPageState extends State<WorkPage> {
         return;
       case 'refresh':
         await _refreshWork();
+        return;
+      case 'dictationTranslation':
+        final tree = _tree;
+        if (tree == null) {
+          _toast(_tracksFailed ? '曲目加载失败，请刷新后重试' : '曲目列表加载中，请稍候');
+          return;
+        }
+        final tracks = _collectAudio(tree)
+            .where(
+              (track) =>
+                  (track.downloadUrl?.isNotEmpty ?? false) ||
+                  (track.url?.isNotEmpty ?? false),
+            )
+            .toList();
+        if (tracks.isEmpty) {
+          _toast('没有可提交给 kt 的音频文件');
+          return;
+        }
+        if (!mounted) return;
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) =>
+                DictationTranslationPage(app: app, work: work, tracks: tracks),
+          ),
+        );
         return;
       case 'asmr':
         await _openExternalWork('https://asmr.one/work/${work.rj}');
@@ -1184,6 +1210,10 @@ class _WorkPageState extends State<WorkPage> {
               const PopupMenuItem(
                 value: 'refresh',
                 child: _WorkMenuEntry(icon: Icons.refresh, label: '刷新'),
+              ),
+              const PopupMenuItem(
+                value: 'dictationTranslation',
+                child: _WorkMenuEntry(icon: Icons.graphic_eq, label: '听写翻译'),
               ),
               const PopupMenuItem(
                 value: 'asmr',

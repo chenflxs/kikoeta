@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart' hide Track;
@@ -672,18 +673,21 @@ class _PlayerPageState extends State<PlayerPage> {
 
   // ---------- 竖屏：左滑进歌词页，右滑回封面页 ----------
   Widget _portrait() {
-    return PageView(
-      controller: _pageCtrl,
-      onPageChanged: _onPlayerPageChanged,
-      children: [
-        Column(
-          children: [
-            _topBar(showControls: false),
-            Expanded(child: _coverBody(alignLeft: false)),
-          ],
-        ),
-        _lyricsPanel(showTopBar: true),
-      ],
+    return ScrollConfiguration(
+      behavior: const _PlayerPageScrollBehavior(),
+      child: PageView(
+        controller: _pageCtrl,
+        onPageChanged: _onPlayerPageChanged,
+        children: [
+          Column(
+            children: [
+              _topBar(showControls: false),
+              Expanded(child: _coverBody(alignLeft: false)),
+            ],
+          ),
+          _lyricsPanel(showTopBar: true),
+        ],
+      ),
     );
   }
 
@@ -2061,4 +2065,16 @@ class _PlayerPageState extends State<PlayerPage> {
         ),
       );
   }
+}
+
+class _PlayerPageScrollBehavior extends MaterialScrollBehavior {
+  const _PlayerPageScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => const {
+    PointerDeviceKind.touch,
+    PointerDeviceKind.mouse,
+    PointerDeviceKind.stylus,
+    PointerDeviceKind.trackpad,
+  };
 }

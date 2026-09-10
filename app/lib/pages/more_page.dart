@@ -6,6 +6,7 @@ import 'playlists_page.dart';
 import 'blacklist_page.dart';
 import 'downloads_page.dart';
 import 'lyrics_library_page.dart';
+import 'dictation_translation_page.dart';
 import '../routes.dart';
 import '../services/api_service.dart';
 import '../theme.dart';
@@ -172,11 +173,13 @@ class _MorePageState extends State<MorePage> {
               ),
               _row(
                 context,
-                Icons.translate_outlined,
-                '翻译',
+                Icons.graphic_eq,
+                '听写翻译',
                 null,
                 onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const TranslationPage()),
+                  MaterialPageRoute(
+                    builder: (_) => DictationTranslationPage(app: app),
+                  ),
                 ),
               ),
               _row(
@@ -255,18 +258,6 @@ class _MorePageState extends State<MorePage> {
           ],
         ),
       ),
-    );
-  }
-}
-
-class TranslationPage extends StatelessWidget {
-  const TranslationPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('翻译'), leading: const BackButton()),
-      body: const Center(child: Text('功能构建中')),
     );
   }
 }
