@@ -205,6 +205,7 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
       );
       if (kind == null) return;
       final paths = <String>[];
+      final sourceNames = <String, String>{};
       if (kind == 'zip') {
         final result = await FilePicker.pickFiles(
           allowMultiple: true,
@@ -212,10 +213,12 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
           allowedExtensions: ['zip'],
           dialogTitle: '选择 ZIP 文件',
         );
-        paths.addAll(
-          result?.files.map((file) => file.path).whereType<String>().toList() ??
-              const <String>[],
-        );
+        for (final file in result?.files ?? const <PlatformFile>[]) {
+          final path = file.path;
+          if (path == null) continue;
+          paths.add(path);
+          sourceNames[path] = file.name;
+        }
       } else {
         final dir = await FilePicker.getDirectoryPath(dialogTitle: '选择歌词文件夹');
         if (dir != null) paths.add(dir);
@@ -253,7 +256,11 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
       );
       List<String> conflicts;
       try {
-        conflicts = await _service.findConflicts(paths);
+        conflicts = await _service.findConflicts(
+          paths,
+          sourceNames: sourceNames,
+          onProgress: (value) => scanProgress.value = value,
+        );
       } finally {
         if (mounted) Navigator.of(context, rootNavigator: true).pop();
         scanProgress.dispose();
@@ -301,6 +308,7 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
       try {
         await _service.importPaths(
           paths,
+          sourceNames: sourceNames,
           conflict: conflict,
           onProgress: (value) => progress.value = value,
         );
@@ -489,20 +497,29 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
             icon: Icon(_selecting ? Icons.close : Icons.checklist_outlined),
             onPressed: _toggleSelecting,
           ),
-          GestureDetector(
-            onLongPress: _loading || _importing || _deleting
-                ? null
-                : _deepRefresh,
-            child: IconButton(
-              onPressed: _loading || _importing || _deleting ? null : _refresh,
-              icon: _loading
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.refresh),
-              tooltip: '刷新',
+          Semantics(
+            button: true,
+            label: '刷新歌词库',
+            hint: '长按执行深度刷新',
+            child: InkResponse(
+              onTap: _loading || _importing || _deleting ? null : _refresh,
+              onLongPress: _loading || _importing || _deleting
+                  ? null
+                  : _deepRefresh,
+              radius: 24,
+              child: SizedBox(
+                width: 48,
+                height: 48,
+                child: Center(
+                  child: _loading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh),
+                ),
+              ),
             ),
           ),
           IconButton(

@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:archive/archive.dart';
+import 'package:flutter/foundation.dart';
 
 import '../data.dart';
 import 'api_service.dart';
@@ -75,6 +77,8 @@ class LyricsTranslationInput {
 
 enum LyricsImportConflict { skip, overwrite, cancel }
 
+enum LyricsLibraryStatus { none, local, ai }
+
 class LyricsImportProgress {
   final String phase;
   final int current;
@@ -104,6 +108,22 @@ class _ArchiveBudget {
   }
 }
 
+/// ZIP 中央目录里保存的原始文件名。ZIP 规范只有在 bit 11 置位时才保证
+/// 文件名为 UTF-8；不少旧的日系/中文资源包会直接写入 GBK 或 Shift_JIS。
+class _ZipEntryName {
+  final List<int> bytes;
+  final bool isUtf8;
+
+  const _ZipEntryName(this.bytes, this.isUtf8);
+}
+
+class _ZipCentralDirectory {
+  final int offset;
+  final int size;
+
+  const _ZipCentralDirectory(this.offset, this.size);
+}
+
 /// 本地歌词库。文件系统负责内容，SettingsStore 只保存作品目录索引。
 class LyricsLibraryService {
   LyricsLibraryService._();
@@ -122,9 +142,17 @@ class LyricsLibraryService {
     r'^(?:RJ|VJ|BJ)\d+$',
     caseSensitive: false,
   );
+  // Android/Linux 的单个文件名最多 255 字节。使用更保守的长度，给
+  // 其它文件系统和后续生成的路径保留空间。
+  static const _maxPathPartBytes = 120;
 
   List<LyricsLibraryRecord> _records = [];
   bool _loaded = false;
+  final ValueNotifier<int> _revision = ValueNotifier(0);
+
+  ValueListenable<int> get revision => _revision;
+
+  void _notifyChanged() => _revision.value++;
 
   Future<String> get root async {
     // Windows 便携版的歌词库与 kikoeta.exe 同级，避免落到 kikoeta_data。
@@ -212,6 +240,7 @@ class LyricsLibraryService {
     }
     _records.removeWhere((r) => workIds.contains(r.workId));
     await _save();
+    _notifyChanged();
   }
 
   Future<List<LyricsLibraryRecord>> refresh({bool deep = false}) async {
@@ -224,7 +253,10 @@ class LyricsLibraryService {
         '${record.workId}\u0000${record.relativePath}': record.isAi,
     };
     if (await base.exists()) {
-      if (deep) await _pruneInvalidRootDirectories(base);
+      if (deep) {
+        await _pruneInvalidRootDirectories(base);
+        await _repairLegacyZipEntryNames(base);
+      }
 
       // 正常刷新只检查歌词库的顶层作品目录。导入流程会把作品目录放在
       // 这里，因此无需为发现变化而递归读取每个歌词文件。保留已建立的
@@ -246,9 +278,8 @@ class LyricsLibraryService {
         final rel = _relative(base.path, entity.path);
         if (!discoveredPaths.add(rel)) continue;
         final parts = rel.split('/');
-        final idPart = parts.where(_isWorkId).toList();
-        if (idPart.isEmpty || idPart.last != parts.last) continue;
-        final workId = idPart.last.toUpperCase();
+        final workId = _workIdFromName(parts.last);
+        if (workId == null) continue;
         if (deep && !(await _containsSupportedFile(entity))) {
           try {
             await entity.delete(recursive: true);
@@ -266,18 +297,79 @@ class LyricsLibraryService {
     }
     _records = discovered;
     await _save();
+    _notifyChanged();
     return records();
   }
 
   Future<void> _pruneInvalidRootDirectories(Directory base) async {
     await for (final entity in base.list(followLinks: false)) {
+      // 歌词库根目录只允许作品目录。旧版处理大型前置包时曾把内嵌 ZIP
+      // 直接写成无扩展名文件；深度刷新时一并清理这些无效残留。
+      if (entity is File) {
+        try {
+          await entity.delete();
+        } catch (_) {
+          // 正在被外部程序占用时保留，下一次深度刷新再处理。
+        }
+        continue;
+      }
       if (entity is! Directory) continue;
       final name = entity.path.split(Platform.pathSeparator).last;
-      if (_isWorkId(name)) continue;
+      if (_workIdFromName(name) != null) continue;
       try {
         await entity.delete(recursive: true);
       } catch (_) {
         // 单个旧目录无权限或正在使用时，继续处理其它目录。
+      }
+    }
+  }
+
+  /// 兼容修复旧版本已导入的乱码名称。旧 archive 解码器会把 ZIP 原始
+  /// 字节逐个映射为 Unicode；只对这种“全部落在单字节区间且含多个高位
+  /// 字节”的名称尝试恢复，并且仅在结果含中日韩文字时才改名，避免碰到
+  /// 用户原本的西文文件名。该操作只在用户主动选择深度刷新时执行。
+  Future<void> _repairLegacyZipEntryNames(Directory base) async {
+    final entities = <FileSystemEntity>[];
+    await for (final entity in base.list(recursive: true, followLinks: false)) {
+      if (entity is File || entity is Directory) entities.add(entity);
+    }
+    final namesByWorkRoot = <String, List<_ZipEntryName>>{};
+    for (final entity in entities) {
+      final rel = _relative(base.path, entity.path);
+      final workRoot = rel.split('/').first;
+      final bytes = entity.path.split(Platform.pathSeparator).last.codeUnits;
+      // 已经正确的中日韩名称包含大于 255 的 Unicode 码位，不能混入
+      // “原始 ZIP 字节”样本，否则会污染旧乱码的编码判定。
+      if (bytes.any((byte) => byte > 0xff) ||
+          bytes.where((byte) => byte >= 0x80).length < 2) {
+        continue;
+      }
+      (namesByWorkRoot[workRoot] ??= []).add(
+        _ZipEntryName(bytes, false),
+      );
+    }
+    final encodings = {
+      for (final entry in namesByWorkRoot.entries)
+        entry.key: _detectZipEntryEncoding(entry.value),
+    };
+    // 先处理最深层节点，随后改父目录名，不会让尚未处理的子路径失效。
+    entities.sort((a, b) => b.path.length.compareTo(a.path.length));
+    for (final entity in entities) {
+      final original = entity.path.split(Platform.pathSeparator).last;
+      final workRoot = _relative(base.path, entity.path).split('/').first;
+      final repaired = _decodeLegacyZipNameWithEncoding(
+        original,
+        encoding: encodings[workRoot],
+      );
+      if (repaired == null || repaired == original) continue;
+      final target = _join(entity.parent.path, repaired);
+      if (await File(target).exists() || await Directory(target).exists()) {
+        continue;
+      }
+      try {
+        await entity.rename(target);
+      } catch (_) {
+        // 可能遇到被播放器占用的歌词；跳过后继续处理其它文件。
       }
     }
   }
@@ -351,6 +443,18 @@ class LyricsLibraryService {
 
   Future<List<LyricsLibraryEntry>> listEntries({required String workId}) =>
       listFiles(workId: workId);
+
+  /// 返回作品在歌词库中的来源类型。索引只在导入/删除时更新，因此无需在
+  /// 首页卡片构建时扫描每个作品目录。
+  Future<LyricsLibraryStatus> statusForWork(String workId) async {
+    await _load();
+    final id = workId.toUpperCase();
+    final records = _records.where((record) => record.workId == id);
+    if (records.any((record) => record.isAi)) return LyricsLibraryStatus.ai;
+    return records.isEmpty
+        ? LyricsLibraryStatus.none
+        : LyricsLibraryStatus.local;
+  }
 
   Future<List<LyricsLibraryFile>> matchingFiles({
     required String workId,
@@ -442,6 +546,7 @@ class LyricsLibraryService {
       _records.add(record);
     }
     await _save();
+    _notifyChanged();
     return record;
   }
 
@@ -457,10 +562,11 @@ class LyricsLibraryService {
         .split(Platform.pathSeparator)
         .where((e) => e.isNotEmpty)
         .last;
-    if (_isWorkId(sourceName)) {
+    final sourceWorkId = _workIdFromName(sourceName);
+    if (sourceWorkId != null) {
       await _copyTree(
         sourceDir,
-        Directory(_join(base, _normalizedFolderName(sourceName))),
+        Directory(_join(base, sourceWorkId)),
         conflict,
         onProgress: onProgress,
       );
@@ -484,10 +590,11 @@ class LyricsLibraryService {
     await for (final entity in source.list(followLinks: false)) {
       if (entity is! Directory) continue;
       final name = entity.path.split(Platform.pathSeparator).last;
-      if (_isWorkId(name)) {
+      final workId = _workIdFromName(name);
+      if (workId != null) {
         await _copyTree(
           entity,
-          Directory(_join(target.path, _normalizedFolderName(name))),
+          Directory(_join(target.path, workId)),
           conflict,
           onProgress: onProgress,
         );
@@ -500,13 +607,19 @@ class LyricsLibraryService {
   /// 批量导入文件夹与 ZIP，供桌面端自定义选择器或未来平台 UI 使用。
   Future<void> importPaths(
     List<String> paths, {
+    Map<String, String> sourceNames = const {},
     LyricsImportConflict conflict = LyricsImportConflict.skip,
     void Function(LyricsImportProgress progress)? onProgress,
   }) async {
     for (final path in paths) {
       final ext = _extension(path);
       if (ext == '.zip') {
-        await importZip(path, conflict: conflict, onProgress: onProgress);
+        await importZip(
+          path,
+          sourceName: sourceNames[path],
+          conflict: conflict,
+          onProgress: onProgress,
+        );
       } else if (Directory(path).existsSync()) {
         await importDirectory(path, conflict: conflict, onProgress: onProgress);
       }
@@ -516,7 +629,11 @@ class LyricsLibraryService {
 
   /// 返回即将写入且已存在的目标文件路径。仅用于导入前询问冲突策略，
   /// 不会修改文件系统。
-  Future<List<String>> findConflicts(List<String> paths) async {
+  Future<List<String>> findConflicts(
+    List<String> paths, {
+    Map<String, String> sourceNames = const {},
+    void Function(LyricsImportProgress progress)? onProgress,
+  }) async {
     final base = await root;
     final conflicts = <String>[];
     for (final source in paths) {
@@ -530,13 +647,19 @@ class LyricsLibraryService {
           final input = InputFileStream(source);
           try {
             final archive = ZipDecoder().decodeStream(input);
+            await _repairZipEntryNamesFromFile(archive, source);
+            final workIds = _archiveWorkIdsWithFallback(
+              archive,
+              sourceNames[source] ?? source,
+            );
             await _collectArchiveConflicts(
               archive,
               base,
               conflicts,
               0,
-              workIds: _archiveWorkIds(archive),
+              workIds: workIds,
               budget: _ArchiveBudget(),
+              onProgress: onProgress,
             );
           } finally {
             input.closeSync();
@@ -558,7 +681,8 @@ class LyricsLibraryService {
         .split(Platform.pathSeparator)
         .where((e) => e.isNotEmpty)
         .last;
-    if (_isWorkId(name)) {
+    final workId = _workIdFromName(name);
+    if (workId != null) {
       await for (final item in source.list(
         recursive: true,
         followLinks: false,
@@ -569,9 +693,7 @@ class LyricsLibraryService {
             .substring(source.path.length)
             .replaceAll('\\', '/')
             .replaceFirst(RegExp(r'^/'), '');
-        final target = File(
-          _join(base, '${_normalizedFolderName(name)}/$relative'),
-        );
+        final target = File(_join(base, '$workId/$relative'));
         if (await target.exists()) conflicts.add(_relative(base, target.path));
       }
       return;
@@ -590,27 +712,42 @@ class LyricsLibraryService {
     int depth, {
     Set<String> workIds = const {},
     _ArchiveBudget? budget,
+    void Function(LyricsImportProgress progress)? onProgress,
   }) async {
     final activeBudget = budget ?? _ArchiveBudget();
     if (depth > 8) return;
+    var index = 0;
     for (final entry in archive) {
+      index++;
+      // 只展示最外层条目进度。内嵌作品包很小，若用它们的条目数重置
+      // 进度条，会让数千包导入看起来像在反复倒退。
+      if (depth == 0) {
+        onProgress?.call(
+          LyricsImportProgress(
+            phase: '正在检查文件冲突',
+            current: index,
+            total: archive.length,
+            currentPath: entry.name,
+          ),
+        );
+      }
       if (!activeBudget.accept(entry)) return;
       var clean = _safeArchivePath(entry.name);
       if (clean == null || clean.isEmpty || _ignored(clean)) continue;
       if (_extension(clean) == '.zip' && entry.isFile) {
         try {
-          final nested = ZipDecoder().decodeBytes(entry.content as List<int>);
-          final nestedId = _workIdFromName(_fileStem(clean));
+          final nested = _decodeZipBytes(entry.content as List<int>);
+          final nestedWorkIds = _nestedArchiveWorkIds(nested, clean, workIds);
           await _collectArchiveConflicts(
             nested,
-            _join(base, _parent(clean)),
+            // 前置包常用一个无作品号的总目录包住数千个 RJ/BJ 子 ZIP。
+            // 子包的文件名或内容已能确定作品号，不能把总目录带入歌词库。
+            base,
             conflicts,
             depth + 1,
             budget: activeBudget,
-            workIds: {
-              ..._archiveWorkIds(nested),
-              if (nestedId != null) nestedId,
-            },
+            workIds: nestedWorkIds,
+            onProgress: onProgress,
           );
           entry.clear();
         } catch (_) {}
@@ -625,6 +762,7 @@ class LyricsLibraryService {
 
   Future<void> importZip(
     String source, {
+    String? sourceName,
     LyricsImportConflict conflict = LyricsImportConflict.skip,
     void Function(LyricsImportProgress progress)? onProgress,
   }) async {
@@ -632,12 +770,17 @@ class LyricsLibraryService {
     final input = InputFileStream(source);
     try {
       final archive = ZipDecoder().decodeStream(input);
+      await _repairZipEntryNamesFromFile(archive, source);
+      final workIds = _archiveWorkIdsWithFallback(
+        archive,
+        sourceName ?? source,
+      );
       await _extractArchive(
         archive,
         base,
         conflict,
         0,
-        workIds: _archiveWorkIds(archive),
+        workIds: workIds,
         budget: _ArchiveBudget(),
         onProgress: onProgress,
       );
@@ -661,14 +804,16 @@ class LyricsLibraryService {
     var index = 0;
     for (final entry in archive) {
       index++;
-      onProgress?.call(
-        LyricsImportProgress(
-          phase: '正在解压',
-          current: index,
-          total: archive.length,
-          currentPath: entry.name,
-        ),
-      );
+      if (depth == 0) {
+        onProgress?.call(
+          LyricsImportProgress(
+            phase: '正在解压',
+            current: index,
+            total: archive.length,
+            currentPath: entry.name,
+          ),
+        );
+      }
       if (!activeBudget.accept(entry)) return;
       var clean = _safeArchivePath(entry.name);
       if (clean == null || clean.isEmpty || _ignored(clean)) continue;
@@ -676,21 +821,22 @@ class LyricsLibraryService {
         final nested = _extension(clean) == '.zip';
         if (nested) {
           try {
-            final nestedArchive = ZipDecoder().decodeBytes(
-              entry.content as List<int>,
+            final nestedArchive = _decodeZipBytes(entry.content as List<int>);
+            final nestedWorkIds = _nestedArchiveWorkIds(
+              nestedArchive,
+              clean,
+              workIds,
             );
             await _extractArchive(
               nestedArchive,
-              _join(base, _parent(clean)),
+              // 与冲突检测一致，内嵌作品包直接写入歌词库根目录，由
+              // _archiveOutputPath 统一添加 RJ/VJ/BJ 作品目录。
+              base,
               conflict,
               depth + 1,
               budget: activeBudget,
               onProgress: onProgress,
-              workIds: {
-                ..._archiveWorkIds(nestedArchive),
-                if (_workIdFromName(_fileStem(clean)) != null)
-                  _workIdFromName(_fileStem(clean))!,
-              },
+              workIds: nestedWorkIds,
             );
           } catch (_) {}
           continue;
@@ -719,8 +865,8 @@ class LyricsLibraryService {
       recursive: false,
       followLinks: false,
     )) {
-      final name = _normalizedFolderName(
-        entity.path.split(Platform.pathSeparator).last,
+      final name = _shortenPathPart(
+        _normalizedFolderName(entity.path.split(Platform.pathSeparator).last),
       );
       final dst = FileSystemEntity.isDirectorySync(entity.path)
           ? Directory(_join(target.path, name))
@@ -791,7 +937,8 @@ class LyricsLibraryService {
 
   static String? _workIdFromName(String name) {
     final match = RegExp(
-      r'^([A-Za-z]+\d+)(?:\s+.*|[-_].*)?$',
+      r'(?:^|[^A-Za-z0-9])((?:RJ|VJ|BJ)\d+)(?!\d)',
+      caseSensitive: false,
     ).firstMatch(name.trim());
     if (match == null) return null;
     final candidate = match.group(1)!.toUpperCase();
@@ -807,6 +954,269 @@ class LyricsLibraryService {
     return _workIdFromName(name) ?? name;
   }
 
+  /// 将超长的目录或文件名缩短为“前缀-哈希.扩展名”。
+  ///
+  /// ZIP 中的歌词标题可能包含完整的演出说明，单个名称会超过 Android
+  /// 文件系统的 255 字节限制。哈希避免截断后同名前缀的文件相互覆盖，
+  /// 并保留常见歌词扩展名，使后续格式识别保持不变。
+  static String _shortenPathPart(String value) {
+    final bytes = utf8.encode(value);
+    if (bytes.length <= _maxPathPartBytes) return value;
+
+    final dot = value.lastIndexOf('.');
+    var extension = dot > 0 ? value.substring(dot) : '';
+    // 目录名里的点，或异常长的“扩展名”，不值得占用缩短后的名称空间。
+    if (utf8.encode(extension).length > 24) extension = '';
+
+    final hash = _pathHash(value);
+    final suffix = '-$hash$extension';
+    final prefixBudget = _maxPathPartBytes - utf8.encode(suffix).length;
+    final prefix = StringBuffer();
+    var usedBytes = 0;
+    for (final rune in value.runes) {
+      final char = String.fromCharCode(rune);
+      final charBytes = utf8.encode(char).length;
+      if (usedBytes + charBytes > prefixBudget) break;
+      prefix.write(char);
+      usedBytes += charBytes;
+    }
+    return '${prefix.toString()}$suffix';
+  }
+
+  static String _pathHash(String value) {
+    // FNV-1a 的 32 位实现足以区分导入包内同前缀的超长文件名，且无需
+    // 额外引入加密依赖。
+    var hash = 0x811c9dc5;
+    for (final byte in utf8.encode(value)) {
+      hash ^= byte;
+      hash = (hash * 0x01000193) & 0xffffffff;
+    }
+    return hash.toRadixString(16).padLeft(8, '0');
+  }
+
+  /// archive 包目前会把未标记为 UTF-8 的 ZIP 文件名按单字节字符直接
+  /// 转成 String。这里从中央目录取回原始字节，交给已有的编码探测器
+  /// 解码，再将修复后的名称写回条目。文件内容仍完全由 archive 包解压。
+  static Future<void> _repairZipEntryNamesFromFile(
+    Archive archive,
+    String source,
+  ) async {
+    final names = await _readZipEntryNamesFromFile(source);
+    _repairZipEntryNames(archive, names);
+  }
+
+  static Archive _decodeZipBytes(List<int> bytes) {
+    final archive = ZipDecoder().decodeBytes(bytes);
+    _repairZipEntryNames(archive, _readZipEntryNames(bytes));
+    return archive;
+  }
+
+  static void _repairZipEntryNames(
+    Archive archive,
+    List<_ZipEntryName> rawNames,
+  ) {
+    if (rawNames.isEmpty || archive.isEmpty) return;
+
+    // 单个短曲名常被编码探测器误判（例如 Shift_JIS 被猜成 GBK）。同一
+    // ZIP 通常使用统一代码页，因此先以整包文件名样本做一次判定。
+    final archiveEncoding = _detectZipEntryEncoding(rawNames);
+
+    // archive 包会将无效 UTF-8 回退成 String.fromCharCodes；以同样规则
+    // 建索引，避免目录中混有 UTF-8 与本地编码条目时错配名称。
+    final pending = <String, List<_ZipEntryName>>{};
+    for (final raw in rawNames) {
+      (pending[_archivePackageName(raw.bytes)] ??= []).add(raw);
+    }
+    for (var index = 0; index < archive.length; index++) {
+      final entry = archive[index];
+      final candidates = pending[entry.name];
+      if (candidates == null || candidates.isEmpty) continue;
+      final raw = candidates.removeAt(0);
+      if (raw.isUtf8) continue;
+      try {
+        final name = apiDecodeText(
+          bytes: raw.bytes,
+          encoding: archiveEncoding ?? '',
+        ).text;
+        if (name.isEmpty || name == entry.name || name.contains('\u0000')) {
+          continue;
+        }
+        // 后续只会顺序遍历 Archive；直接改名可避免 archive 对同名条目的
+        // 去重索引干扰原始中央目录与条目的对应关系。
+        entry.name = name;
+      } catch (_) {
+        // 个别异常编码保留 archive 的兼容性回退结果，不能中断整个导入。
+      }
+    }
+  }
+
+  static String _archivePackageName(List<int> bytes) {
+    try {
+      return utf8.decode(bytes);
+    } catch (_) {
+      return String.fromCharCodes(bytes);
+    }
+  }
+
+  static String? _decodeLegacyZipNameWithEncoding(
+    String value, {
+    String? encoding,
+  }) {
+    final bytes = value.codeUnits;
+    // String.fromCharCodes 的遗留乱码可无损还原为字节；合法的中日韩
+    // 文件名不满足这个条件，因而不会被误处理。
+    if (bytes.any((byte) => byte > 0xff) ||
+        bytes.where((byte) => byte >= 0x80).length < 2) {
+      return null;
+    }
+    try {
+      final decoded = apiDecodeText(
+        bytes: bytes,
+        encoding: encoding ?? '',
+      ).text;
+      if (!_containsEastAsianText(decoded)) return null;
+      return _shortenPathPart(decoded);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static bool _containsEastAsianText(String value) => RegExp(
+    r'[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]',
+  ).hasMatch(value);
+
+  static String? _detectZipEntryEncoding(List<_ZipEntryName> rawNames) {
+    const maxSampleBytes = 256 * 1024;
+    final sample = <int>[];
+    for (final entry in rawNames) {
+      if (entry.isUtf8 || !entry.bytes.any((byte) => byte >= 0x80)) continue;
+      final remaining = maxSampleBytes - sample.length;
+      if (remaining <= 0) break;
+      sample.addAll(entry.bytes.take(remaining));
+      if (sample.length < maxSampleBytes) sample.add(0x0a);
+    }
+    if (sample.isEmpty) return null;
+    try {
+      final autoEncoding = apiDecodeText(bytes: sample, encoding: '').encoding;
+      // GB18030 可以编码日文，而错误地按 Big5 解码时也往往不会产生替换
+      // 字符，单靠通用探测器仍可能误判。对常见 ZIP 代码页进行一次比较：
+      // 若某个候选明显还原出更多假名，就优先采用它。
+      const candidates = ['gb18030', 'shift_jis', 'euc-jp', 'big5'];
+      String? japaneseEncoding;
+      var bestJapaneseScore = 0;
+      for (final candidate in candidates) {
+        final text = apiDecodeText(bytes: sample, encoding: candidate).text;
+        final score = _japaneseTextScore(text);
+        if (score > bestJapaneseScore) {
+          bestJapaneseScore = score;
+          japaneseEncoding = candidate;
+        }
+      }
+      if (japaneseEncoding != null && bestJapaneseScore >= 20) {
+        return japaneseEncoding;
+      }
+      // 未标记 UTF-8 的条目若真的可按 UTF-8 读取，archive 本来就已经
+      // 正确处理；其余情况回退逐条探测，避免以 UTF-8 强制替换字符。
+      return autoEncoding.toUpperCase() == 'UTF-8' ? null : autoEncoding;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static int _japaneseTextScore(String value) {
+    var score = 0;
+    for (final rune in value.runes) {
+      // 不计入日文标点（例如「・」）。错误的 EUC-JP 解码会产生大量
+      // 该字符，若纳入评分反而会压过正确的 GB18030 结果。
+      if ((rune >= 0x3041 && rune <= 0x3096) ||
+          (rune >= 0x30a1 && rune <= 0x30fa)) {
+        score += 4;
+      } else if (rune == 0xfffd) {
+        score -= 100;
+      }
+    }
+    return score;
+  }
+
+  static Future<List<_ZipEntryName>> _readZipEntryNamesFromFile(
+    String source,
+  ) async {
+    RandomAccessFile? file;
+    try {
+      file = await File(source).open();
+      final length = await file.length();
+      // EOCD 之后最多只有 65535 字节注释和 22 字节固定头。
+      final tailLength = math.min(length, 0xffff + 22).toInt();
+      await file.setPosition(length - tailLength);
+      final tail = await file.read(tailLength);
+      final directory = _zipCentralDirectory(tail);
+      if (directory == null || directory.offset + directory.size > length) {
+        return const [];
+      }
+      await file.setPosition(directory.offset);
+      final data = await file.read(directory.size);
+      if (data.length != directory.size) return const [];
+      return _parseZipEntryNames(data);
+    } catch (_) {
+      return const [];
+    } finally {
+      await file?.close();
+    }
+  }
+
+  static List<_ZipEntryName> _readZipEntryNames(List<int> bytes) {
+    final directory = _zipCentralDirectory(bytes);
+    if (directory == null || directory.offset + directory.size > bytes.length) {
+      return const [];
+    }
+    return _parseZipEntryNames(
+      bytes.sublist(directory.offset, directory.offset + directory.size),
+    );
+  }
+
+  static _ZipCentralDirectory? _zipCentralDirectory(List<int> bytes) {
+    // 从末尾倒找 EOCD，避免注释中恰好出现签名时误判。
+    final first = math.max(0, bytes.length - 0xffff - 22);
+    for (var index = bytes.length - 22; index >= first; index--) {
+      if (_readUint32(bytes, index) != 0x06054b50) continue;
+      final commentLength = _readUint16(bytes, index + 20);
+      if (index + 22 + commentLength > bytes.length) continue;
+      return _ZipCentralDirectory(
+        _readUint32(bytes, index + 16),
+        _readUint32(bytes, index + 12),
+      );
+    }
+    return null;
+  }
+
+  static List<_ZipEntryName> _parseZipEntryNames(List<int> bytes) {
+    final names = <_ZipEntryName>[];
+    var offset = 0;
+    while (offset + 46 <= bytes.length) {
+      if (_readUint32(bytes, offset) != 0x02014b50) break;
+      final flags = _readUint16(bytes, offset + 8);
+      final filenameLength = _readUint16(bytes, offset + 28);
+      final extraLength = _readUint16(bytes, offset + 30);
+      final commentLength = _readUint16(bytes, offset + 32);
+      final end = offset + 46 + filenameLength + extraLength + commentLength;
+      if (end > bytes.length) return const [];
+      names.add(
+        _ZipEntryName(
+          List<int>.from(bytes.sublist(offset + 46, offset + 46 + filenameLength)),
+          (flags & 0x800) != 0,
+        ),
+      );
+      offset = end;
+    }
+    return names;
+  }
+
+  static int _readUint16(List<int> bytes, int offset) =>
+      bytes[offset] | (bytes[offset + 1] << 8);
+
+  static int _readUint32(List<int> bytes, int offset) =>
+      _readUint16(bytes, offset) | (_readUint16(bytes, offset + 2) << 16);
+
   static String? _archiveOutputPath(
     String clean,
     Set<String> workIds, {
@@ -814,10 +1224,16 @@ class LyricsLibraryService {
   }) {
     if (isFile && !_isLyricFile(clean)) return null;
     final parts = clean.split('/');
-    final index = parts.indexWhere(_isWorkId);
+    final index = parts.indexWhere((part) => _workIdFromName(part) != null);
     if (index >= 0) {
+      final workId = _workIdFromName(parts[index])!;
+      // `RJ12345.lrc` 是常见的单文件歌词包结构。它携带作品号，但它
+      // 本身仍是文件而不是作品目录；保留完整文件名并创建作品目录。
+      if (isFile && index == parts.length - 1) {
+        return '$workId/${parts.last}';
+      }
       return [
-        _normalizedFolderName(parts[index]),
+        workId,
         ...parts.skip(index + 1),
       ].join('/');
     }
@@ -836,8 +1252,9 @@ class LyricsLibraryService {
       final clean = _safeArchivePath(entry.name);
       if (clean == null || clean.isEmpty || _ignored(clean)) continue;
       for (final part in clean.split('/')) {
-        if (_isWorkId(part)) {
-          ids.add(_normalizedFolderName(part));
+        final workId = _workIdFromName(part);
+        if (workId != null) {
+          ids.add(workId);
           break;
         }
       }
@@ -845,17 +1262,33 @@ class LyricsLibraryService {
         final fileId = _workIdFromName(_fileStem(clean));
         if (fileId != null) ids.add(fileId);
       }
-      if (entry.isFile && _extension(clean) == '.zip') {
-        try {
-          ids.addAll(
-            _archiveWorkIds(
-              ZipDecoder().decodeBytes(entry.content as List<int>),
-            ),
-          );
-        } catch (_) {}
-      }
+      // 不在这里递归读取内嵌 ZIP。大型前置包可能包含数千个作品包，
+      // 递归预扫描会阻塞 UI，使进度弹窗只能闪现。每个内嵌包在实际
+      // 解压时会按其自身文件名（如 RJ01000571.zip）取得作品号。
     }
     return ids;
+  }
+
+  /// 若包内路径没有作品号，则使用 ZIP 文件名（例如 VJ012072.zip）。
+  /// 许多歌词包只有曲目目录和文件名，旧逻辑会因没有输出目录而静默跳过。
+  static Set<String> _archiveWorkIdsWithFallback(
+    Archive archive,
+    String archivePath,
+  ) {
+    final ids = _archiveWorkIds(archive);
+    if (ids.isNotEmpty) return ids;
+    final workId = _workIdFromName(_fileStem(archivePath));
+    return workId == null ? ids : {workId};
+  }
+
+  /// 内嵌 ZIP 未标注作品号时，沿用外层单一作品号，避免其歌词被跳过。
+  static Set<String> _nestedArchiveWorkIds(
+    Archive archive,
+    String archivePath,
+    Set<String> inheritedWorkIds,
+  ) {
+    final ids = _archiveWorkIdsWithFallback(archive, archivePath);
+    return ids.isEmpty ? inheritedWorkIds : ids;
   }
 
   static String _join(String a, String b) =>
@@ -883,8 +1316,17 @@ class LyricsLibraryService {
       return null;
     final parts = p.split('/');
     if (parts.any((part) => part == '..' || part.isEmpty)) return null;
-    return parts.map(_normalizedFolderName).join('/');
+    return parts
+        .map(_normalizedArchivePathPart)
+        .map(_shortenPathPart)
+        .join('/');
   }
+
+  /// 目录名可以把“RJ12345 作品名”折叠成作品号，但 ZIP 文件名的扩展名
+  /// 是类型判断的一部分。此前对 `RJ12345.zip` 套用目录规则会丢掉
+  /// `.zip`，导致内嵌作品包被当作普通、不可导入文件而跳过。
+  static String _normalizedArchivePathPart(String name) =>
+      _extension(name).isEmpty ? _normalizedFolderName(name) : name;
 
   static bool _isWithin(String path, String parent) {
     final a = File(path).absolute.path.toLowerCase();

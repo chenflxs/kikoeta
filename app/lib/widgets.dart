@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import 'data.dart';
 import 'services/app_paths.dart';
+import 'services/lyrics_library_service.dart';
 import 'services/player_service.dart';
 import 'src/rust/api/kikoeru_api.dart';
 import 'theme.dart';
@@ -288,6 +289,81 @@ class AgeBadge extends StatelessWidget {
   }
 }
 
+class LyricsStatusBadge extends StatefulWidget {
+  final Work work;
+  const LyricsStatusBadge({super.key, required this.work});
+
+  @override
+  State<LyricsStatusBadge> createState() => _LyricsStatusBadgeState();
+}
+
+class _LyricsStatusBadgeState extends State<LyricsStatusBadge> {
+  final _library = LyricsLibraryService.instance;
+  late Future<LyricsLibraryStatus> _status;
+
+  @override
+  void initState() {
+    super.initState();
+    _status = _library.statusForWork(widget.work.rj);
+    _library.revision.addListener(_reload);
+  }
+
+  @override
+  void didUpdateWidget(LyricsStatusBadge oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.work.rj != widget.work.rj) _reload();
+  }
+
+  @override
+  void dispose() {
+    _library.revision.removeListener(_reload);
+    super.dispose();
+  }
+
+  void _reload() {
+    if (!mounted) return;
+    setState(() => _status = _library.statusForWork(widget.work.rj));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = Theme.of(context).brightness == Brightness.dark
+        ? AppColors.dark
+        : AppColors.light;
+    return FutureBuilder<LyricsLibraryStatus>(
+      future: _status,
+      builder: (context, snapshot) {
+        final localStatus = snapshot.data ?? LyricsLibraryStatus.none;
+        final (label, color) = switch (localStatus) {
+          LyricsLibraryStatus.ai => ('AI歌词', p.accent),
+          LyricsLibraryStatus.local => ('本地歌词', p.orange),
+          LyricsLibraryStatus.none when widget.work.hasSubtitle => (
+            '在线歌词',
+            p.green,
+          ),
+          LyricsLibraryStatus.none => ('', Colors.transparent),
+        };
+        if (label.isEmpty) return const SizedBox.shrink();
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: .30),
+            borderRadius: BorderRadius.circular(7),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 9.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class WorkCard extends StatelessWidget {
   final Work work;
   final int index;
@@ -319,9 +395,17 @@ class WorkCard extends StatelessWidget {
           child: CoverArt(
             work: work,
             showBadges: showBadges,
-            child: work.releaseDate.isEmpty
-                ? null
-                : Positioned(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (showBadges)
+                  Positioned(
+                    left: 8,
+                    bottom: 8,
+                    child: LyricsStatusBadge(work: work),
+                  ),
+                if (work.releaseDate.isNotEmpty)
+                  Positioned(
                     right: 8,
                     bottom: 8,
                     child: Container(
@@ -343,6 +427,8 @@ class WorkCard extends StatelessWidget {
                       ),
                     ),
                   ),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 7),
