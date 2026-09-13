@@ -23,13 +23,87 @@ class WorksPage {
   });
 }
 
-/// asmr.one API 客户端（网络层由 Rust 核心执行）
+/// 高级筛选页中的一个参数项。
+class AdvancedFilterEntry {
+  final String id;
+  final String name;
+  final int count;
+
+  const AdvancedFilterEntry({
+    required this.id,
+    required this.name,
+    required this.count,
+  });
+}
+
+/// asmr.one API 客户端（网络请求统一由 Rust 核心执行）。
 class ApiService {
   static String resolveBase(AppState app) {
     if (app.customServer && app.customSites.isNotEmpty) {
       return app.customSites[app.customServerIdx].url;
     }
     return 'https://api.asmr.one';
+  }
+
+  /// 读取高级筛选页的声音、社团或标签列表。
+  ///
+  /// 这三个列表接口是 kikoeru/one 站通用的元数据接口，返回形如
+  /// [{"id": 1, "name": "...", "count": 12}] 的数组。
+  static Future<List<AdvancedFilterEntry>> fetchAdvancedFilterEntries(
+    AppState app,
+    String kind,
+  ) async {
+    const allowed = {'vas', 'circles', 'tags'};
+    if (!allowed.contains(kind)) {
+      throw ArgumentError.value(kind, 'kind', '不支持的高级筛选类型');
+    }
+    final base = resolveBase(app).replaceFirst(RegExp(r'/+$'), '');
+    final uri = Uri.parse('$base/api/$kind/');
+    // 与作品/封面请求一样走 Rust reqwest：它会复用应用代理配置，
+    // 避免 Windows 上 Dart HttpClient 的 TLS 握手失败。
+    final bytes = await apiGetBytes(url: uri.toString());
+    final decoded = jsonDecode(utf8.decode(bytes));
+    final raw = decoded is List
+        ? decoded
+        : decoded is Map
+        ? (decoded['data'] ?? decoded['items'] ?? decoded['results'] ?? const [])
+        : const [];
+    if (raw is! List) throw const FormatException('高级筛选数据格式无效');
+
+    final entries = <AdvancedFilterEntry>[];
+    for (final value in raw) {
+      if (value is! Map) continue;
+      final name = value['name']?.toString().trim() ?? '';
+      if (name.isEmpty) continue;
+      final count = _metadataCount(value);
+      entries.add(
+        AdvancedFilterEntry(
+          id: value['id']?.toString() ?? name,
+          name: name,
+          count: count,
+        ),
+      );
+    }
+    entries.sort((a, b) {
+      final countOrder = b.count.compareTo(a.count);
+      return countOrder != 0 ? countOrder : a.name.compareTo(b.name);
+    });
+    return entries;
+  }
+
+  static int _metadataCount(Map value) {
+    for (final key in const [
+      'count',
+      'works_count',
+      'work_count',
+      'worksCount',
+    ]) {
+      final raw = value[key];
+      if (raw is num) return raw.toInt();
+      final parsed = int.tryParse(raw?.toString() ?? '');
+      if (parsed != null) return parsed;
+    }
+    return 0;
   }
 
   static Future<WorksPage> fetchWorks(
@@ -45,8 +119,10 @@ class ApiService {
         page: page,
         order: orderParam(app),
         sort: app.orderAsc ? 'asc' : 'desc',
-        nsfw: customNsfw(app.ageFilter),
-        lyric: app.subOnly ? 'ai_local' : null,
+        nsfw: customNsfw(app.ageFilters),
+        lyric: app.subtitleFilter == SubtitleFilter.online
+            ? 'ai_local'
+            : null,
         seed: app.category == 'rec' ? app.randomSeed?.toString() : null,
       );
       return parseWorks(json, base: base, perPage: perPage);
@@ -60,7 +136,7 @@ class ApiService {
       return parseWorks(json, base: base, perPage: perPage);
     }
     // asmr.one：年龄筛选改为搜索对应的年龄 tag，由服务端过滤，避免客户端逐页补拉
-    final ageTag = oneAgeTag(app.ageFilter);
+    final ageTag = oneAgeTag(app.ageFilters);
     if (ageTag != null) {
       final json = await apiSearch(
         base: base,
@@ -69,7 +145,7 @@ class ApiService {
         perPage: perPage,
         order: orderParam(app),
         sort: app.orderAsc ? 'asc' : 'desc',
-        subtitle: app.subOnly ? true : null,
+        subtitle: app.subtitleFilter == SubtitleFilter.online ? true : null,
         seed: app.category == 'rec' ? app.randomSeed?.toString() : null,
       );
       return parseWorks(json, base: base, perPage: perPage);
@@ -80,7 +156,7 @@ class ApiService {
       perPage: perPage,
       order: orderParam(app),
       sort: app.orderAsc ? 'asc' : 'desc',
-      subtitle: app.subOnly ? true : null,
+      subtitle: app.subtitleFilter == SubtitleFilter.online ? true : null,
       seed: app.category == 'rec' ? app.randomSeed?.toString() : null,
     );
     return parseWorks(json, base: base, perPage: perPage);
@@ -94,13 +170,13 @@ class ApiService {
     required int perPage,
   }) async {
     final base = resolveBase(app);
-    final keyword = oneAgeTag(app.ageFilter) ?? '';
+    final keyword = oneAgeTag(app.ageFilters) ?? '';
     if (app.category == 'hot') {
       return apiGetRecommenderPopular(
         base: base,
         keyword: keyword,
         page: page,
-        subtitle: app.subOnly,
+        subtitle: app.subtitleFilter == SubtitleFilter.online,
       );
     }
     return apiGetRecommenderRecommend(
@@ -108,7 +184,7 @@ class ApiService {
       recommenderUuid: app.recommenderUuid,
       keyword: keyword,
       page: page,
-      subtitle: app.subOnly,
+      subtitle: app.subtitleFilter == SubtitleFilter.online,
     );
   }
 
@@ -127,13 +203,13 @@ class ApiService {
         page: page,
         order: orderParam(app),
         sort: app.orderAsc ? 'asc' : 'desc',
-        nsfw: customNsfw(app.ageFilter),
+        nsfw: customNsfw(app.ageFilters),
         seed: app.category == 'rec' ? app.randomSeed?.toString() : null,
       );
       return parseWorks(json, base: base, perPage: perPage);
     }
     // asmr.one：把年龄 tag 拼进搜索关键词，由服务端一并 AND 过滤
-    final ageTag = oneAgeTag(app.ageFilter);
+    final ageTag = oneAgeTag(app.ageFilters);
     final q = ageTag == null ? query : '${query.trim()} $ageTag'.trim();
     final json = await apiSearch(
       base: base,
@@ -142,7 +218,7 @@ class ApiService {
       perPage: perPage,
       order: orderParam(app),
       sort: app.orderAsc ? 'asc' : 'desc',
-      subtitle: app.subOnly ? true : null,
+      subtitle: app.subtitleFilter == SubtitleFilter.online ? true : null,
       seed: app.category == 'rec' ? app.randomSeed?.toString() : null,
     );
     return parseWorks(json, base: base, perPage: perPage);
@@ -185,25 +261,50 @@ class ApiService {
     };
   }
 
-  /// kikoeru-express 的 nsfw 参数：1=全年龄 2=仅R18（服务端无 R15 分级，按全年龄处理）
-  static int? customNsfw(int? ageFilter) {
-    return switch (ageFilter) {
-      null => null,
-      0 => 1,
-      1 => 1,
-      2 => 2,
-      _ => null,
-    };
+  /// kikoeru-express 的 nsfw 参数：1=全年龄 2=仅R18（服务端无 R15 分级，按全年龄处理）。
+  static int? customNsfw(Object? ageFilters) {
+    final filters = _normalizeAgeFilters(ageFilters);
+    if (filters.isEmpty || filters.length == 3) return null;
+    if (filters.length == 1) {
+      return filters.single == 2 ? 2 : 1;
+    }
+    // 自建站只支持“全年龄/非全年龄”两档；无法精确表达的组合不加限制。
+    if (filters.contains(2) && !filters.contains(0)) return 2;
+    if (!filters.contains(2)) return 1;
+    return null;
   }
 
-  /// asmr.one 的年龄标签（用作搜索关键词）
-  static String? oneAgeTag(int? ageFilter) {
-    return switch (ageFilter) {
-      0 => r'$age:general$',
-      1 => r'$age:r15$',
-      2 => r'$age:adult$',
-      _ => null,
-    };
+  /// asmr.one 的年龄标签（用作搜索关键词）。
+  ///
+  /// 单选仍使用一个正向标签；多选时使用排除标签，避免把多个年龄标签
+  /// 拼成 AND 条件。空选和全选都表示不过滤年龄。
+  static String? oneAgeTag(Object? ageFilters) {
+    final filters = _normalizeAgeFilters(ageFilters);
+    if (filters.isEmpty || filters.length == 3) return null;
+    if (filters.length == 1) {
+      return switch (filters.single) {
+        0 => r'$age:general$',
+        1 => r'$age:r15$',
+        2 => r'$age:adult$',
+        _ => null,
+      };
+    }
+    if (filters.contains(1) && filters.contains(2)) {
+      return r'$-age:adult$';
+    }
+    if (filters.contains(0) && filters.contains(1)) {
+      return r'$-age:adult$';
+    }
+    if (filters.contains(0) && filters.contains(2)) {
+      return r'$-age:r15$';
+    }
+    return null;
+  }
+
+  static Set<int> _normalizeAgeFilters(Object? value) {
+    if (value is int) return {value};
+    if (value is Iterable) return value.whereType<int>().toSet();
+    return <int>{};
   }
 
   static Future<String> checkHealth(AppState app, String base) async {

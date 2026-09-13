@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../data.dart';
 import '../routes.dart';
 import '../services/api_service.dart';
+import '../services/lyrics_library_service.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import '../sheets.dart';
@@ -30,6 +31,7 @@ class _HomePageState extends State<HomePage> {
   String _searchQuery = '';
   int _searchSeq = 0;
   int _worksGen = 0; // 作品列表代次：切换服务器/筛选后使在途补页失效
+  final Set<String> _localSubtitleWorkIds = <String>{};
   late int _seenEpoch;
   late int _seenHomeRefreshVersion;
 
@@ -46,6 +48,10 @@ class _HomePageState extends State<HomePage> {
     _loadedSig = _filterSig;
     _loadedDataSig = _dataSig;
     app.addListener(_onAppChanged);
+    LyricsLibraryService.instance.revision.addListener(
+      _onSubtitleLibraryChanged,
+    );
+    _loadLocalSubtitleIds();
     // 首帧后再加载，避免 initState 阶段同步 notify 触发 build 期 setState 断言
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadRemote());
   }
@@ -56,11 +62,8 @@ class _HomePageState extends State<HomePage> {
       '${app.remoteError}|${app.worksHasMore}';
 
   void _onAppChanged() {
-    if (app.homeRefreshVersion != _seenHomeRefreshVersion) {
-      _seenHomeRefreshVersion = app.homeRefreshVersion;
-      _loadRemote();
-      return;
-    }
+    // 清空/新搜索必须优先于首页刷新事件处理，避免刷新分支提前 return
+    // 导致搜索状态一直残留。
     if (app.takePendingClear()) {
       _clearSearchState();
       if (mounted) setState(() {});
@@ -69,6 +72,11 @@ class _HomePageState extends State<HomePage> {
     final pending = app.peekPendingSearch();
     if (pending != null) {
       _runSearch(pending);
+      return;
+    }
+    if (app.homeRefreshVersion != _seenHomeRefreshVersion) {
+      _seenHomeRefreshVersion = app.homeRefreshVersion;
+      _loadRemote();
       return;
     }
     if (app.serverEpoch != _seenEpoch) {
@@ -96,8 +104,38 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  String get _filterSig =>
-      '${app.serverEpoch}|${app.category}|${app.sort}|${app.orderAsc}|${app.subOnly}|${app.ageFilter}';
+  String get _filterSig {
+    final ages = app.ageFilters.toList()..sort();
+    return '${app.serverEpoch}|${app.category}|${app.sort}|${app.orderAsc}|${app.subtitleFilter}|$ages';
+  }
+
+  Future<void> _loadLocalSubtitleIds() async {
+    final records = await LyricsLibraryService.instance.records();
+    if (!mounted) return;
+    final ids = records.map((record) => record.workId.toUpperCase()).toSet();
+    if (ids.length == _localSubtitleWorkIds.length &&
+        ids.containsAll(_localSubtitleWorkIds)) {
+      return;
+    }
+    _localSubtitleWorkIds
+      ..clear()
+      ..addAll(ids);
+    setState(() {});
+    if (app.subtitleFilter == SubtitleFilter.all) {
+      _maybeRefill();
+      if (_searchQuery.isNotEmpty &&
+          !_searchLoading &&
+          _searchHasMore &&
+          _searchPage < 4 &&
+          _visibleSearchResults.length < 20) {
+        _runSearch(_searchQuery, reset: false);
+      }
+    }
+  }
+
+  void _onSubtitleLibraryChanged() {
+    _loadLocalSubtitleIds();
+  }
 
   Future<void> _loadRemote() async {
     final gen = ++_worksGen;
@@ -165,15 +203,29 @@ class _HomePageState extends State<HomePage> {
 
   /// 年龄分级是客户端过滤：过滤后不足一页时继续补拉（最多 10 页），直到凑够一页或拉完
   void _maybeRefill() {
-    if (app.ageFilter == null) return;
+    if (!app.hasAgeFilter && app.subtitleFilter != SubtitleFilter.all) return;
     if (!app.worksHasMore || app.worksPage >= 10) return;
-    if (app.homeOrder.length >= 20) return;
+    if (_homeOrder.length >= 20) return;
     _loadMore();
+  }
+
+  List<int> get _homeOrder {
+    final order = app.homeOrder;
+    if (app.subtitleFilter != SubtitleFilter.all) return order;
+    return order.where((i) => _hasAnySubtitle(app.homeList[i])).toList();
+  }
+
+  bool _hasAnySubtitle(Work work) {
+    return work.hasSubtitle ||
+        _localSubtitleWorkIds.contains(work.rj.toUpperCase());
   }
 
   @override
   void dispose() {
     app.removeListener(_onAppChanged);
+    LyricsLibraryService.instance.revision.removeListener(
+      _onSubtitleLibraryChanged,
+    );
     super.dispose();
   }
 
@@ -279,6 +331,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _clearSearchState() {
+    // 让已经发出的搜索请求失效，避免清空后旧响应又把结果写回来。
+    _searchSeq++;
     _searchResults.clear();
     _searchQuery = '';
     _searchLoading = false;
@@ -356,7 +410,6 @@ class _HomePageState extends State<HomePage> {
   Widget _sortDropdown() {
     return PopupMenuButton<String>(
       tooltip: '排序方式',
-      initialValue: app.sort,
       onSelected: (v) {
         app.setSort(v);
       },
@@ -415,7 +468,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _grid() {
-    final order = app.homeOrder;
+    final order = _homeOrder;
     final list = app.homeList;
     return order.isEmpty
         ? (app.loadingRemote &&
@@ -490,7 +543,7 @@ class _HomePageState extends State<HomePage> {
       msg = '正在加载…';
     } else if (app.remoteError != null) {
       msg = '无网络连接，请检查网络或服务器设置';
-    } else if (app.ageFilter != null || app.subOnly) {
+    } else if (app.hasAgeFilter || app.subOnly) {
       msg = '当前筛选条件下暂无作品';
     } else {
       msg = '暂无作品';
@@ -554,14 +607,8 @@ class _HomePageState extends State<HomePage> {
   Future<void> _runSearch(String q, {bool reset = true}) async {
     final query = q.trim();
     if (query.isEmpty) {
-      setState(() {
-        _searchResults.clear();
-        _searchQuery = '';
-        _searchLoading = false;
-        _searchError = false;
-        _searchPage = 0;
-        _searchHasMore = true;
-      });
+      _clearSearchState();
+      if (mounted) setState(() {});
       return;
     }
     if (!reset && (_searchLoading || !_searchHasMore)) return;
@@ -593,8 +640,8 @@ class _HomePageState extends State<HomePage> {
         _searchError = true;
       });
     }
-    // 年龄分级是客户端过滤：结果不足一页时继续补拉（最多 4 页）
-    if (app.ageFilter != null &&
+    // 年龄/全部字幕是客户端过滤：结果不足一页时继续补拉（最多 4 页）
+    if ((app.hasAgeFilter || app.subtitleFilter == SubtitleFilter.all) &&
         _searchHasMore &&
         !_searchLoading &&
         _searchPage < 4) {
@@ -604,9 +651,16 @@ class _HomePageState extends State<HomePage> {
   }
 
   List<Work> get _visibleSearchResults {
-    final res = _searchResults.where((w) => !app.isBlacklistedWork(w)).toList();
-    if (app.ageFilter == null) return res;
-    return res.where((w) => w.age.index == app.ageFilter).toList();
+    var res = _searchResults
+        .where((w) => !app.isBlacklistedWork(w))
+        .toList();
+    if (app.hasAgeFilter) {
+      res = res.where((w) => app.ageFilters.contains(w.age.index)).toList();
+    }
+    if (app.subtitleFilter == SubtitleFilter.all) {
+      res = res.where(_hasAnySubtitle).toList();
+    }
+    return res;
   }
 
   /// 搜索结果显示在主内容区（可滚动、分页加载）

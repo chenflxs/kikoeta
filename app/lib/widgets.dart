@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'data.dart';
+import 'pages/advanced_filter_page.dart';
 import 'services/app_paths.dart';
 import 'services/lyrics_library_service.dart';
 import 'services/player_service.dart';
@@ -620,6 +621,7 @@ class MenuItem extends StatelessWidget {
   final String label;
   final bool selected;
   final bool checkbox;
+  final bool indeterminate;
   final VoidCallback? onTap;
   final bool enabled;
   const MenuItem({
@@ -628,6 +630,7 @@ class MenuItem extends StatelessWidget {
     required this.selected,
     this.onTap,
     this.checkbox = false,
+    this.indeterminate = false,
     this.enabled = true,
   });
 
@@ -644,7 +647,7 @@ class MenuItem extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
           decoration: BoxDecoration(
-            color: selected
+            color: selected || indeterminate
                 ? p.accent.withValues(alpha: .08)
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(11),
@@ -656,8 +659,10 @@ class MenuItem extends StatelessWidget {
                   label,
                   style: TextStyle(
                     fontSize: 13,
-                    color: selected ? p.accent : p.muted,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                    color: selected || indeterminate ? p.accent : p.muted,
+                    fontWeight: selected || indeterminate
+                        ? FontWeight.w600
+                        : FontWeight.normal,
                   ),
                 ),
               ),
@@ -667,15 +672,28 @@ class MenuItem extends StatelessWidget {
                   width: 19,
                   height: 19,
                   decoration: BoxDecoration(
-                    color: selected ? p.accent : Colors.transparent,
+                    color: selected || indeterminate
+                        ? p.accent
+                        : Colors.transparent,
                     border: Border.all(
-                      color: selected ? p.accent : p.dim,
+                      color: selected || indeterminate ? p.accent : p.dim,
                       width: 1.5,
                     ),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: selected
                       ? const Icon(Icons.check, size: 13, color: Colors.white)
+                      : indeterminate
+                      ? Center(
+                          child: Container(
+                            width: 9,
+                            height: 2,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                        )
                       : null,
                 )
               else
@@ -757,6 +775,163 @@ class MenuPanel extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// one 站高级搜索参数。
+///
+/// 参数名和说明来自 one 站搜索框的高级搜索提示；这里只把文档中的内容
+/// 作为联想数据使用，不执行其中任何 HTML 或脚本。
+class AdvancedSearchParameter {
+  final String token;
+  final String description;
+  const AdvancedSearchParameter(this.token, this.description);
+}
+
+const advancedSearchParameters = <AdvancedSearchParameter>[
+  AdvancedSearchParameter(r'$tag:', '搜索标签'),
+  AdvancedSearchParameter(r'$tagw:', '包含低愿力标签'),
+  AdvancedSearchParameter(r'$circle:', '搜索社团'),
+  AdvancedSearchParameter(r'$va:', '搜索声优'),
+  AdvancedSearchParameter(r'$duration:', '筛选作品时长（大于）'),
+  AdvancedSearchParameter(r'$rate:', '筛选评分（大于）'),
+  AdvancedSearchParameter(r'$price:', '筛选价格（大于）'),
+  AdvancedSearchParameter(r'$sell:', '筛选销量（大于）'),
+  AdvancedSearchParameter(r'$age:', '筛选年龄分级'),
+  AdvancedSearchParameter(r'$lang:', '筛选语言'),
+  AdvancedSearchParameter(r'$-tag:', '排除标签'),
+  AdvancedSearchParameter(r'$-tagw:', '排除低愿力标签'),
+  AdvancedSearchParameter(r'$-duration:', '筛选作品时长（小于）'),
+  AdvancedSearchParameter(r'$-circle:', '排除社团'),
+  AdvancedSearchParameter(r'$-va:', '排除声优'),
+  AdvancedSearchParameter(r'$-age:', '排除年龄分级'),
+  AdvancedSearchParameter(r'$-lang:', '排除语言'),
+];
+
+bool _isSearchTokenSeparator(String value, int index) {
+  final code = value.codeUnitAt(index);
+  return code == 0x20 || code == 0x09 || code == 0x0A || code == 0x0D;
+}
+
+List<AdvancedSearchParameter> advancedSearchParameterSuggestions(
+  String value, {
+  int? cursor,
+}) {
+  final end = (cursor ?? value.length).clamp(0, value.length).toInt();
+  var start = end - 1;
+  while (start >= 0 && !_isSearchTokenSeparator(value, start)) {
+    start--;
+  }
+  final token = value.substring(start + 1, end).toLowerCase();
+  if (!token.startsWith(r'$')) return const [];
+  return advancedSearchParameters
+      .where((item) => item.token.startsWith(token))
+      .toList(growable: false);
+}
+
+/// 搜索框中的高级参数联想列表：首页和下载页共用。
+class AdvancedSearchSuggestions extends StatelessWidget {
+  final TextEditingController controller;
+  final ValueChanged<String>? onChanged;
+
+  const AdvancedSearchSuggestions({
+    super.key,
+    required this.controller,
+    this.onChanged,
+  });
+
+  void _insert(AdvancedSearchParameter item) {
+    final value = controller.value;
+    final text = value.text;
+    final rawCursor = value.selection.isValid
+        ? value.selection.baseOffset
+        : text.length;
+    final cursor = rawCursor.clamp(0, text.length).toInt();
+    var start = cursor - 1;
+    while (start >= 0 && !_isSearchTokenSeparator(text, start)) {
+      start--;
+    }
+    final nextText = text.replaceRange(start + 1, cursor, item.token);
+    final nextCursor = start + 1 + item.token.length;
+    controller.value = value.copyWith(
+      text: nextText,
+      selection: TextSelection.collapsed(offset: nextCursor),
+      composing: TextRange.empty,
+    );
+    onChanged?.call(nextText);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = Theme.of(context).brightness == Brightness.dark
+        ? AppColors.dark
+        : AppColors.light;
+    final rawCursor = controller.selection.isValid
+        ? controller.selection.baseOffset
+        : controller.text.length;
+    final suggestions = advancedSearchParameterSuggestions(
+      controller.text,
+      cursor: rawCursor,
+    );
+    if (suggestions.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 4, 4, 6),
+          child: Text(
+            '高级搜索参数',
+            style: TextStyle(
+              fontSize: 11,
+              color: p.dim,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 320),
+          child: ListView.separated(
+            shrinkWrap: true,
+            itemCount: suggestions.length,
+            separatorBuilder: (_, _) => Divider(height: 1, color: p.line),
+            itemBuilder: (_, index) {
+              final item = suggestions[index];
+              return InkWell(
+                onTap: () => _insert(item),
+                borderRadius: BorderRadius.circular(9),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 7,
+                  ),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 108,
+                        child: Text(
+                          item.token,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: p.accent,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          item.description,
+                          style: TextStyle(fontSize: 12, color: p.muted),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }
@@ -882,7 +1057,9 @@ class _HomeSearchBarState extends State<HomeSearchBar> {
   @override
   void initState() {
     super.initState();
-    _ctrl.text = app.peekPendingSearch() ?? '';
+    _ctrl.text = app.searchQuery.isNotEmpty
+        ? app.searchQuery
+        : (app.peekPendingSearch() ?? '');
     _historySig = _currentHistorySig;
     // 搜索框获得焦点即自动展开
     _focus.addListener(() {
@@ -1016,6 +1193,7 @@ class _HomeSearchBarState extends State<HomeSearchBar> {
                   // 这里需要刷新条件渲染的清除按钮。
                   setState(() {});
                   app.requestSearchClear();
+                  app.setSearchExpanded(false);
                 },
                 child: Container(
                   width: 22,
@@ -1039,13 +1217,24 @@ class _HomeSearchBarState extends State<HomeSearchBar> {
   }
 
   Widget _historyPanel(double maxH) {
+    final showAdvancedSuggestions = advancedSearchParameterSuggestions(
+      _ctrl.text,
+      cursor: _ctrl.selection.isValid
+          ? _ctrl.selection.baseOffset
+          : _ctrl.text.length,
+    ).isNotEmpty;
     return ConstrainedBox(
       constraints: BoxConstraints(maxHeight: maxH),
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(13, 10, 13, 14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+        child: showAdvancedSuggestions
+            ? AdvancedSearchSuggestions(
+                controller: _ctrl,
+                onChanged: (_) => setState(() {}),
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
             Row(
               children: [
                 Expanded(
@@ -1133,8 +1322,8 @@ class _HomeSearchBarState extends State<HomeSearchBar> {
                   );
                 }).toList(),
               ),
-          ],
-        ),
+                ],
+              ),
       ),
     );
   }
@@ -1143,16 +1332,24 @@ class _HomeSearchBarState extends State<HomeSearchBar> {
     return ListenableBuilder(
       listenable: app,
       builder: (context, _) {
-        final active = app.ageFilter != null || app.subOnly;
+        final active = app.hasAgeFilter || app.subOnly;
         return PopupMenuButton<int>(
           tooltip: '筛选',
           onSelected: (v) {
+            if (v == 20) {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => AdvancedFilterPage(app: app),
+                ),
+              );
+              return;
+            }
             if (v == 10) {
-              app.setSubOnly(!app.subOnly);
+              app.cycleSubtitleFilter();
             } else {
-              // SFW 模式下不允许切到 R15/R18
-              if (app.sfwMode && v != 0) return;
-              app.setAgeFilter(app.ageFilter == v ? null : v);
+              // SFW 模式下不允许切到 R15/R18，也不能取消唯一的全年龄限制。
+              if (app.sfwMode) return;
+              app.toggleAgeFilter(v);
             }
           },
           shape: RoundedRectangleBorder(
@@ -1167,7 +1364,8 @@ class _HomeSearchBarState extends State<HomeSearchBar> {
               enabled: !app.sfwMode,
               child: MenuItem(
                 label: 'R18',
-                selected: app.ageFilter == 2,
+                selected: app.ageFilters.contains(2),
+                checkbox: true,
                 enabled: !app.sfwMode,
               ),
             ),
@@ -1177,14 +1375,19 @@ class _HomeSearchBarState extends State<HomeSearchBar> {
               enabled: !app.sfwMode,
               child: MenuItem(
                 label: 'R15',
-                selected: app.ageFilter == 1,
+                selected: app.ageFilters.contains(1),
+                checkbox: true,
                 enabled: !app.sfwMode,
               ),
             ),
             PopupMenuItem(
               value: 0,
               height: 44,
-              child: MenuItem(label: '全年龄', selected: app.ageFilter == 0),
+              child: MenuItem(
+                label: '全年龄',
+                selected: app.ageFilters.contains(0),
+                checkbox: true,
+              ),
             ),
             const PopupMenuDivider(),
             PopupMenuItem(
@@ -1192,8 +1395,21 @@ class _HomeSearchBarState extends State<HomeSearchBar> {
               height: 44,
               child: MenuItem(
                 label: '仅字幕',
-                selected: app.subOnly,
+                selected: app.subtitleFilter == SubtitleFilter.all,
                 checkbox: true,
+                indeterminate: app.subtitleFilter == SubtitleFilter.online,
+              ),
+            ),
+            const PopupMenuDivider(),
+            PopupMenuItem(
+              value: 20,
+              height: 44,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text(
+                  '高级筛选',
+                  style: TextStyle(fontSize: 13, color: p.muted),
+                ),
               ),
             ),
           ],

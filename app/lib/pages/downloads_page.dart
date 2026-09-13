@@ -230,58 +230,87 @@ class _DownloadPageState extends State<DownloadPage> {
     final p = Theme.of(context).brightness == Brightness.dark
         ? AppColors.dark
         : AppColors.light;
-    return AnimatedContainer(
+    final showAdvancedSuggestions = advancedSearchParameterSuggestions(
+      _search.text,
+      cursor: _search.selection.isValid
+          ? _search.selection.baseOffset
+          : _search.text.length,
+    ).isNotEmpty;
+    return AnimatedSize(
       duration: const Duration(milliseconds: 180),
-      height: 46,
-      padding: const EdgeInsets.only(left: 13, right: 8),
-      decoration: BoxDecoration(
-        color: p.surface,
-        border: Border.all(color: p.accent),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: .24),
-            blurRadius: 32,
-            offset: const Offset(0, 14),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.search, size: 19, color: p.dim),
-          const SizedBox(width: 9),
-          Expanded(
-            child: TextField(
-              controller: _search,
-              focusNode: _searchFocus,
-              autofocus: true,
-              style: TextStyle(fontSize: 14, color: p.text),
-              decoration: InputDecoration(
-                hintText: '搜索已下载作品',
-                hintStyle: TextStyle(fontSize: 14, color: p.dim),
-                border: InputBorder.none,
-                isDense: true,
-              ),
-              onChanged: (_) => setState(() => _visibleCount = _batchSize),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        constraints: const BoxConstraints(minHeight: 46),
+        padding: const EdgeInsets.only(left: 13, right: 8),
+        decoration: BoxDecoration(
+          color: p.surface,
+          border: Border.all(color: p.accent),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: .24),
+              blurRadius: 32,
+              offset: const Offset(0, 14),
             ),
-          ),
-          if (_search.text.isNotEmpty)
-            GestureDetector(
-              onTap: () {
-                _search.clear();
-                setState(() {});
-              },
-              child: Container(
-                width: 22,
-                height: 22,
-                decoration: BoxDecoration(
-                  color: p.surface3,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.close, size: 13, color: Colors.white70),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              height: 46,
+              child: Row(
+                children: [
+                  Icon(Icons.search, size: 19, color: p.dim),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: TextField(
+                      controller: _search,
+                      focusNode: _searchFocus,
+                      autofocus: true,
+                      style: TextStyle(fontSize: 14, color: p.text),
+                      decoration: InputDecoration(
+                        hintText: '搜索已下载作品',
+                        hintStyle: TextStyle(fontSize: 14, color: p.dim),
+                        border: InputBorder.none,
+                        isDense: true,
+                      ),
+                      onChanged: (_) => setState(
+                        () => _visibleCount = _batchSize,
+                      ),
+                    ),
+                  ),
+                  if (_search.text.isNotEmpty)
+                    GestureDetector(
+                      onTap: () {
+                        _search.clear();
+                        setState(() {});
+                      },
+                      child: Container(
+                        width: 22,
+                        height: 22,
+                        decoration: BoxDecoration(
+                          color: p.surface3,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.close,
+                          size: 13,
+                          color: Colors.white70,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
-        ],
+            if (showAdvancedSuggestions)
+              AdvancedSearchSuggestions(
+                controller: _search,
+                onChanged: (_) => setState(() {}),
+              ),
+          ],
+        ),
       ),
     );
   }

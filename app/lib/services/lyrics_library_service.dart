@@ -96,7 +96,10 @@ class LyricsImportProgress {
 }
 
 class _ArchiveBudget {
-  static const maxEntries = 100000;
+  // 大型前置包会包含一万多个子 ZIP，每个子包又有多条歌词/目录记录。
+  // 例如 16347 部的实包共 142400 条目，原来的 10 万上限会静默截断。
+  // 内容展开量仍受 2 GiB 限制，避免提高条目数后放宽压缩炸弹防护。
+  static const maxEntries = 250000;
   static const maxExpandedBytes = 2 * 1024 * 1024 * 1024;
   int entries = 0;
   int expandedBytes = 0;

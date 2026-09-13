@@ -10,6 +10,9 @@ import 'services/settings_store.dart';
 
 enum Age { all, r15, r18 }
 
+/// 首页字幕筛选状态：不筛选、仅在线字幕、所有字幕来源。
+enum SubtitleFilter { none, online, all }
+
 /// 同一作品的其它语言版本（由作品详情接口提供）。
 class LanguageEdition {
   final int id;
@@ -172,11 +175,17 @@ class AppState extends ChangeNotifier {
   String recommenderUuid = '';
   int serverEpoch = 0;
   int loginEpoch = 0;
-  int? ageFilter; // null / 0(全年龄) / 1(R15) / 2(R18)
-  bool subOnly = false;
+  /// 已勾选的年龄分级：0=全年龄、1=R15、2=R18。
+  /// 空集合和三项全选都表示不过滤年龄。
+  final Set<int> ageFilters = <int>{};
+  SubtitleFilter subtitleFilter = SubtitleFilter.none;
+  // 兼容现有调用点：true 表示当前处于任意字幕筛选状态。
+  bool get subOnly => subtitleFilter != SubtitleFilter.none;
   bool sfwMode = false; // SFW 模式：启动后只显示全年龄（非 R18）内容
   String? _pendingSearch;
   bool pendingClear = false;
+  // 当前首页搜索词；搜索栏因切换底部页面而重建时仍能恢复显示。
+  String searchQuery = '';
   bool searchExpanded = false; // 搜索栏展开（Shell 层全屏遮罩用）
 
   // 远程数据（asmr.one）
@@ -292,9 +301,14 @@ class AppState extends ChangeNotifier {
   /// 请求首页执行一次搜索（供作品详情点击社团/CV/标签跳转）
   void requestSearch(String q) {
     final t = q.trim();
-    if (t.isEmpty) return;
+    if (t.isEmpty) {
+      requestSearchClear();
+      return;
+    }
     addHistory(t); // 所有入口（回车/历史/标签点击）都计入搜索历史
+    searchQuery = t;
     _pendingSearch = t;
+    pendingClear = false;
     tab = 0;
     notifyListeners();
   }
@@ -317,6 +331,8 @@ class AppState extends ChangeNotifier {
 
   /// 请求清空搜索（输入与结果）
   void requestSearchClear() {
+    searchQuery = '';
+    _pendingSearch = null;
     pendingClear = true;
     notifyListeners();
   }
@@ -339,8 +355,10 @@ class AppState extends ChangeNotifier {
   List<int> get homeOrder {
     final n = homeList.length;
     var order = List.generate(n, (i) => i);
-    if (ageFilter != null) {
-      order = order.where((i) => homeList[i].age.index == ageFilter).toList();
+    if (hasAgeFilter) {
+      order = order
+          .where((i) => ageFilters.contains(homeList[i].age.index))
+          .toList();
     }
     order = order.where((i) => !isBlacklistedWork(homeList[i])).toList();
     return order;
@@ -352,6 +370,12 @@ class AppState extends ChangeNotifier {
   void selectTab(int value) {
     final reselected = tab == value;
     tab = value;
+    // 返回/重新点击首页时退出搜索结果，避免搜索框已消失但首页仍停留在搜索态。
+    if (value == 0 && searchQuery.isNotEmpty) {
+      searchQuery = '';
+      _pendingSearch = null;
+      pendingClear = true;
+    }
     if (value == 1) favoritesEntryVersion++;
     if (reselected && value == 0) homeRefreshVersion++;
     notifyListeners();
@@ -767,7 +791,9 @@ class AppState extends ChangeNotifier {
     final sfw = SettingsStore.get('sfw');
     if (sfw == '1') {
       sfwMode = true;
-      ageFilter = 0;
+      ageFilters
+        ..clear()
+        ..add(0);
     }
     final dl = SettingsStore.get('desktop_lyrics');
     if (dl != null) desktopLyricsOn = dl == '1';
@@ -920,13 +946,29 @@ class AppState extends ChangeNotifier {
     }
     final haf = SettingsStore.get('home_age_filter');
     if (haf != null && haf.isNotEmpty) {
-      final value = int.tryParse(haf);
-      if (value != null && value >= 0 && value <= 2) ageFilter = value;
+      // 兼容旧版保存的单值（0/1/2），新版使用逗号分隔的集合。
+      ageFilters
+        ..clear()
+        ..addAll(
+          haf
+              .split(',')
+              .map(int.tryParse)
+              .whereType<int>()
+              .where((value) => value >= 0 && value <= 2),
+        );
     }
     final hso = SettingsStore.get('home_sub_only');
-    if (hso != null) subOnly = hso == '1';
+    subtitleFilter = switch (hso) {
+      '2' || 'all' => SubtitleFilter.all,
+      '1' || 'online' => SubtitleFilter.online,
+      _ => SubtitleFilter.none,
+    };
     // SFW 始终优先于已保存的年龄筛选。
-    if (sfwMode) ageFilter = 0;
+    if (sfwMode) {
+      ageFilters
+        ..clear()
+        ..add(0);
+    }
     final doNotRememberProgress = SettingsStore.get(
       'do_not_remember_playback_progress',
     );
@@ -1255,21 +1297,42 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setAgeFilter(int? v) {
-    if (v != null && (v < 0 || v > 2)) return;
-    // SFW 模式下不允许切换到 R15/R18。
-    if (sfwMode && v != null && v != 0) return;
-    if (ageFilter == v) return;
-    ageFilter = v;
-    SettingsStore.set('home_age_filter', v?.toString() ?? '');
+  bool get hasAgeFilter => ageFilters.isNotEmpty && ageFilters.length < 3;
+
+  void toggleAgeFilter(int v) {
+    if (v < 0 || v > 2) return;
+    // SFW 模式下不允许切到 R15/R18。
+    if (sfwMode && v != 0) return;
+    if (ageFilters.contains(v)) {
+      ageFilters.remove(v);
+    } else {
+      ageFilters.add(v);
+    }
+    final value = (ageFilters.toList()..sort()).join(',');
+    SettingsStore.set('home_age_filter', value);
     notifyListeners();
   }
 
-  void setSubOnly(bool v) {
-    if (subOnly == v) return;
-    subOnly = v;
-    SettingsStore.set('home_sub_only', v ? '1' : '0');
+  void setSubtitleFilter(SubtitleFilter value) {
+    if (subtitleFilter == value) return;
+    subtitleFilter = value;
+    SettingsStore.set('home_sub_only', value.index.toString());
     notifyListeners();
+  }
+
+  /// 依次切换：未选中 → 仅在线字幕（部分选中）→ 所有字幕（完全选中）。
+  void cycleSubtitleFilter() {
+    final next = switch (subtitleFilter) {
+      SubtitleFilter.none => SubtitleFilter.online,
+      SubtitleFilter.online => SubtitleFilter.all,
+      SubtitleFilter.all => SubtitleFilter.none,
+    };
+    setSubtitleFilter(next);
+  }
+
+  /// 兼容旧的二态调用：开启时进入“仅在线字幕”。
+  void setSubOnly(bool value) {
+    setSubtitleFilter(value ? SubtitleFilter.online : SubtitleFilter.none);
   }
 
   void setOrderAsc(bool v) {
@@ -1281,9 +1344,11 @@ class AppState extends ChangeNotifier {
   /// 切换 SFW 模式：开启后只显示全年龄内容，并释放当前播放媒体。
   Future<void> toggleSfw() async {
     sfwMode = !sfwMode;
-    ageFilter = sfwMode ? 0 : null;
+    ageFilters
+      ..clear()
+      ..addAll(sfwMode ? const [0] : const []);
     SettingsStore.set('sfw', sfwMode ? '1' : '0');
-    SettingsStore.set('home_age_filter', ageFilter?.toString() ?? '');
+    SettingsStore.set('home_age_filter', sfwMode ? '0' : '');
     if (sfwMode) {
       currentWork = null;
       queue.clear();
@@ -1415,11 +1480,12 @@ class AppState extends ChangeNotifier {
     randomSeed = null;
     serverEpoch = 0;
     loginEpoch = 0;
-    ageFilter = null;
-    subOnly = false;
+    ageFilters.clear();
+    subtitleFilter = SubtitleFilter.none;
     sfwMode = false;
     _pendingSearch = null;
     pendingClear = false;
+    searchQuery = '';
     searchExpanded = false;
     remoteWorks.clear();
     remoteError = null;
