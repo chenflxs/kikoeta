@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../data.dart';
 import '../services/api_service.dart';
@@ -124,6 +125,14 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
       service?.close();
       if (mounted) setState(() => _testing = false);
     }
+  }
+
+  Future<void> _openKikoetaTranslDownload() async {
+    final opened = await launchUrl(
+      Uri.parse('https://github.com/chenflxs/kikoeta-transl'),
+      mode: LaunchMode.externalApplication,
+    );
+    if (!opened) _toast('无法打开 kikoeta-transl 项目页面');
   }
 
   Future<void> _start() async {
@@ -412,31 +421,158 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
-        children: [
-          _connectionCard(),
-          const SizedBox(height: 12),
-          _workCard(),
-          const SizedBox(height: 12),
-          _progressCard(),
-          const SizedBox(height: 12),
-          _logCard(),
-        ],
+      body: SafeArea(
+        top: false,
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1120),
+                child: constraints.maxWidth >= 900
+                    ? Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: _connectionCard()),
+                          const SizedBox(width: 16),
+                          Expanded(child: _taskCards()),
+                        ],
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _connectionCard(),
+                          const SizedBox(height: 14),
+                          _taskCards(),
+                        ],
+                      ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
 
+  Widget _taskCards() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _workCard(),
+      const SizedBox(height: 14),
+      _progressCard(),
+      const SizedBox(height: 14),
+      _logCard(),
+    ],
+  );
+
+  InputDecoration _inputDecoration(
+    String label,
+    IconData icon, {
+    String? hint,
+  }) => InputDecoration(
+    labelText: label,
+    labelStyle: TextStyle(fontSize: 11.5, color: p.muted),
+    hintText: hint,
+    hintStyle: TextStyle(fontSize: 12, color: p.dim),
+    prefixIcon: Icon(icon, size: 18, color: p.muted),
+    filled: true,
+    fillColor: p.surface2,
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(11),
+      borderSide: BorderSide(color: p.line),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(11),
+      borderSide: BorderSide(color: p.line),
+    ),
+    disabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(11),
+      borderSide: BorderSide(color: p.line),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(11),
+      borderSide: BorderSide(color: p.accent),
+    ),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+  );
+
   Widget _connectionCard() => _card(
-    title: '连接方式',
+    title: '服务连接',
     icon: Icons.cable_outlined,
     children: [
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: p.surface2,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: p.line),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.download_outlined, color: p.accent),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '尚未安装 kikoeta-transl？',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    '下载并启动 kikoeta-transl 后，即可使用本地或网络听写翻译。',
+                    style: TextStyle(color: p.muted, fontSize: 12, height: 1.4),
+                  ),
+                  const SizedBox(height: 6),
+                  TextButton.icon(
+                    onPressed: _openKikoetaTranslDownload,
+                    icon: const Icon(Icons.open_in_new, size: 16),
+                    label: const Text('前往 GitHub 下载'),
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size(0, 32),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 12),
       if (!Platform.isAndroid)
         SegmentedButton<bool>(
           segments: const [
-            ButtonSegment(value: true, label: Text('本地')),
-            ButtonSegment(value: false, label: Text('网络')),
+            ButtonSegment(
+              value: true,
+              icon: Icon(Icons.computer_outlined, size: 17),
+              label: Text('本地'),
+            ),
+            ButtonSegment(
+              value: false,
+              icon: Icon(Icons.wifi_outlined, size: 17),
+              label: Text('网络'),
+            ),
           ],
+          style: SegmentedButton.styleFrom(
+            backgroundColor: p.surface2,
+            foregroundColor: p.muted,
+            selectedBackgroundColor: p.accent.withValues(alpha: .12),
+            selectedForegroundColor: p.accent,
+            side: BorderSide(color: p.line),
+            textStyle: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(11),
+            ),
+          ),
           selected: {_useLocal},
           onSelectionChanged: _running
               ? null
@@ -447,20 +583,19 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
         TextFormField(
           initialValue: _localEndpoint,
           enabled: false,
-          decoration: const InputDecoration(
-            labelText: '本地 kikoeta-transl 地址（固定）',
-            prefixIcon: Icon(Icons.dns_outlined),
-          ),
+          style: TextStyle(fontSize: 13, color: p.muted),
+          decoration: _inputDecoration('本地服务地址（固定）', Icons.dns_outlined),
         )
       else
         TextField(
           controller: _networkController,
           enabled: !_running,
           keyboardType: TextInputType.url,
-          decoration: const InputDecoration(
-            labelText: 'kikoeta-transl 地址',
-            hintText: '192.168.1.20:2370',
-            prefixIcon: Icon(Icons.dns_outlined),
+          style: TextStyle(fontSize: 13, color: p.text),
+          decoration: _inputDecoration(
+            '服务地址',
+            Icons.dns_outlined,
+            hint: '192.168.1.20:2370',
           ),
         ),
       if (Platform.isAndroid)
@@ -476,10 +611,8 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
         controller: _usernameController,
         enabled: !_running,
         autofillHints: const [AutofillHints.username],
-        decoration: const InputDecoration(
-          labelText: 'kikoeta-transl 用户名',
-          prefixIcon: Icon(Icons.person_outline),
-        ),
+        style: TextStyle(fontSize: 13, color: p.text),
+        decoration: _inputDecoration('用户名', Icons.person_outline),
       ),
       const SizedBox(height: 10),
       TextField(
@@ -487,9 +620,8 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
         enabled: !_running,
         obscureText: _obscurePassword,
         autofillHints: const [AutofillHints.password],
-        decoration: InputDecoration(
-          labelText: 'kikoeta-transl 密码',
-          prefixIcon: const Icon(Icons.lock_outline),
+        style: TextStyle(fontSize: 13, color: p.text),
+        decoration: _inputDecoration('密码', Icons.lock_outline).copyWith(
           suffixIcon: IconButton(
             tooltip: _obscurePassword ? '显示密码' : '隐藏密码',
             onPressed: () =>
@@ -545,11 +677,20 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
       );
     }
     return _card(
-      title: '${work!.rj} · ${work!.title}',
+      title: '待处理音频',
       icon: Icons.library_music_outlined,
       children: [
         Text(
-          '已从作品详情页勾选 ${widget.tracks.length} 个媒体文件',
+          work!.title,
+          style: TextStyle(
+            color: p.text,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          '${work!.rj} · 已从作品详情页勾选 ${widget.tracks.length} 个媒体文件',
           style: TextStyle(color: p.muted, fontSize: 12),
         ),
         const SizedBox(height: 8),
@@ -562,7 +703,21 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
               final track = widget.tracks[index];
               return ListTile(
                 dense: true,
-                contentPadding: EdgeInsets.zero,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 2,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                tileColor: index.isEven ? p.surface2 : null,
+                leading: Icon(
+                  Icons.audio_file_outlined,
+                  size: 20,
+                  color: p.accent,
+                ),
+                titleTextStyle: TextStyle(color: p.text, fontSize: 13),
+                subtitleTextStyle: TextStyle(color: p.dim, fontSize: 11.5),
                 title: Text(
                   track.title,
                   maxLines: 1,
@@ -581,7 +736,20 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
         SizedBox(
           width: double.infinity,
           child: FilledButton.icon(
-            onPressed: _running ? _cancel : _start,
+            style: FilledButton.styleFrom(
+              backgroundColor: _running ? p.red : p.accent,
+              minimumSize: const Size.fromHeight(44),
+              textStyle: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: _running
+                ? (_cancelling || _jobId == null ? null : _cancel)
+                : (_syncing || widget.tracks.isEmpty ? null : _start),
             icon: Icon(
               _running ? Icons.stop_circle_outlined : Icons.graphic_eq,
             ),
@@ -597,7 +765,11 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
     icon: Icons.timeline,
     children: [
       LinearProgressIndicator(
-        value: _running || _savedFiles > 0 ? _progress : 0,
+        value: _progress,
+        minHeight: 6,
+        borderRadius: BorderRadius.circular(999),
+        backgroundColor: p.surface3,
+        color: p.accent,
       ),
       const SizedBox(height: 10),
       Row(
@@ -605,12 +777,20 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
           Expanded(
             child: Text(
               _stage,
-              style: const TextStyle(fontWeight: FontWeight.w600),
+              style: TextStyle(
+                color: p.text,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
           Text(
             '${(_progress * 100).round()}%',
-            style: TextStyle(color: p.muted),
+            style: TextStyle(
+              color: p.accent,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),
@@ -625,7 +805,7 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
   );
 
   Widget _logCard() => _card(
-    title: 'kikoeta-transl 日志',
+    title: '运行日志',
     icon: Icons.terminal,
     children: [
       Container(
@@ -633,7 +813,7 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
         constraints: const BoxConstraints(minHeight: 140, maxHeight: 280),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: p.bg,
+          color: p.surface2,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(color: p.line),
         ),
@@ -643,9 +823,8 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
             _logs.isEmpty ? '等待 kikoeta-transl 日志…' : _logs.join('\n'),
             style: TextStyle(
               color: _logs.isEmpty ? p.dim : p.text,
-              fontFamily: 'monospace',
               fontSize: 12,
-              height: 1.45,
+              height: 1.65,
             ),
           ),
         ),
@@ -674,8 +853,9 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
             Expanded(
               child: Text(
                 title,
-                style: const TextStyle(
-                  fontSize: 15,
+                style: TextStyle(
+                  color: p.text,
+                  fontSize: 14,
                   fontWeight: FontWeight.w700,
                 ),
               ),
