@@ -250,9 +250,11 @@ class _SettingsPageState extends State<SettingsPage> {
         title: Text(_sectionKey == null ? '设置' : _sectionTitle(_sectionKey!)),
         leading: const BackButton(),
       ),
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(16, _sectionKey == null ? 4 : 8, 16, 40),
-        children: [
+      body: SafeArea(
+        top: false,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final sections = <Widget>[
           _section(
             'account',
             '账号设置',
@@ -987,7 +989,53 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ]),
           ),
-        ],
+            ];
+            // Keep the detailed settings pages as a single readable column.
+            // The root page follows the same wide two-column treatment as the
+            // dictation translation page, while retaining the connected
+            // navigation-row group in the right column.
+            final isWideRoot =
+                _sectionKey == null && constraints.maxWidth >= 900;
+            final content = isWideRoot
+                ? Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [sections[0], sections[8], sections[10]],
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: sections.sublist(1, 8),
+                        ),
+                      ),
+                    ],
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: sections,
+                  );
+            return SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                _sectionKey == null ? 4 : 8,
+                16,
+                40,
+              ),
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1120),
+                  child: content,
+                ),
+              ),
+            );
+          },
+        ),
       ),
     );
   }
