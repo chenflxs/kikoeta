@@ -52,6 +52,7 @@
 
 - 本地保存收藏、播放/搜索历史、歌单、黑名单、翻译缓存与播放进度。
 - 标题和曲目可使用 Google、Microsoft Edge、DeepL 或 OpenAI 兼容翻译服务。
+- 支持连接外部 [kikoeta-transl](https://github.com/chenflxs/kikoeta-transl) 服务：从作品详情页选择音频即可创建听写翻译任务，完成后将生成的 LRC 自动写入本地歌词库。
 - Windows 提供可锁定、可调字号与配色的桌面歌词，以及系统托盘控制。
 - Android 提供可拖动/锁定的悬浮歌词、锁屏和通知栏媒体控制、音频焦点、耳机拔出暂停与电池优化设置。
 
@@ -72,6 +73,16 @@
 
 - Windows：解压便携版后运行 `kikoeta_app.exe`，或运行安装程序完成安装。
 - Android：下载并安装 `arm64-v8a` APK。
+
+### 使用听写翻译
+
+听写翻译依赖独立的 [kikoeta-transl](https://github.com/chenflxs/kikoeta-transl) 服务；该服务**不随 Kikoeta 提供**，请自行下载、部署并启动。Kikoeta 仅负责提交作品音频、展示进度，并将生成的 LRC 保存到歌词库。
+
+1. 在 Windows 上下载并启动 `kikoeta-transl`，然后在「更多 → 听写翻译」中选择“本地连接”（默认地址为 `127.0.0.1:2370`）；也可填写已部署服务的 `IP/域名:端口`。
+2. 在 Android 上请选择网络连接，并确保设备能访问该服务。
+3. 打开作品详情页，勾选要处理的音频，在右上角“更多”中选择“听写翻译”，测试连接后开始任务。
+
+服务连接信息会保存在本机。任务完成后，回到作品的歌词选择器即可使用自动导入的歌词。
 
 ### 从源码运行
 
@@ -130,7 +141,7 @@ kikoeta/
 ## 开发计划
 
 - [ ] Linux 与 macOS 客户端
-- [ ] 基于 [VoiceTransl](https://github.com/shinnpuru/VoiceTransl) 或[海南鸡饭特化听写模型衍生](https://github.com/TransWithAI/Faster-Whisper-TransWithAI-ChickenRice)的翻译功能
+- [x] 基于 [kikoeta-transl](https://github.com/chenflxs/kikoeta-transl) 的听写翻译与歌词库导入
 - [x] 音声下载功能 ( *短期内无计划* )
 - [ ] ...
 ## 致谢
