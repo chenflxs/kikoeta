@@ -17,14 +17,17 @@ typedef _RemoveFontResourceExNative =
 typedef _RemoveFontResourceExDart =
     int Function(Pointer<Utf16>, int, Pointer<Void>);
 
-final _removeFontResourceEx = DynamicLibrary.open(
+final _gdiFlush = DynamicLibrary.open(
   'gdi32.dll',
-).lookupFunction<_RemoveFontResourceExNative, _RemoveFontResourceExDart>(
-  'RemoveFontResourceExW',
-);
+).lookupFunction<Int32 Function(), int Function()>('GdiFlush');
+
+final _removeFontResourceEx = DynamicLibrary.open('gdi32.dll')
+    .lookupFunction<_RemoveFontResourceExNative, _RemoveFontResourceExDart>(
+      'RemoveFontResourceExW',
+    );
 
 /// 桌面歌词悬浮窗（Windows）：
-/// - 最顶层、无边框、透明背景（洋红色键，GDI 渲染文字与按钮）
+/// - 最顶层、无边框、逐像素透明背景（GDI 抗锯齿文字与按钮）
 /// - 未锁定：悬停显示边缘、字号 +/-、锁定按钮，可拖动/自由缩放（带最小尺寸）
 /// - 锁定：点击穿透，悬停显示解锁按钮
 class DesktopLyricsOverlay {
@@ -34,13 +37,19 @@ class DesktopLyricsOverlay {
 
   static const _className = 'KikoetaLyricsOverlay';
   static const int _minW = 240;
-  static const int _minH = 48;
+  static const int _minH = 88;
+  static const int _toolbarHeight = 38;
   static const int _edge = 6;
 
   int _hwnd = 0;
   bool _registered = false;
   bool _visible = false;
   bool _hover = false;
+  bool _resizingOrMoving = false;
+  bool _resizePending = false;
+  static const int _resizeTimerId = 1;
+  ui.Offset _cursor = const ui.Offset(-1, -1);
+  int _hoveredButton = -1;
   int _lastPosX = 0x7FFFFFFF;
   int _lastPosY = 0x7FFFFFFF;
 
@@ -56,6 +65,7 @@ class DesktopLyricsOverlay {
   ui.Rect _plusRect = ui.Rect.zero;
   ui.Rect _lockRect = ui.Rect.zero;
   ui.Rect _unlockRect = ui.Rect.zero;
+  ui.Rect _closeRect = ui.Rect.zero;
 
   NativeCallable<_WndProcNative>? _wndProc;
   Pointer<Utf16>? _classNamePtr;
@@ -90,13 +100,41 @@ class DesktopLyricsOverlay {
     final overlay = instance;
     switch (msg) {
       case WM_PAINT:
-        overlay._render();
+        if (overlay._resizingOrMoving) {
+          overlay._resizePending = true;
+        } else {
+          overlay._render();
+        }
         ValidateRect(hwnd, nullptr);
         return 0;
       case WM_SIZE:
-        overlay._render();
+        if (overlay._resizingOrMoving) {
+          overlay._resizePending = true;
+        } else {
+          overlay._render();
+        }
         return 0;
-      case 0x0232: // WM_EXITSIZEMOVE：拖动/缩放结束，记忆窗口状态
+      case 0x0231: // WM_ENTERSIZEMOVE
+        overlay._resizingOrMoving = true;
+        // 原生拖动循环期间 Dart Timer 不保证执行，使用窗口计时器合并缩放帧。
+        SetTimer(hwnd, _resizeTimerId, 33, nullptr);
+        return 0;
+      case WM_TIMER:
+        if (wParam == _resizeTimerId) {
+          if (overlay._resizePending) {
+            overlay._resizePending = false;
+            overlay._render();
+          }
+          return 0;
+        }
+        return DefWindowProc(hwnd, msg, wParam, lParam);
+      case 0x0232: // WM_EXITSIZEMOVE：提交最终尺寸并记忆窗口状态
+        KillTimer(hwnd, _resizeTimerId);
+        overlay._resizingOrMoving = false;
+        if (overlay._resizePending) {
+          overlay._resizePending = false;
+          overlay._render();
+        }
         overlay._saveWindowState();
         return 0;
       case WM_WINDOWPOSCHANGING:
@@ -111,8 +149,10 @@ class DesktopLyricsOverlay {
         overlay._onMinMax(lParam);
         return 0;
       case WM_DISPLAYCHANGE:
-      case WM_MOVE:
         overlay._render();
+        return 0;
+      case WM_MOVE:
+        // Windows 会移动现有分层位图，位置变化无需重新栅格化歌词。
         return 0;
       case WM_DESTROY:
         return 0;
@@ -147,7 +187,7 @@ class DesktopLyricsOverlay {
     final screenH = GetSystemMetrics(SM_CYSCREEN);
     // 记忆并恢复上次的位置与大小
     var w = int.tryParse(SettingsStore.get('lyrics_win_w') ?? '') ?? 460;
-    var h = int.tryParse(SettingsStore.get('lyrics_win_h') ?? '') ?? 88;
+    var h = int.tryParse(SettingsStore.get('lyrics_win_h') ?? '') ?? 124;
     w = w.clamp(_minW, screenW);
     h = h.clamp(_minH, screenH);
     var x = int.tryParse(SettingsStore.get('lyrics_win_x') ?? '') ?? 16;
@@ -249,7 +289,7 @@ class DesktopLyricsOverlay {
   }
 
   void _pollHover() {
-    if (_hwnd == 0) return;
+    if (_hwnd == 0 || !_visible) return;
     final pt = calloc<POINT>();
     final rc = calloc<RECT>();
     try {
@@ -257,11 +297,23 @@ class DesktopLyricsOverlay {
       GetWindowRect(_hwnd, rc);
       final inside =
           pt.ref.x >= rc.ref.left &&
-          pt.ref.x <= rc.ref.right &&
+          pt.ref.x < rc.ref.right &&
           pt.ref.y >= rc.ref.top &&
-          pt.ref.y <= rc.ref.bottom;
-      if (inside != _hover) {
+          pt.ref.y < rc.ref.bottom;
+      _cursor = ui.Offset(
+        (pt.ref.x - rc.ref.left).toDouble(),
+        (pt.ref.y - rc.ref.top).toDouble(),
+      );
+      final button = [
+        _minusRect,
+        _plusRect,
+        _lockRect,
+        _unlockRect,
+        _closeRect,
+      ].indexWhere((rect) => rect.contains(_cursor));
+      if (inside != _hover || button != _hoveredButton) {
         _hover = inside;
+        _hoveredButton = button;
         _render();
       }
     } finally {
@@ -281,6 +333,11 @@ class DesktopLyricsOverlay {
       final cw = rc.ref.right - rc.ref.left;
       final ch = rc.ref.bottom - rc.ref.top;
 
+      if (!_locked &&
+          _hover &&
+          _closeRect.contains(ui.Offset(cx.toDouble(), cy.toDouble()))) {
+        return HTCLIENT;
+      }
       if (_locked) {
         if (_hover &&
             _unlockRect.width > 0 &&
@@ -318,6 +375,11 @@ class DesktopLyricsOverlay {
     final x = (lParam & 0xFFFF).toSigned(16);
     final y = ((lParam >> 16) & 0xFFFF).toSigned(16);
     final pt = ui.Offset(x.toDouble(), y.toDouble());
+    if (!_locked && _hover && _closeRect.contains(pt)) {
+      hide();
+      _closeCallback?.call();
+      return;
+    }
     if (_locked) {
       if (_unlockRect.contains(pt)) {
         _locked = false;
@@ -396,18 +458,21 @@ class DesktopLyricsOverlay {
       if (bits == null || _dib == 0) return;
       final n = w * h;
 
-      // 1) 清屏为哨兵值（alpha=0, RGB=1,1,1）
-      for (var i = 0; i < n; i++) {
-        final p = i * 4;
-        bits[p] = 1;
-        bits[p + 1] = 1;
-        bits[p + 2] = 1;
-        bits[p + 3] = 0;
-      }
+      // 分层窗口使用预乘 alpha，完全透明像素的 RGB 也必须清零。
+      bits.asTypedList(n * 4).fillRange(0, n * 4, 0);
 
-      // 2) 仅解锁状态悬停时显示 25% 半透明黑圆角背景（alpha=64）
+      // 悬停时显示细边框和深色底板；平时只保留歌词。
       if (!_locked && _hover) {
-        _fillRounded(0, 0, w, h, 12, 64, 0, 0, 0);
+        _fillRounded(0, 0, w, h, 14, 100, 174, 188, 210);
+        _fillRounded(1, 1, w - 1, h - 1, 13, 216, 20, 24, 32);
+        // 左侧拖动握柄，与居中操作区保持清晰分工。
+        for (var row = 0; row < 2; row++) {
+          for (var col = 0; col < 3; col++) {
+            final x = 16 + col * 5;
+            final y = 17 + row * 5;
+            _fillRounded(x, y, x + 2, y + 2, 1, 150, 196, 207, 224);
+          }
+        }
       }
 
       // 3) 按钮背景（半透明灰）并更新命中区
@@ -423,6 +488,8 @@ class DesktopLyricsOverlay {
         _drawSvgIcon(_plusRect, 'plus');
         _drawSvgIcon(_lockRect, 'lock');
       }
+
+      if (!_locked && _hover) _drawSvgIcon(_closeRect, 'close');
 
       // 5) 提交到分层窗口
       _updateLayered(w, h);
@@ -466,13 +533,13 @@ class DesktopLyricsOverlay {
   }
 
   void _freeTarget() {
-    if (_dib != 0) {
-      DeleteObject(_dib);
-      _dib = 0;
-    }
     if (_memDc != 0) {
       DeleteDC(_memDc);
       _memDc = 0;
+    }
+    if (_dib != 0) {
+      DeleteObject(_dib);
+      _dib = 0;
     }
     _bits = null;
     _dibW = 0;
@@ -521,13 +588,13 @@ class DesktopLyricsOverlay {
   }
 
   void _freeTextTarget() {
-    if (_textDib != 0) {
-      DeleteObject(_textDib);
-      _textDib = 0;
-    }
     if (_textMemDc != 0) {
       DeleteDC(_textMemDc);
       _textMemDc = 0;
+    }
+    if (_textDib != 0) {
+      DeleteObject(_textDib);
+      _textDib = 0;
     }
     _textBits = null;
     _textDibW = 0;
@@ -539,9 +606,7 @@ class DesktopLyricsOverlay {
     final mask = _textBits;
     if (mask == null || _textDib == 0) return;
     final n = _textDibW * _textDibH;
-    for (var i = 0; i < n * 4; i++) {
-      mask[i] = 0;
-    }
+    mask.asTypedList(n * 4).fillRange(0, n * 4, 0);
 
     final lf = calloc<LOGFONT>();
     try {
@@ -557,10 +622,15 @@ class DesktopLyricsOverlay {
         SetTextColor(_textMemDc, 0x00FFFFFF);
         final rect = calloc<RECT>();
         try {
-          final horizontalPadding = 8 * _textScale;
-          final verticalPadding = 4 * _textScale;
+          final horizontalPadding = (14 + _outlineWidth.ceil()) * _textScale;
+          final verticalPadding = (8 + _outlineWidth.ceil()) * _textScale;
+          // 固定预留工具栏，避免悬停和锁定切换时歌词跳动或被遮挡。
+          final contentTop = _toolbarHeight * _textScale;
           final contentWidth = w * _textScale - horizontalPadding * 2;
-          final contentHeight = h * _textScale - verticalPadding * 2;
+          final contentHeight = math.max(
+            1,
+            h * _textScale - contentTop - verticalPadding * 2,
+          );
           final twoLineHeight = (_fontSize * _textScale * dpi / 72 * 2.4)
               .ceil();
           final multiline = contentHeight >= twoLineHeight;
@@ -577,7 +647,7 @@ class DesktopLyricsOverlay {
                 ? (multilineOverflow ? DT_LEFT : DT_CENTER) |
                       DT_WORDBREAK |
                       DT_NOPREFIX
-                : DT_LEFT |
+                : DT_CENTER |
                       DT_VCENTER |
                       DT_SINGLELINE |
                       DT_END_ELLIPSIS |
@@ -591,11 +661,13 @@ class DesktopLyricsOverlay {
                 contentWidth,
               );
               rect.ref.top =
-                  verticalPadding + ((contentHeight - textHeight) / 2).round();
+                  contentTop +
+                  verticalPadding +
+                  ((contentHeight - textHeight) / 2).round();
               rect.ref.bottom = rect.ref.top + twoLineHeight;
             } else {
-              rect.ref.top = verticalPadding;
-              rect.ref.bottom = verticalPadding + contentHeight;
+              rect.ref.top = contentTop + verticalPadding;
+              rect.ref.bottom = rect.ref.top + contentHeight;
             }
             final ow = (_outlineWidth * _textScale).round();
             if (ow > 0) {
@@ -614,14 +686,12 @@ class DesktopLyricsOverlay {
                   }
                 }
               }
-              _blendTextMask(w, h, _outlineColor);
+              _blendTextMask(w, h, _outlineColor, rect, ow);
             }
 
-            for (var i = 0; i < n * 4; i++) {
-              mask[i] = 0;
-            }
+            mask.asTypedList(n * 4).fillRange(0, n * 4, 0);
             DrawText(_textMemDc, displayTextPtr, -1, rect, flags);
-            _blendTextMask(w, h, _textColor);
+            _blendTextMask(w, h, _textColor, rect, 0);
           } finally {
             calloc.free(displayTextPtr);
           }
@@ -673,7 +743,9 @@ class DesktopLyricsOverlay {
     return '${String.fromCharCodes(codePoints.take(low))}...';
   }
 
-  void _blendTextMask(int w, int h, int color) {
+  void _blendTextMask(int w, int h, int color, Pointer<RECT> rect, int spread) {
+    // GDI 可能批量绘图；CPU 读取 DIB 前先提交。
+    _gdiFlush();
     final mask = _textBits;
     if (mask == null) return;
     final sourceAlpha = (color >> 24) & 0xFF;
@@ -682,14 +754,19 @@ class DesktopLyricsOverlay {
     final g = (color >> 8) & 0xFF;
     final b = color & 0xFF;
     final samples = _textScale * _textScale;
-    for (var y = 0; y < h; y++) {
-      for (var x = 0; x < w; x++) {
+    final left = ((rect.ref.left - spread) / _textScale).floor().clamp(0, w);
+    final right = ((rect.ref.right + spread) / _textScale).ceil().clamp(0, w);
+    final top = ((rect.ref.top - spread) / _textScale).floor().clamp(0, h);
+    final bottom = ((rect.ref.bottom + spread) / _textScale).ceil().clamp(0, h);
+    final pixels = mask.asTypedList(_textDibW * _textDibH * 4);
+    for (var y = top; y < bottom; y++) {
+      for (var x = left; x < right; x++) {
         var coverage = 0;
         for (var sy = 0; sy < _textScale; sy++) {
           final row = (_textDibH - 1 - (y * _textScale + sy)) * _textDibW;
           for (var sx = 0; sx < _textScale; sx++) {
             // 遮罩为白色，任一 RGB 分量均代表 GDI 的灰阶覆盖率。
-            coverage += mask[(row + x * _textScale + sx) * 4];
+            coverage += pixels[(row + x * _textScale + sx) * 4];
           }
         }
         final alpha = (coverage * sourceAlpha / (255 * samples)).round();
@@ -727,6 +804,11 @@ class DesktopLyricsOverlay {
     int y1,
     int radius,
   ) {
+    // 只有四个圆角需要超采样，内部像素直接填充。
+    if ((x >= x0 + radius && x < x1 - radius) ||
+        (y >= y0 + radius && y < y1 - radius)) {
+      return 1;
+    }
     var inside = 0;
     final total = _controlScale * _controlScale;
     for (var sy = 0; sy < _controlScale; sy++) {
@@ -757,75 +839,49 @@ class DesktopLyricsOverlay {
   }
 
   void _drawButtonBgs(int w, int h) {
-    const bs = 24;
-    const gap = 6;
-    const top = 4;
+    const size = 28.0;
+    const gap = 4.0;
+    const top = 8.0; // 避开窗口缩放边缘，完整按钮均可点击。
     _minusRect = ui.Rect.zero;
     _plusRect = ui.Rect.zero;
     _lockRect = ui.Rect.zero;
     _unlockRect = ui.Rect.zero;
+    _closeRect = ui.Rect.zero;
+    if (!_hover) return;
+    if (!_locked) {
+      _closeRect = ui.Rect.fromLTWH(w - size - 10, top, size, size);
+    }
+
+    final centerLeft = (w - size) / 2;
     if (_locked) {
-      // 锁定态：仅悬停时在顶部居中显示解锁按钮
-      if (_hover) {
-        final r = ui.Rect.fromLTWH(
-          ((w - bs) / 2).toDouble(),
-          top.toDouble(),
-          bs.toDouble(),
-          bs.toDouble(),
-        );
-        _unlockRect = r;
-        _fillRounded(
-          r.left.round(),
-          r.top.round(),
-          r.right.round(),
-          r.bottom.round(),
-          5,
-          102,
-          51,
-          51,
-          51,
-        );
-      }
-    } else if (_hover) {
-      // 解锁态悬停：顶部居中显示 减号 / 加号 / 锁定
-      final total = bs * 3 + gap * 2;
-      var x = (w - total) / 2;
-      final minus = ui.Rect.fromLTWH(
-        x.toDouble(),
-        top.toDouble(),
-        bs.toDouble(),
-        bs.toDouble(),
+      _unlockRect = ui.Rect.fromLTWH(centerLeft, top, size, size);
+    } else {
+      _minusRect = ui.Rect.fromLTWH(centerLeft - size - gap, top, size, size);
+      _lockRect = ui.Rect.fromLTWH(centerLeft, top, size, size);
+      _plusRect = ui.Rect.fromLTWH(centerLeft + size + gap, top, size, size);
+    }
+    for (final rect in [
+      _minusRect,
+      _plusRect,
+      _lockRect,
+      _unlockRect,
+      _closeRect,
+    ]) {
+      if (rect.isEmpty) continue;
+      final active = rect.contains(_cursor);
+      final accent = rect == _lockRect || rect == _unlockRect;
+      final closing = active && rect == _closeRect;
+      _fillRounded(
+        rect.left.round(),
+        rect.top.round(),
+        rect.right.round(),
+        rect.bottom.round(),
+        8,
+        active ? 245 : (accent ? 220 : 160),
+        closing ? 190 : (active ? 67 : (accent ? 43 : 42)),
+        closing ? 55 : (active ? 91 : (accent ? 65 : 48)),
+        closing ? 65 : (active ? 126 : (accent ? 94 : 59)),
       );
-      x += bs + gap;
-      final plus = ui.Rect.fromLTWH(
-        x.toDouble(),
-        top.toDouble(),
-        bs.toDouble(),
-        bs.toDouble(),
-      );
-      x += bs + gap;
-      final lock = ui.Rect.fromLTWH(
-        x.toDouble(),
-        top.toDouble(),
-        bs.toDouble(),
-        bs.toDouble(),
-      );
-      _minusRect = minus;
-      _plusRect = plus;
-      _lockRect = lock;
-      for (final r in [minus, plus, lock]) {
-        _fillRounded(
-          r.left.round(),
-          r.top.round(),
-          r.right.round(),
-          r.bottom.round(),
-          5,
-          102,
-          51,
-          51,
-          51,
-        );
-      }
     }
   }
 
@@ -875,6 +931,9 @@ class DesktopLyricsOverlay {
   void _drawSvgIcon(ui.Rect r, String kind) {
     List<List<ui.Offset>> paths;
     switch (kind) {
+      case 'close':
+        paths = _parsePath('M12 12L36 36M36 12L12 36');
+        break;
       case 'minus':
         paths = _parsePath('M10.5 24L38.5 24');
         break;
@@ -989,9 +1048,10 @@ class DesktopLyricsOverlay {
     final db = bits[i];
     final dg = bits[i + 1];
     final dr = bits[i + 2];
-    final nr = (r * a + dr * da * (255 - a) ~/ 255) ~/ outA;
-    final ng = (g * a + dg * da * (255 - a) ~/ 255) ~/ outA;
-    final nb = (b * a + db * da * (255 - a) ~/ 255) ~/ outA;
+    // UpdateLayeredWindowIndirect 要求 BGRA 的 RGB 已预乘 alpha。
+    final nr = (r * a + dr * (255 - a)) ~/ 255;
+    final ng = (g * a + dg * (255 - a)) ~/ 255;
+    final nb = (b * a + db * (255 - a)) ~/ 255;
     bits[i] = nb;
     bits[i + 1] = ng;
     bits[i + 2] = nr;
@@ -1146,12 +1206,16 @@ class DesktopLyricsOverlay {
   void Function(bool locked)? _syncLockCallback;
   void Function(double size)? _syncFontSizeCallback;
 
+  void Function()? _closeCallback;
+
   void bind({
     required void Function(bool locked) onLockChanged,
     required void Function(double size) onFontSizeChanged,
+    required void Function() onClose,
   }) {
     _syncLockCallback = onLockChanged;
     _syncFontSizeCallback = onFontSizeChanged;
+    _closeCallback = onClose;
   }
 
   void show({
@@ -1207,6 +1271,9 @@ class DesktopLyricsOverlay {
   void hide() {
     if (!_visible) return;
     _visible = false;
+    _hover = false;
+    _hoveredButton = -1;
+    _cursor = const ui.Offset(-1, -1);
     if (_hwnd != 0) ShowWindow(_hwnd, SW_HIDE);
   }
 

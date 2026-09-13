@@ -34,11 +34,11 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
   late final TextEditingController _usernameController;
   late final TextEditingController _passwordController;
   late bool _useLocal;
-  late final Set<int> _selected;
   final List<String> _logs = [];
   bool _testing = false;
   bool _obscurePassword = true;
   bool _running = false;
+  bool _syncing = false;
   bool _cancelling = false;
   String _stage = '等待开始';
   String? _jobId;
@@ -68,7 +68,6 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
     _passwordController = TextEditingController(
       text: SettingsStore.get('kt_password') ?? KtService.defaultPassword,
     );
-    _selected = Set<int>.from(List.generate(widget.tracks.length, (i) => i));
   }
 
   @override
@@ -80,10 +79,9 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
   }
 
   String get _endpoint => _useLocal ? _localEndpoint : _networkController.text;
-  List<int> get _selectedIndices => _selected.toList()..sort();
   double get _progress {
-    if (_selected.isEmpty) return 0;
-    return ((_finishedFiles + _stageFraction) / _selected.length).clamp(
+    if (widget.tracks.isEmpty) return 0;
+    return ((_finishedFiles + _stageFraction) / widget.tracks.length).clamp(
       0.0,
       1.0,
     );
@@ -100,10 +98,10 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
     final username = _usernameController.text.trim();
     final password = _passwordController.text;
     if (username.isEmpty || password.isEmpty) {
-      throw const FormatException('请输入 kt 用户名和密码');
+      throw const FormatException('请输入 kikoeta-transl 用户名和密码');
     }
     if (username.contains(':')) {
-      throw const FormatException('kt 用户名不能包含冒号');
+      throw const FormatException('kikoeta-transl 用户名不能包含冒号');
     }
     return KtService(_endpoint, username: username, password: password);
   }
@@ -115,7 +113,9 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
     try {
       service = _service();
       final result = await service.health();
-      if (result['ok'] != true) throw const FormatException('kt 服务未就绪');
+      if (result['ok'] != true) {
+        throw const FormatException('kikoeta-transl 服务未就绪');
+      }
       _persistConnection();
       _toast('连接成功');
     } catch (error) {
@@ -133,11 +133,11 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
       _toast('请从作品详情页的更多选项进入并启动听写翻译');
       return;
     }
-    if (_selected.isEmpty) {
-      _toast('请至少选择一个音频文件');
+    if (widget.tracks.isEmpty) {
+      _toast('请返回作品详情页勾选需要听写翻译的媒体文件');
       return;
     }
-    final tracks = _selectedIndices.map((i) => widget.tracks[i]).toList();
+    final tracks = widget.tracks;
     final missing = tracks.where((track) {
       final url = track.downloadUrl ?? track.url;
       return url == null || url.isEmpty;
@@ -157,7 +157,7 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
         _cancelling = false;
         _logs.clear();
         _jobId = null;
-        _stage = '正在连接 kt';
+        _stage = '正在连接 kikoeta-transl';
         _finishedFiles = 0;
         _stageFraction = 0;
         _savedFiles = 0;
@@ -177,9 +177,15 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
           ),
         );
       }
-      final created = await service.createJob(sources);
+      final created = await service.createJob(
+        sources,
+        cacheWorkId: currentWork.rj,
+        cacheTrackPaths: tracks.map((track) => track.path).toList(),
+      );
       final jobId = created['job_id']?.toString() ?? '';
-      if (jobId.isEmpty) throw const FormatException('kt 未返回任务编号');
+      if (jobId.isEmpty) {
+        throw const FormatException('kikoeta-transl 未返回任务编号');
+      }
       _jobId = jobId;
       _appendLog('任务 $jobId 已创建，共 ${tracks.length} 个音频');
       if (mounted) setState(() => _stage = '任务已排队');
@@ -216,7 +222,7 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
       }
       if (status == 'completed') {
         if (_savedFiles == 0) {
-          throw const FormatException('kt 没有返回可用的 LRC 文件');
+          throw const FormatException('kikoeta-transl 没有返回可用的 LRC 文件');
         }
         if (mounted) setState(() => _stage = '听写翻译完成');
         _toast('完成：$_savedFiles 个歌词已写入 ${currentWork.rj} 歌词库');
@@ -226,7 +232,7 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
         throw Exception(
           job['error']?.toString().trim().isNotEmpty == true
               ? job['error'].toString()
-              : 'kt 任务失败',
+              : 'kikoeta-transl 任务失败',
         );
       }
     } catch (error) {
@@ -305,7 +311,7 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
           _ => _stageFraction,
         };
       } else if (type == 'file_done' || type == 'file_error') {
-        _finishedFiles = (_finishedFiles + 1).clamp(0, _selected.length);
+        _finishedFiles = (_finishedFiles + 1).clamp(0, widget.tracks.length);
         _stageFraction = 0;
       }
     });
@@ -325,17 +331,87 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
     setState(() => _cancelling = true);
     try {
       await service.cancel(jobId);
-      _appendLog('已向 kt 发送取消请求');
+      _appendLog('已向 kikoeta-transl 发送取消请求');
     } catch (error) {
       _toast('取消失败：$error');
       if (mounted) setState(() => _cancelling = false);
     }
   }
 
+  Future<void> _syncCachedResults() async {
+    if (_syncing || _running) return;
+    KtService? service;
+    var saved = 0;
+    var skipped = 0;
+    var failed = 0;
+    final targets = <String>{};
+    try {
+      setState(() => _syncing = true);
+      service = _service();
+      _persistConnection();
+      final entries = await service.cachedResults();
+      if (entries.isEmpty) {
+        _toast('kikoeta-transl 没有可同步的缓存结果');
+        return;
+      }
+      _appendLog('开始同步 ${entries.length} 条 kikoeta-transl 缓存任务');
+      for (final entry in entries) {
+        final workId = entry.workId.trim().toUpperCase();
+        for (final file in entry.files) {
+          if (file.trackPath.isEmpty || file.downloadUrl.isEmpty) {
+            skipped++;
+            continue;
+          }
+          final relativePath = ktLyricsRelativePath(workId, file.trackPath);
+          final key = '$workId\u0000$relativePath';
+          if (!targets.add(key)) {
+            skipped++;
+            continue;
+          }
+          try {
+            final bytes = await service.download(file.downloadUrl);
+            await LyricsLibraryService.instance.saveTranslatedLyrics(
+              workId: workId,
+              relativePath: relativePath,
+              content: utf8.decode(bytes, allowMalformed: true),
+            );
+            saved++;
+          } catch (error) {
+            failed++;
+            _appendLog('同步 ${entry.jobId}/${file.name} 失败：$error');
+          }
+        }
+      }
+      _appendLog('缓存同步完成：写入 $saved，去重跳过 $skipped，失败 $failed');
+      if (mounted) setState(() => _stage = '缓存同步完成');
+      _toast('同步完成：写入 $saved 个歌词${skipped > 0 ? '，去重 $skipped 个' : ''}');
+    } catch (error) {
+      _appendLog('缓存同步失败：$error');
+      _toast('缓存同步失败：$error');
+    } finally {
+      service?.close();
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('听写翻译')),
+      appBar: AppBar(
+        title: const Text('听写翻译'),
+        actions: [
+          IconButton(
+            tooltip: '同步 kikoeta-transl 缓存',
+            onPressed: _running || _syncing ? null : _syncCachedResults,
+            icon: _syncing
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.sync),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
         children: [
@@ -372,7 +448,7 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
           initialValue: _localEndpoint,
           enabled: false,
           decoration: const InputDecoration(
-            labelText: '本地 kt 地址（固定）',
+            labelText: '本地 kikoeta-transl 地址（固定）',
             prefixIcon: Icon(Icons.dns_outlined),
           ),
         )
@@ -382,7 +458,7 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
           enabled: !_running,
           keyboardType: TextInputType.url,
           decoration: const InputDecoration(
-            labelText: 'kt 地址',
+            labelText: 'kikoeta-transl 地址',
             hintText: '192.168.1.20:2370',
             prefixIcon: Icon(Icons.dns_outlined),
           ),
@@ -401,7 +477,7 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
         enabled: !_running,
         autofillHints: const [AutofillHints.username],
         decoration: const InputDecoration(
-          labelText: 'kt 用户名',
+          labelText: 'kikoeta-transl 用户名',
           prefixIcon: Icon(Icons.person_outline),
         ),
       ),
@@ -412,7 +488,7 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
         obscureText: _obscurePassword,
         autofillHints: const [AutofillHints.password],
         decoration: InputDecoration(
-          labelText: 'kt 密码',
+          labelText: 'kikoeta-transl 密码',
           prefixIcon: const Icon(Icons.lock_outline),
           suffixIcon: IconButton(
             tooltip: _obscurePassword ? '显示密码' : '隐藏密码',
@@ -472,28 +548,11 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
       title: '${work!.rj} · ${work!.title}',
       icon: Icons.library_music_outlined,
       children: [
-        Row(
-          children: [
-            Text('音频 ${widget.tracks.length} 个，已选 ${_selected.length} 个'),
-            const Spacer(),
-            TextButton(
-              onPressed: _running
-                  ? null
-                  : () => setState(() {
-                      if (_selected.length == widget.tracks.length) {
-                        _selected.clear();
-                      } else {
-                        _selected.addAll(
-                          List.generate(widget.tracks.length, (i) => i),
-                        );
-                      }
-                    }),
-              child: Text(
-                _selected.length == widget.tracks.length ? '取消全选' : '全选',
-              ),
-            ),
-          ],
+        Text(
+          '已从作品详情页勾选 ${widget.tracks.length} 个媒体文件',
+          style: TextStyle(color: p.muted, fontSize: 12),
         ),
+        const SizedBox(height: 8),
         ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 230),
           child: ListView.builder(
@@ -501,19 +560,9 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
             itemCount: widget.tracks.length,
             itemBuilder: (_, index) {
               final track = widget.tracks[index];
-              return CheckboxListTile(
+              return ListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
-                value: _selected.contains(index),
-                onChanged: _running
-                    ? null
-                    : (value) => setState(() {
-                        if (value == true) {
-                          _selected.add(index);
-                        } else {
-                          _selected.remove(index);
-                        }
-                      }),
                 title: Text(
                   track.title,
                   maxLines: 1,
@@ -565,10 +614,10 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
           ),
         ],
       ),
-      if (_selected.isNotEmpty) ...[
+      if (widget.tracks.isNotEmpty) ...[
         const SizedBox(height: 4),
         Text(
-          '已处理 $_finishedFiles / ${_selected.length}${_savedFiles > 0 ? ' · 已入库 $_savedFiles' : ''}',
+          '已处理 $_finishedFiles / ${widget.tracks.length}${_savedFiles > 0 ? ' · 已入库 $_savedFiles' : ''}',
           style: TextStyle(color: p.muted, fontSize: 12),
         ),
       ],
@@ -576,7 +625,7 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
   );
 
   Widget _logCard() => _card(
-    title: 'kt 日志',
+    title: 'kikoeta-transl 日志',
     icon: Icons.terminal,
     children: [
       Container(
@@ -591,7 +640,7 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
         child: SingleChildScrollView(
           reverse: true,
           child: SelectableText(
-            _logs.isEmpty ? '等待 kt 日志…' : _logs.join('\n'),
+            _logs.isEmpty ? '等待 kikoeta-transl 日志…' : _logs.join('\n'),
             style: TextStyle(
               color: _logs.isEmpty ? p.dim : p.text,
               fontFamily: 'monospace',

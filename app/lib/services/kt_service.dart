@@ -33,6 +33,55 @@ class KtEventsBatch {
   });
 }
 
+class KtCachedLyricsFile {
+  final String trackPath;
+  final String name;
+  final String downloadUrl;
+
+  const KtCachedLyricsFile({
+    required this.trackPath,
+    required this.name,
+    required this.downloadUrl,
+  });
+
+  factory KtCachedLyricsFile.fromJson(Map<String, dynamic> json) =>
+      KtCachedLyricsFile(
+        trackPath: json['track_path']?.toString() ?? '',
+        name: json['name']?.toString() ?? '',
+        downloadUrl: json['download_url']?.toString() ?? '',
+      );
+}
+
+class KtCachedResult {
+  final String jobId;
+  final String workId;
+  final List<KtCachedLyricsFile> files;
+
+  const KtCachedResult({
+    required this.jobId,
+    required this.workId,
+    required this.files,
+  });
+
+  factory KtCachedResult.fromJson(Map<String, dynamic> json) {
+    final rawFiles = json['files'];
+    return KtCachedResult(
+      jobId: json['job_id']?.toString() ?? '',
+      workId: json['work_id']?.toString() ?? '',
+      files: rawFiles is List
+          ? rawFiles
+                .whereType<Map>()
+                .map(
+                  (item) => KtCachedLyricsFile.fromJson(
+                    Map<String, dynamic>.from(item),
+                  ),
+                )
+                .toList()
+          : const [],
+    );
+  }
+}
+
 class KtService {
   static const defaultUsername = 'admin';
   static const defaultPassword = 'kikoeta';
@@ -52,7 +101,9 @@ class KtService {
 
   static String normalizeEndpoint(String value) {
     var text = value.trim();
-    if (text.isEmpty) throw const FormatException('请输入 kt 的 IP/域名与端口');
+    if (text.isEmpty) {
+      throw const FormatException('请输入 kikoeta-transl 的 IP/域名与端口');
+    }
     if (!text.contains('://')) text = 'http://$text';
     final uri = Uri.tryParse(text);
     if (uri == null ||
@@ -82,18 +133,25 @@ class KtService {
 
   Future<Map<String, dynamic>> health() => _getJson('/api/v1/health');
 
-  Future<Map<String, dynamic>> createJob(List<KtSourceFile> files) =>
-      _postJson('/api/v1/jobs', {
-        'files': files.map((file) => file.toJson()).toList(),
-        'flags': {'enable_correct': false, 'enable_translate': true},
-        'settings': {
-          'output': {
-            'preset': 'target_lrc',
-            'formats': ['lrc'],
-            'bilingual': false,
-          },
-        },
-      });
+  Future<Map<String, dynamic>> createJob(
+    List<KtSourceFile> files, {
+    String? cacheWorkId,
+    List<String> cacheTrackPaths = const [],
+  }) => _postJson('/api/v1/jobs', {
+    'files': files.map((file) => file.toJson()).toList(),
+    'flags': {'enable_correct': false, 'enable_translate': true},
+    'settings': {
+      'output': {
+        'preset': 'target_lrc',
+        'formats': ['lrc'],
+        'bilingual': false,
+      },
+    },
+    if (cacheWorkId != null &&
+        cacheWorkId.trim().isNotEmpty &&
+        cacheTrackPaths.isNotEmpty)
+      'cache': {'work_id': cacheWorkId.trim(), 'track_paths': cacheTrackPaths},
+  });
 
   Future<Map<String, dynamic>> job(String jobId) =>
       _getJson('/api/v1/jobs/$jobId');
@@ -111,6 +169,17 @@ class KtService {
       cursor: (body['cursor'] as num?)?.toInt() ?? cursor,
       closed: body['closed'] == true,
     );
+  }
+
+  Future<List<KtCachedResult>> cachedResults() async {
+    final body = await _getJson('/api/v1/cache');
+    final raw = body['entries'];
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((item) => KtCachedResult.fromJson(Map<String, dynamic>.from(item)))
+        .where((entry) => entry.workId.isNotEmpty && entry.files.isNotEmpty)
+        .toList();
   }
 
   Future<void> cancel(String jobId) async {
@@ -161,7 +230,9 @@ class KtService {
       throw KtServiceException(_errorMessage(response), response.statusCode);
     }
     final value = jsonDecode(utf8.decode(response.bodyBytes));
-    if (value is! Map) throw const FormatException('kt 返回了无效响应');
+    if (value is! Map) {
+      throw const FormatException('kikoeta-transl 返回了无效响应');
+    }
     return Map<String, dynamic>.from(value);
   }
 
@@ -172,7 +243,7 @@ class KtService {
         return value['error'].toString();
       }
     } catch (_) {}
-    return 'kt 请求失败（HTTP ${response.statusCode}）';
+    return 'kikoeta-transl 请求失败（HTTP ${response.statusCode}）';
   }
 }
 

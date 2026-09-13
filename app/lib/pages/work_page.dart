@@ -407,6 +407,22 @@ class _WorkPageState extends State<WorkPage> {
     return out;
   }
 
+  List<MediaNode> _collectDictationMedia(Iterable<MediaNode> nodes) {
+    final out = <MediaNode>[];
+    void walk(List<MediaNode> list) {
+      for (final node in list) {
+        if (node.isDir) {
+          walk(node.children);
+        } else if (_isMediaFile(node)) {
+          out.add(node);
+        }
+      }
+    }
+
+    walk(nodes.toList());
+    return out;
+  }
+
   void _playFiles(Iterable<MediaNode> files, {MediaNode? selected}) {
     if (app.sfwMode && work.age != Age.all) {
       _toast('SFW 模式下不能播放非全年龄作品');
@@ -601,15 +617,20 @@ class _WorkPageState extends State<WorkPage> {
           _toast(_tracksFailed ? '曲目加载失败，请刷新后重试' : '曲目列表加载中，请稍候');
           return;
         }
-        final tracks = _collectAudio(tree)
+        if (_selection.paths.isEmpty) {
+          _toast('请先勾选需要听写翻译的媒体文件');
+          return;
+        }
+        final tracks = _collectDictationMedia(tree)
             .where(
               (track) =>
-                  (track.downloadUrl?.isNotEmpty ?? false) ||
-                  (track.url?.isNotEmpty ?? false),
+                  _selection.paths.contains(track.path) &&
+                  ((track.downloadUrl?.isNotEmpty ?? false) ||
+                      (track.url?.isNotEmpty ?? false)),
             )
             .toList();
         if (tracks.isEmpty) {
-          _toast('没有可提交给 kt 的音频文件');
+          _toast('所选项目中没有可提交给 kikoeta-transl 的媒体文件');
           return;
         }
         if (!mounted) return;

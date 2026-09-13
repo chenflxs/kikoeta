@@ -96,6 +96,7 @@ Future<void> main() async {
     DesktopLyricsOverlay.instance.bind(
       onLockChanged: (v) => appState.setLyricsLockedDesktop(v),
       onFontSizeChanged: (v) => appState.setLyricsFontSize(v),
+      onClose: () => appState.setDesktopLyricsOn(false),
     );
     appState.addListener(_syncDesktopLyrics);
     _syncDesktopLyrics();

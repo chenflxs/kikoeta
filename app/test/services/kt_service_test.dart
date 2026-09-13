@@ -68,4 +68,36 @@ void main() {
     );
     service.close();
   });
+
+  test('cache results retain the work and source-track mapping', () async {
+    final client = MockClient((request) async {
+      expect(request.url.path, '/api/v1/cache');
+      return http.Response(
+        jsonEncode({
+          'entries': [
+            {
+              'job_id': 'cached-job',
+              'work_id': 'RJ123',
+              'files': [
+                {
+                  'track_path': 'disc/01.mp3',
+                  'name': '01.zh.lrc',
+                  'download_url': '/api/v1/cache/cached-job/files/0',
+                },
+              ],
+            },
+          ],
+        }),
+        200,
+      );
+    });
+    final service = KtService('127.0.0.1:2370', client: client);
+
+    final entries = await service.cachedResults();
+
+    expect(entries, hasLength(1));
+    expect(entries.single.workId, 'RJ123');
+    expect(entries.single.files.single.trackPath, 'disc/01.mp3');
+    service.close();
+  });
 }
