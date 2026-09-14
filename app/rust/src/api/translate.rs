@@ -257,9 +257,7 @@ fn preview(s: &str) -> String {
     s.chars().take(160).collect()
 }
 
-/// Google 网页端翻译接口（无需 Key）。
-/// 使用网页端 `client=webapp` 协议和本地计算的 `tk`，避免旧 gtx 客户端
-/// 在批量请求时频繁触发 429。
+/// Google 免费翻译接口（无需 Key），主域名失败时自动尝试备用域名。
 #[flutter_rust_bridge::frb]
 pub async fn api_translate_google(
     text: String,
@@ -270,28 +268,44 @@ pub async fn api_translate_google(
         return Ok(String::new());
     }
     let client = http_client()?;
-    let batches = google_batches(&text, 1200);
+    translate_google_with_client(
+        &client,
+        &[
+            ("https://translate.googleapis.com/translate_a/t", "dict-chrome-ex"),
+            ("https://translate.googleapis.com/translate_a/single", "gtx"),
+            ("https://translate.google.com/translate_a/single", "gtx"),
+        ],
+        &text,
+        &src,
+        &dst,
+    )
+    .await
+}
+
+async fn translate_google_with_client(
+    client: &reqwest::Client,
+    endpoints: &[(&str, &str)],
+    text: &str,
+    src: &str,
+    dst: &str,
+) -> Result<String, String> {
+    let batches = google_batches(text, 1200);
     let mut translated = Vec::with_capacity(batches.len());
     for batch in batches {
-        let mut last_error = String::new();
-        // Try the current web protocol first, then fall back to the legacy
-        // endpoint when Google rejects the web request with 403/429.
-        for (url, webapp) in [
-            ("https://translate.google.com/translate_a/single", true),
-            ("https://translate.googleapis.com/translate_a/single", false),
-        ] {
-            match google_request(&client, url, webapp, &batch, &src, &dst).await {
-                Ok(result) => {
-                    translated.push(result);
-                    last_error.clear();
+        let mut errors = Vec::new();
+        let mut result = None;
+        // The dictionary client does not require a webapp token and remains
+        // usable when the single/gtx endpoint rejects requests with 429.
+        for (url, client_name) in endpoints {
+            match google_request(client, url, client_name, &batch, src, dst).await {
+                Ok(output) => {
+                    result = Some(output);
                     break;
                 }
-                Err(error) => last_error = error,
+                Err(error) => errors.push(format!("{url}: {error}")),
             }
         }
-        if !last_error.is_empty() {
-            return Err(last_error);
-        }
+        translated.push(result.ok_or_else(|| errors.join("；"))?);
     }
     Ok(translated.join("\n"))
 }
@@ -321,7 +335,7 @@ fn google_batches(text: &str, max_chars: usize) -> Vec<String> {
 async fn google_request(
     client: &reqwest::Client,
     url: &str,
-    webapp: bool,
+    client_name: &str,
     text: &str,
     src: &str,
     dst: &str,
@@ -329,26 +343,19 @@ async fn google_request(
     let mut delay = Duration::from_secs(2);
     let mut last_error = String::new();
     for attempt in 0..3 {
-        let mut request = client
+        let request = client
             .get(url)
             .header("user-agent", browser_user_agent())
             .header("accept", "application/json,text/plain,*/*")
-            .query(&[("sl", src), ("tl", dst), ("dt", "t"), ("q", text)]);
-        if webapp {
-            let token = google_token(text);
-            request = request.query(&[
-                ("client", "webapp"),
-                ("hl", "en"),
-                ("v", "1.0"),
-                ("source", "is"),
-                ("tk", token.as_str()),
-                ("dj", "1"),
+            .query(&[
+                ("client", client_name),
+                ("sl", src),
+                ("tl", dst),
+                ("dt", "t"),
+                ("q", text),
                 ("ie", "UTF-8"),
                 ("oe", "UTF-8"),
             ]);
-        } else {
-            request = request.query(&[("client", "gtx"), ("ie", "UTF-8"), ("oe", "UTF-8")]);
-        }
         let resp = request
             .send()
             .await
@@ -364,73 +371,36 @@ async fn google_request(
             .await
             .map_err(|e| format!("读取 Google 响应失败: {e}"))?;
         if status.is_success() {
-            return if webapp {
-                parse_google_webapp(&body)
-            } else {
-                parse_google(&body)
-            };
+            return parse_google(&body);
         }
         last_error = format!("Google 翻译 HTTP {}: {}", status.as_u16(), preview(&body));
         if status.as_u16() != 429 || attempt == 2 {
             break;
         }
-        tokio::time::sleep(Duration::from_secs(retry_after.unwrap_or(delay.as_secs()))).await;
+        // Do not let a long server cooldown keep the UI waiting indefinitely;
+        // hand control back to the caller to try the alternate host instead.
+        let wait = retry_after.unwrap_or(delay.as_secs());
+        if wait > 10 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_secs(wait)).await;
         delay *= 2;
     }
     Err(last_error)
 }
 
-fn google_token(text: &str) -> String {
-    let mut value: i64 = 406_644;
-    // encodeURIComponent/unescape in the web client iterates UTF-8 bytes.
-    for byte in text.as_bytes() {
-        value = google_shift(value + i64::from(*byte), "+-a^+6");
-        value = google_shift(value, "+-3^+b+-f");
-    }
-    value = js_i32(value ^ 3_293_161_072);
-    if value < 0 {
-        value = (value & 2_147_483_647) + 2_147_483_648;
-    }
-    value %= 1_000_000;
-    format!("{value}.{}", js_i32(value ^ 3_293_161_072))
-}
-
-fn google_shift(mut value: i64, pattern: &str) -> i64 {
-    let chars = pattern.as_bytes();
-    let mut index = 0;
-    while index + 2 < chars.len() {
-        let mut shift = i64::from(chars[index + 2]);
-        if shift >= i64::from(b'a') {
-            shift -= 87;
-        }
-        let shifted = if chars[index + 1] == b'+' {
-            js_i32(value) >> shift
-        } else {
-            js_i32(value) << shift
-        };
-        value = if chars[index] == b'+' {
-            value + shifted
-        } else {
-            value ^ shifted
-        };
-        value = js_i32(value);
-        index += 3;
-    }
-    value
-}
-
-fn js_i32(value: i64) -> i64 {
-    let unsigned = value.rem_euclid(4_294_967_296);
-    if unsigned >= 2_147_483_648 {
-        unsigned - 4_294_967_296
-    } else {
-        unsigned
-    }
-}
-
 fn parse_google(body: &str) -> Result<String, String> {
     let v: serde_json::Value =
         serde_json::from_str(body).map_err(|e| format!("Google 响应解析失败: {e}"))?;
+    // /translate_a/t returns ["translation"] for an explicit source, or
+    // [["translation", "detected-language"]] for automatic detection.
+    if let Some(output) = v[0].as_str().or_else(|| v[0][0].as_str()) {
+        return if output.trim().is_empty() {
+            Err("Google 翻译结果为空".to_string())
+        } else {
+            Ok(output.to_string())
+        };
+    }
     let segments = v[0]
         .as_array()
         .ok_or_else(|| "Google 响应结构异常".to_string())?;
@@ -444,21 +414,6 @@ fn parse_google(body: &str) -> Result<String, String> {
         return Err("Google 翻译结果为空".to_string());
     }
     Ok(out)
-}
-
-fn parse_google_webapp(body: &str) -> Result<String, String> {
-    let value: serde_json::Value =
-        serde_json::from_str(body).map_err(|e| format!("Google 响应解析失败: {e}"))?;
-    if let Some(sentences) = value["sentences"].as_array() {
-        let output = sentences
-            .iter()
-            .filter_map(|sentence| sentence["trans"].as_str())
-            .collect::<String>();
-        if !output.trim().is_empty() {
-            return Ok(output);
-        }
-    }
-    parse_google(body)
 }
 
 /// DeepL 免费版接口（api-free.deepl.com/v2/translate，需免费注册的 auth_key）。
@@ -776,14 +731,79 @@ mod tests {
     }
 
     #[test]
-    fn parses_google_webapp_response() {
-        let body = r#"{"sentences":[{"trans":"你好","orig":"こんにちは"}],"src":"ja"}"#;
-        assert_eq!(parse_google_webapp(body).unwrap(), "你好");
+    fn parses_google_dictionary_responses() {
+        assert_eq!(parse_google(r#"["你好\n晚安"]"#).unwrap(), "你好\n晚安");
+        assert_eq!(parse_google(r#"[["你好","ja"]]"#).unwrap(), "你好");
+        assert!(parse_google(r#"[""]"#).is_err());
+        assert!(parse_google("[]").is_err());
+        assert!(parse_google("<html>Forbidden</html>").is_err());
     }
 
     #[test]
-    fn computes_google_webapp_token() {
-        assert_eq!(google_token("こんにちは"), "787929.-1002069079");
+    fn google_falls_back_after_rejected_request() {
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", server.server_addr());
+        let worker = std::thread::spawn(move || {
+            for path in ["/primary", "/fallback"] {
+                let request = server
+                    .recv_timeout(Duration::from_secs(5))
+                    .unwrap()
+                    .unwrap();
+                let url =
+                    reqwest::Url::parse(&format!("http://localhost{}", request.url())).unwrap();
+                assert_eq!(url.path(), path);
+                let query = url.query_pairs().collect::<std::collections::HashMap<_, _>>();
+                assert_eq!(
+                    query.get("client").unwrap(),
+                    if path == "/primary" { "dict-chrome-ex" } else { "gtx" }
+                );
+                assert!(!query.contains_key("tk"));
+                assert_eq!(query.get("q").unwrap(), "こんにちは\nおやすみなさい");
+                assert_eq!(query.get("sl").unwrap(), "ja");
+                assert_eq!(query.get("tl").unwrap(), "zh-CN");
+                let response = if path == "/primary" {
+                    tiny_http::Response::from_string("Forbidden").with_status_code(403)
+                } else {
+                    tiny_http::Response::from_string(
+                        r#"[[["你好\n晚安","こんにちは\nおやすみなさい",null,null,10]],null,"ja"]"#,
+                    )
+                };
+                request.respond(response).unwrap();
+            }
+        });
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let result = runtime.block_on(async {
+            let client = reqwest::Client::builder().no_proxy().build().unwrap();
+            translate_google_with_client(
+                &client,
+                &[
+                    (&format!("{base}/primary"), "dict-chrome-ex"),
+                    (&format!("{base}/fallback"), "gtx"),
+                ],
+                "こんにちは\nおやすみなさい",
+                "ja",
+                "zh-CN",
+            )
+            .await
+        });
+        worker.join().unwrap();
+        assert_eq!(result.unwrap(), "你好\n晚安");
+    }
+
+    #[test]
+    #[ignore = "requires access to Google Translate"]
+    fn google_live_translation() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let result = runtime
+            .block_on(api_translate_google(
+                "こんにちは\nおやすみなさい".to_string(),
+                "ja".to_string(),
+                "zh-CN".to_string(),
+            ))
+            .unwrap();
+        assert_eq!(result.lines().count(), 2);
+        assert!(result.contains("你好"), "{result}");
+        assert!(result.contains("晚安"), "{result}");
     }
 
     #[test]
