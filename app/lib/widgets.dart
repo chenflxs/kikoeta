@@ -1062,17 +1062,14 @@ class _HomeSearchBarState extends State<HomeSearchBar> {
         : (app.peekPendingSearch() ?? '');
     _historySig = _currentHistorySig;
     // 搜索框获得焦点即自动展开
-    _focus.addListener(() {
-      if (_focus.hasFocus && !app.searchExpanded) {
-        app.setSearchExpanded(true);
-      }
-    });
+    _focus.addListener(_onFocusChanged);
     app.addListener(_onAppChanged);
   }
 
   @override
   void dispose() {
     app.removeListener(_onAppChanged);
+    _focus.removeListener(_onFocusChanged);
     _ctrl.dispose();
     _focus.dispose();
     super.dispose();
@@ -1098,11 +1095,35 @@ class _HomeSearchBarState extends State<HomeSearchBar> {
 
   String get _currentHistorySig => app.history.join('\u0000');
 
+  void _onFocusChanged() {
+    if (_focus.hasFocus && !app.searchExpanded) {
+      app.setSearchExpanded(true);
+    }
+    if (mounted) setState(() {});
+  }
+
   void _submit(String q) {
     final s = q.trim();
     app.requestSearch(s);
     _focus.unfocus();
     app.setSearchExpanded(false);
+  }
+
+  void _insertAdvancedSearchGuide() {
+    final value = _ctrl.value;
+    final text = value.text;
+    final rawCursor = value.selection.isValid
+        ? value.selection.baseOffset
+        : text.length;
+    final cursor = rawCursor.clamp(0, text.length).toInt();
+    final nextText = text.replaceRange(cursor, cursor, r'$');
+    _ctrl.value = value.copyWith(
+      text: nextText,
+      selection: TextSelection.collapsed(offset: cursor + 1),
+      composing: TextRange.empty,
+    );
+    _focus.requestFocus();
+    setState(() {});
   }
 
   @override
@@ -1185,6 +1206,47 @@ class _HomeSearchBarState extends State<HomeSearchBar> {
                 onSubmitted: _submit,
               ),
             ),
+            if (_focus.hasFocus)
+              Padding(
+                padding: EdgeInsets.only(
+                  left: 6,
+                  right: _ctrl.text.isNotEmpty ? 7 : 0,
+                ),
+                child: TextFieldTapRegion(
+                  child: Tooltip(
+                    message: '高级搜索',
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        key: const ValueKey('advanced-search-guide'),
+                        onTap: _insertAdvancedSearchGuide,
+                        borderRadius: BorderRadius.circular(8),
+                        child: Ink(
+                          width: 30,
+                          height: 26,
+                          decoration: BoxDecoration(
+                            color: p.accent.withValues(alpha: .08),
+                            border: Border.all(
+                              color: p.accent.withValues(alpha: .36),
+                            ),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Center(
+                            child: Text(
+                              r'$',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: p.accent,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             if (_ctrl.text.isNotEmpty)
               GestureDetector(
                 onTap: () {
