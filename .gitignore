@@ -27,6 +27,10 @@ app/rust/target/
 __pycache__/
 *.pyc
 
+# ---------- 本地测试（不纳入版本控制） ----------
+test/
+tests/
+
 # ---------- IDE ----------
 .idea/
 *.iml
