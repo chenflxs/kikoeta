@@ -11,26 +11,53 @@
 
 ### 桌面端
 
-<img src="docs/image/首页-横屏.png" alt="Kikoeta 桌面端首页，展示搜索、筛选与作品流" width="100%">
-
-<img src="docs/image/播放器-横屏.png" alt="Kikoeta 桌面端播放器，左侧为播放控制，右侧为同步歌词" width="100%">
-
-| 网络与账号 | 播放工具 |
-| :---: | :---: |
-| <img src="docs/image/登录页.png" alt="登录页" width="100%"><br>账号登录与自建站点 | <img src="docs/image/网络代理.png" alt="网络代理设置" width="100%"><br>HTTP 网络代理 |
-| <img src="docs/image/均衡器.png" alt="十段均衡器" width="100%"><br>10 段均衡器 | <img src="docs/image/定时关闭.png" alt="定时关闭" width="100%"><br>定时关闭 |
+| 首页 | 播放器 |
+| --- | --- |
+| ![桌面端首页，展示搜索、筛选与作品流](docs/image/首页-横屏.png) | ![普通横屏播放器](docs/image/播放器-普通横屏.png) |
 
 ### Android
 
-<p align="center">
-  <img src="docs/image/首页-竖屏.png" alt="Android 首页作品流" width="31%">
-  <img src="docs/image/播放器-封面页-竖屏.png" alt="Android 播放器封面页" width="31%">
-  <img src="docs/image/播放器-字幕页-竖屏.png" alt="Android 播放器歌词页" width="31%">
-</p>
+<table>
+  <tr>
+    <th width="33%">首页</th>
+    <th width="33%">播放器封面</th>
+    <th width="33%">播放器歌词</th>
+  </tr>
+  <tr>
+    <td><img src="docs/image/首页-竖屏.png" alt="Android 首页作品流" width="100%"></td>
+    <td><img src="docs/image/播放器-封面页-竖屏.png" alt="Android 播放器封面页" width="100%"></td>
+    <td><img src="docs/image/播放器-字幕页-竖屏.png" alt="Android 播放器歌词页" width="100%"></td>
+  </tr>
+</table>
+
+横屏播放器(仅手机)
+
+<img src="docs/image/播放器-宽屏横屏.png" alt="手机横屏播放器，同时展示播放控制与同步歌词" width="100%">
+
+### 设置与播放工具
+
+<table>
+  <tr>
+    <th width="50%">账号登录与自建站点</th>
+    <th width="50%">HTTP 网络代理</th>
+  </tr>
+  <tr>
+    <td><img src="docs/image/登录页.png" alt="账号登录与自建站点设置" width="100%"></td>
+    <td><img src="docs/image/网络代理.png" alt="HTTP 网络代理设置" width="100%"></td>
+  </tr>
+  <tr>
+    <th>10 段均衡器</th>
+    <th>定时关闭</th>
+  </tr>
+  <tr>
+    <td><img src="docs/image/均衡器.png" alt="10 段均衡器设置" width="100%"></td>
+    <td><img src="docs/image/定时关闭.png" alt="定时关闭设置" width="100%"></td>
+  </tr>
+</table>
 
 <p align="center">
-  <img src="docs/image/歌词快捷设置.png" alt="歌词快捷设置" width="49%">
-  <img src="docs/image/定时关闭.png" alt="定时关闭设置" width="49%">
+  <img src="docs/image/歌词快捷设置.png" alt="歌词快捷设置" width="600"><br>
+  歌词快捷设置
 </p>
 
 ## 功能
@@ -60,7 +87,7 @@
 
 | 平台 | 状态 | 发布产物 |
 | --- | --- | --- |
-| Windows x64 | 支持 | 便携版目录 / 安装程序 |
+| Windows x64 | 支持 | 安装程序 |
 | Android arm64-v8a | 支持 | APK |
 | Linux / macOS | 计划中 | - |
 | IOS | 无计划 | 推荐使用[kikoeru-app](https://number17.online/docs/kikoeru-app) |
