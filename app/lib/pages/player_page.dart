@@ -70,6 +70,7 @@ class _PlayerPageState extends State<PlayerPage> {
   bool _wideLayoutActive = false;
   bool _wideChromeVisible = true;
   bool _wideCoverMenuVisible = false;
+  bool _androidLandscapeStatusBarHidden = false;
 
   Player get _player => AppPlayer.instance.player;
   bool get _opened => AppPlayer.instance.opened;
@@ -262,6 +263,7 @@ class _PlayerPageState extends State<PlayerPage> {
 
   @override
   void dispose() {
+    _restoreAndroidStatusBar();
     app.removeListener(_onAppStateChanged);
     for (final s in _subs) {
       s.cancel();
@@ -638,9 +640,37 @@ class _PlayerPageState extends State<PlayerPage> {
     action();
   }
 
+  void _syncAndroidLandscapeStatusBar(Size size) {
+    final hide = Platform.isAndroid && size.width > size.height;
+    if (_androidLandscapeStatusBarHidden == hide) return;
+    _androidLandscapeStatusBarHidden = hide;
+    unawaited(
+      hide
+          ? SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky)
+          : SystemChrome.setEnabledSystemUIMode(
+              SystemUiMode.manual,
+              overlays: SystemUiOverlay.values,
+            ),
+    );
+  }
+
+  void _restoreAndroidStatusBar() {
+    if (!_androidLandscapeStatusBarHidden) return;
+    _androidLandscapeStatusBarHidden = false;
+    unawaited(
+      SystemChrome.setEnabledSystemUIMode(
+        SystemUiMode.manual,
+        overlays: SystemUiOverlay.values,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncAndroidLandscapeStatusBar(media.size);
+    });
     final wideMobile =
         (Platform.isAndroid || Platform.isIOS) &&
         media.size.height > 0 &&

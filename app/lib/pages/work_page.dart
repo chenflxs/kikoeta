@@ -1077,7 +1077,10 @@ class _WorkPageState extends State<WorkPage> {
 
   Widget _treeView(List<MediaNode> nodes, int depth) {
     return Column(
-      children: nodes.map((n) => _nodeRow(n, depth, nodes)).toList(),
+      children: [
+        for (var i = 0; i < nodes.length; i++)
+          _nodeRow(nodes[i], depth, nodes, isLast: i == nodes.length - 1),
+      ],
     );
   }
 
@@ -1094,9 +1097,15 @@ class _WorkPageState extends State<WorkPage> {
     return false;
   }
 
-  Widget _nodeRow(MediaNode n, int depth, List<MediaNode> siblings) {
+  Widget _nodeRow(
+    MediaNode n,
+    int depth,
+    List<MediaNode> siblings, {
+    required bool isLast,
+  }) {
     final checked = _selection.state(n);
     final open = _expanded.contains(n.path);
+    final hasVisibleChildren = n.isDir && open && n.children.isNotEmpty;
     final translatedName = app.translatedTrack(work.rj, n.path);
     final downloaded = downloadItem == null
         ? true
@@ -1139,9 +1148,11 @@ class _WorkPageState extends State<WorkPage> {
               top: 9,
               bottom: 9,
             ),
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: p.line)),
-            ),
+            decoration: hasVisibleChildren || !isLast
+                ? BoxDecoration(
+                    border: Border(bottom: BorderSide(color: p.line)),
+                  )
+                : null,
             child: Row(
               children: [
                 Icon(
@@ -1189,8 +1200,14 @@ class _WorkPageState extends State<WorkPage> {
             ),
           ),
         ),
-        if (n.isDir && open)
-          ...n.children.map((c) => _nodeRow(c, depth + 1, n.children)),
+        if (hasVisibleChildren)
+          for (var i = 0; i < n.children.length; i++)
+            _nodeRow(
+              n.children[i],
+              depth + 1,
+              n.children,
+              isLast: isLast && i == n.children.length - 1,
+            ),
       ],
     );
   }
@@ -1366,9 +1383,7 @@ class _WorkPageState extends State<WorkPage> {
                                 () => _searchAndBack(work.circle),
                                 maxWidth: constraints.maxWidth,
                               ),
-                              if (work.va
-                                  .replaceFirst('CV. ', '')
-                                  .isNotEmpty)
+                              if (work.va.replaceFirst('CV. ', '').isNotEmpty)
                                 _linkChip(
                                   Icons.person_outline,
                                   work.va.replaceFirst('CV. ', ''),
@@ -1708,10 +1723,7 @@ class _WorkPageState extends State<WorkPage> {
           color: p.surface2,
           borderRadius: BorderRadius.circular(7),
         ),
-        child: Text(
-          work.rj,
-          style: TextStyle(fontSize: 11.5, color: p.muted),
-        ),
+        child: Text(work.rj, style: TextStyle(fontSize: 11.5, color: p.muted)),
       ),
     );
   }
@@ -1728,9 +1740,7 @@ class _WorkPageState extends State<WorkPage> {
           visualDensity: VisualDensity.compact,
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           side: BorderSide(color: p.line),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(7),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
         ),
         child: const Text('多语言', style: TextStyle(fontSize: 11.5)),
       ),

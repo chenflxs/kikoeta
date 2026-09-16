@@ -187,6 +187,7 @@ class _MorePageState extends State<MorePage> {
                 Icons.settings_outlined,
                 '设置',
                 null,
+                showBottomBorder: false,
                 onTap: () => Navigator.of(context).pushNamed('/settings'),
               ),
             ]),
@@ -217,6 +218,7 @@ class _MorePageState extends State<MorePage> {
     String? value, {
     VoidCallback? onTap,
     Widget? trailing,
+    bool showBottomBorder = true,
   }) {
     final p = Theme.of(context).brightness == Brightness.dark
         ? AppColors.dark
@@ -226,7 +228,9 @@ class _MorePageState extends State<MorePage> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
         decoration: BoxDecoration(
-          border: Border(bottom: BorderSide(color: p.line)),
+          border: showBottomBorder
+              ? Border(bottom: BorderSide(color: p.line))
+              : null,
         ),
         child: Row(
           children: [
