@@ -1354,25 +1354,31 @@ class _WorkPageState extends State<WorkPage> {
                             ],
                           ),
                         const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 4,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            _linkChip(
-                              Icons.storefront_outlined,
-                              work.circle,
-                              () => _searchAndBack(work.circle),
-                            ),
-                            if (work.va.replaceFirst('CV. ', '').isNotEmpty)
+                        LayoutBuilder(
+                          builder: (context, constraints) => Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
                               _linkChip(
-                                Icons.person_outline,
-                                work.va.replaceFirst('CV. ', ''),
-                                () => _searchAndBack(
-                                  work.va.replaceFirst('CV. ', ''),
-                                ),
+                                Icons.storefront_outlined,
+                                work.circle,
+                                () => _searchAndBack(work.circle),
+                                maxWidth: constraints.maxWidth,
                               ),
-                          ],
+                              if (work.va
+                                  .replaceFirst('CV. ', '')
+                                  .isNotEmpty)
+                                _linkChip(
+                                  Icons.person_outline,
+                                  work.va.replaceFirst('CV. ', ''),
+                                  () => _searchAndBack(
+                                    work.va.replaceFirst('CV. ', ''),
+                                  ),
+                                  maxWidth: constraints.maxWidth,
+                                ),
+                            ],
+                          ),
                         ),
                         const SizedBox(height: 3),
                         Text(
@@ -1639,30 +1645,42 @@ class _WorkPageState extends State<WorkPage> {
     app.requestSearch(q);
   }
 
-  Widget _linkChip(IconData icon, String label, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: p.surface2,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: p.line),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 12, color: p.accent),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11.5,
-                color: p.accent,
-                fontWeight: FontWeight.w600,
+  Widget _linkChip(
+    IconData icon,
+    String label,
+    VoidCallback onTap, {
+    required double maxWidth,
+  }) {
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxWidth),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: p.surface2,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: p.line),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 12, color: p.accent),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: p.accent,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
