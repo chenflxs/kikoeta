@@ -1200,6 +1200,10 @@ class _WorkPageState extends State<WorkPage> {
     final fav = app.isFavorited(work);
     final zhTitle = app.translatedTitle(work.rj);
     final miniVisible = app.playing || app.hasQueue;
+    // 竖屏时把多语言入口移到下一行，避免作品编号、分级和日期挤压它。
+    final splitWorkMetadata =
+        MediaQuery.orientationOf(context) == Orientation.portrait &&
+        _languageEditions.isNotEmpty;
     final visibleTree = _tree == null
         ? null
         : app.mediaFilesOnly
@@ -1308,66 +1312,47 @@ class _WorkPageState extends State<WorkPage> {
                             ),
                           ),
                         const SizedBox(height: 7),
-                        Row(
-                          children: [
-                            InkWell(
-                              onTap: _copyRj,
-                              borderRadius: BorderRadius.circular(7),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 3,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: p.surface2,
-                                  borderRadius: BorderRadius.circular(7),
-                                ),
-                                child: Text(
-                                  work.rj,
-                                  style: TextStyle(
-                                    fontSize: 11.5,
-                                    color: p.muted,
-                                  ),
-                                ),
+                        if (splitWorkMetadata)
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _rjChip(),
+                                  const SizedBox(width: 8),
+                                  AgeBadge(age: work.age),
+                                ],
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            AgeBadge(age: work.age),
-                            if (work.releaseDate.isNotEmpty) ...[
-                              const SizedBox(width: 6),
-                              _releaseDateChip(work.releaseDate),
-                            ],
-                            if (_languageEditions.isNotEmpty) ...[
-                              const SizedBox(width: 6),
-                              SizedBox(
-                                height: 26,
-                                child: OutlinedButton(
-                                  onPressed: _openingLanguageEdition
-                                      ? null
-                                      : _showLanguageEditions,
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: p.muted,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                    ),
-                                    minimumSize: Size.zero,
-                                    visualDensity: VisualDensity.compact,
-                                    tapTargetSize:
-                                        MaterialTapTargetSize.shrinkWrap,
-                                    side: BorderSide(color: p.line),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(7),
-                                    ),
-                                  ),
-                                  child: const Text(
-                                    '多语言',
-                                    style: TextStyle(fontSize: 11.5),
-                                  ),
-                                ),
+                              const SizedBox(height: 6),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (work.releaseDate.isNotEmpty) ...[
+                                    _releaseDateChip(work.releaseDate),
+                                    const SizedBox(width: 6),
+                                  ],
+                                  _languageEditionsButton(),
+                                ],
                               ),
                             ],
-                          ],
-                        ),
+                          )
+                        else
+                          Row(
+                            children: [
+                              _rjChip(),
+                              const SizedBox(width: 8),
+                              AgeBadge(age: work.age),
+                              if (work.releaseDate.isNotEmpty) ...[
+                                const SizedBox(width: 6),
+                                _releaseDateChip(work.releaseDate),
+                              ],
+                              if (_languageEditions.isNotEmpty) ...[
+                                const SizedBox(width: 6),
+                                _languageEditionsButton(),
+                              ],
+                            ],
+                          ),
                         const SizedBox(height: 8),
                         Wrap(
                           spacing: 8,
@@ -1692,6 +1677,45 @@ class _WorkPageState extends State<WorkPage> {
         border: Border.all(color: p.line),
       ),
       child: Text(date, style: TextStyle(fontSize: 11.5, color: p.muted)),
+    );
+  }
+
+  Widget _rjChip() {
+    return InkWell(
+      onTap: _copyRj,
+      borderRadius: BorderRadius.circular(7),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: p.surface2,
+          borderRadius: BorderRadius.circular(7),
+        ),
+        child: Text(
+          work.rj,
+          style: TextStyle(fontSize: 11.5, color: p.muted),
+        ),
+      ),
+    );
+  }
+
+  Widget _languageEditionsButton() {
+    return SizedBox(
+      height: 26,
+      child: OutlinedButton(
+        onPressed: _openingLanguageEdition ? null : _showLanguageEditions,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: p.muted,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          minimumSize: Size.zero,
+          visualDensity: VisualDensity.compact,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          side: BorderSide(color: p.line),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(7),
+          ),
+        ),
+        child: const Text('多语言', style: TextStyle(fontSize: 11.5)),
+      ),
     );
   }
 
