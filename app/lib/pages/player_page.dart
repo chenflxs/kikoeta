@@ -37,6 +37,8 @@ class _PlayerPageState extends State<PlayerPage> {
   final List<LyricLine> _lyrics = [];
   final List<StreamSubscription> _subs = [];
   Timer? _sleepTimer;
+  Timer? _wideChromeTimer;
+  Timer? _wideCoverMenuTimer;
   int _pos = 0;
   int _dur = 0;
   int _lyricSeq = 0;
@@ -65,6 +67,9 @@ class _PlayerPageState extends State<PlayerPage> {
   bool _buffering = false; // 缓冲中
   int _lastSavedPos = 0; // 上次保存播放位置（节流）
   Future<void>? _restoreFuture;
+  bool _wideLayoutActive = false;
+  bool _wideChromeVisible = true;
+  bool _wideCoverMenuVisible = false;
 
   Player get _player => AppPlayer.instance.player;
   bool get _opened => AppPlayer.instance.opened;
@@ -262,6 +267,8 @@ class _PlayerPageState extends State<PlayerPage> {
       s.cancel();
     }
     _sleepTimer?.cancel();
+    _wideChromeTimer?.cancel();
+    _wideCoverMenuTimer?.cancel();
     _lyricFollowTimer?.cancel();
     _lyricScroll.dispose();
     _pageCtrl.dispose();
@@ -581,8 +588,70 @@ class _PlayerPageState extends State<PlayerPage> {
   LogicalKeyboardKey _shortcutKey(int keyId, LogicalKeyboardKey fallback) =>
       LogicalKeyboardKey.findKeyByKeyId(keyId) ?? fallback;
 
+  void _setWideLayoutActive(bool active) {
+    if (_wideLayoutActive == active) return;
+    _wideLayoutActive = active;
+    if (active) {
+      _showWideChrome();
+      return;
+    }
+    _wideChromeTimer?.cancel();
+    _wideCoverMenuTimer?.cancel();
+    if (_wideChromeVisible && !_wideCoverMenuVisible) return;
+    setState(() {
+      _wideChromeVisible = true;
+      _wideCoverMenuVisible = false;
+    });
+  }
+
+  void _showWideChrome() {
+    _wideChromeTimer?.cancel();
+    if (!_wideChromeVisible && mounted) {
+      setState(() => _wideChromeVisible = true);
+    }
+    _wideChromeTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted && _wideLayoutActive) {
+        setState(() => _wideChromeVisible = false);
+      }
+    });
+  }
+
+  void _showWideCoverMenu() {
+    _wideCoverMenuTimer?.cancel();
+    setState(() => _wideCoverMenuVisible = true);
+    _wideCoverMenuTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted && _wideLayoutActive) {
+        setState(() => _wideCoverMenuVisible = false);
+      }
+    });
+  }
+
+  void _hideWideCoverMenu() {
+    _wideCoverMenuTimer?.cancel();
+    if (_wideCoverMenuVisible) {
+      setState(() => _wideCoverMenuVisible = false);
+    }
+  }
+
+  void _runWideCoverAction(VoidCallback action) {
+    _hideWideCoverMenu();
+    action();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final wideMobile =
+        (Platform.isAndroid || Platform.isIOS) &&
+        media.size.height > 0 &&
+        media.size.width / media.size.height >= 2;
+    // 系统安全区未必包含屏幕圆角。长屏手机额外保留圆角余量，
+    // 两侧使用相同边距，让刘海位于任意一侧时内容仍保持居中。
+    final cornerInset = (media.size.shortestSide * .09).clamp(28.0, 44.0);
+    final wideSideInset = math.max(
+      cornerInset,
+      math.max(media.viewPadding.left, media.viewPadding.right),
+    );
     final w = app.playWork;
     if (w == null || app.queue.isEmpty) {
       return Scaffold(
@@ -648,8 +717,19 @@ class _PlayerPageState extends State<PlayerPage> {
                 ),
               ),
               SafeArea(
+                minimum: wideMobile
+                    ? EdgeInsets.fromLTRB(wideSideInset, 12, wideSideInset, 12)
+                    : EdgeInsets.zero,
                 child: LayoutBuilder(
                   builder: (context, c) {
+                    final screenSize = MediaQuery.sizeOf(context);
+                    final useWideLayout =
+                        screenSize.height > 0 &&
+                        screenSize.width / screenSize.height >= 2;
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) _setWideLayoutActive(useWideLayout);
+                    });
+                    if (useWideLayout) return _wideLandscape();
                     if (c.maxWidth >= 700) return _landscape();
                     return _portrait();
                   },
@@ -718,6 +798,383 @@ class _PlayerPageState extends State<PlayerPage> {
           ),
         ),
       ],
+    );
+  }
+
+  // ---------- 超宽横屏（宽高比 >= 2:1）：左封面，右信息与歌词 ----------
+  Widget _wideLandscape() {
+    final size = MediaQuery.sizeOf(context);
+    final horizontalInset = (size.width * .045).clamp(24.0, 80.0);
+    final columnGap = (size.width * .035).clamp(24.0, 64.0);
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (_) => _showWideChrome(),
+      onPointerHover: (_) => _showWideChrome(),
+      child: Stack(
+        children: [
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              horizontalInset,
+              24,
+              horizontalInset,
+              20,
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(flex: 9, child: _wideCoverColumn()),
+                SizedBox(width: columnGap),
+                Expanded(flex: 11, child: _wideInfoColumn()),
+              ],
+            ),
+          ),
+          Positioned(
+            left: 8,
+            top: 4,
+            child: _wideChromeButton(
+              visible: _wideChromeVisible,
+              tooltip: '返回',
+              icon: Icons.arrow_back,
+              onPressed: () => Navigator.pop(context),
+            ),
+          ),
+          Positioned(
+            right: 8,
+            top: 4,
+            child: _wideChromeButton(
+              visible: _wideChromeVisible,
+              tooltip: '更多',
+              icon: Icons.more_horiz,
+              onPressed: _showLyricSettings,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _wideChromeButton({
+    required bool visible,
+    required String tooltip,
+    required IconData icon,
+    required VoidCallback onPressed,
+  }) {
+    return IgnorePointer(
+      ignoring: !visible,
+      child: AnimatedOpacity(
+        opacity: visible ? 1 : 0,
+        duration: const Duration(milliseconds: 180),
+        child: Material(
+          color: p.surface.withValues(alpha: .72),
+          shape: const CircleBorder(),
+          child: IconButton(
+            tooltip: tooltip,
+            onPressed: onPressed,
+            icon: Icon(icon, size: 24, color: p.text),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _wideCoverColumn() {
+    return LayoutBuilder(
+      builder: (context, c) {
+        final coverSize = math.min(
+          c.maxWidth * .86,
+          math.max(0.0, c.maxHeight - 74),
+        );
+        return Column(
+          children: [
+            Expanded(
+              child: Center(
+                child: SizedBox.square(
+                  dimension: coverSize,
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    child: _wideCoverMenuVisible
+                        ? _wideCoverMenu(coverSize)
+                        : GestureDetector(
+                            key: const ValueKey('wide-cover'),
+                            onTap: _showWideCoverMenu,
+                            child: CoverArt(work: work, radius: 18),
+                          ),
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(
+              height: 58,
+              child: SliderTheme(
+                data: SliderThemeData(
+                  trackHeight: 3,
+                  thumbShape: SliderComponentShape.noThumb,
+                  overlayShape: SliderComponentShape.noOverlay,
+                ),
+                child: Slider(
+                  value: _pos.toDouble().clamp(0, math.max(_dur, 1).toDouble()),
+                  max: math.max(_dur, 1).toDouble(),
+                  activeColor: p.text,
+                  inactiveColor: p.track,
+                  onChanged: (v) => _seekTo(v.round()),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _wideCoverMenu(double size) {
+    final actions = <(IconData, String, VoidCallback)>[
+      (
+        Icons.article_outlined,
+        '作品详情',
+        () => Navigator.of(context).push(buildWorkRoute(app, work)),
+      ),
+      (Icons.queue_music, '播放列表', _showQueue),
+      (Icons.equalizer_outlined, '均衡器', () => showEqSheet(context, app)),
+      (Icons.timer_outlined, '定时关闭', () => showSleepSheet(context, app)),
+    ];
+    return Material(
+      key: const ValueKey('wide-cover-menu'),
+      color: p.surface.withValues(alpha: .9),
+      borderRadius: BorderRadius.circular(18),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          for (var i = 0; i < actions.length; i++) ...[
+            Expanded(
+              child: InkWell(
+                onTap: () => _runWideCoverAction(actions[i].$3),
+                child: Center(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        actions[i].$1,
+                        size: size < 230 ? 18 : 21,
+                        color: p.text,
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        actions[i].$2,
+                        style: TextStyle(
+                          color: p.text,
+                          fontSize: size < 230 ? 12.5 : 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            if (i != actions.length - 1)
+              Divider(height: 1, indent: 24, endIndent: 24, color: p.line),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _wideInfoColumn() {
+    final title = track.title.replaceAll(
+      RegExp(r'\.(mp3|wav|flac|m4a|aac|ogg|opus)$'),
+      '',
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 22),
+        Text(
+          title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: p.text,
+            fontSize: 24,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 5),
+        Text(
+          '${work.title} · ${work.circle}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: p.muted, fontSize: 13),
+        ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: _wideLyricsPanel(),
+          ),
+        ),
+        SizedBox(
+          height: 58,
+          child: LayoutBuilder(
+            builder: (context, c) {
+              final compact = c.maxWidth < 360;
+              final sideButtonSize = compact ? 40.0 : 48.0;
+              return Row(
+                children: [
+                  Expanded(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '${_fmt(_pos)}/${_dur > 0 ? _fmt(_dur) : '--:--'}',
+                        style: TextStyle(color: p.muted, fontSize: 16),
+                      ),
+                    ),
+                  ),
+                  if (!compact)
+                    IconButton(
+                      onPressed: _cyclePlayMode,
+                      tooltip: _playModeLabel,
+                      icon: Icon(
+                        app.playMode == 1
+                            ? Icons.repeat
+                            : app.playMode == 2
+                            ? Icons.repeat_one
+                            : Icons.playlist_play,
+                        size: 21,
+                        color: app.playMode == 0 ? p.dim : p.accent,
+                      ),
+                    ),
+                  SizedBox.square(
+                    dimension: sideButtonSize,
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      onPressed: _prev,
+                      icon: Icon(Icons.skip_previous, size: 30, color: p.text),
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  SizedBox.square(
+                    dimension: compact ? 52 : 58,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: p.text,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: p.text.withValues(alpha: .14),
+                            blurRadius: 24,
+                          ),
+                        ],
+                      ),
+                      child: IconButton(
+                        onPressed: _togglePlayback,
+                        icon: Icon(
+                          app.playing ? Icons.pause : Icons.play_arrow,
+                          size: 34,
+                          color: p.bg,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  SizedBox.square(
+                    dimension: sideButtonSize,
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      onPressed: _next,
+                      icon: Icon(Icons.skip_next, size: 30, color: p.text),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _wideLyricsPanel() {
+    if (_lyrics.isEmpty) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Text('暂无歌词', style: TextStyle(fontSize: 14, color: p.dim)),
+      );
+    }
+    return LayoutBuilder(
+      builder: (context, c) {
+        if ((_lyricPanelWidth - c.maxWidth).abs() > .5) {
+          _lyricNeedsLayoutSync = true;
+        }
+        _lyricPanelWidth = c.maxWidth;
+        if ((_lyricViewportHeight - c.maxHeight).abs() > .5) {
+          _lyricNeedsLayoutSync = true;
+        }
+        _lyricViewportHeight = c.maxHeight;
+        _queueLyricLayoutSync();
+        return ScrollConfiguration(
+          behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+          child: ShaderMask(
+            blendMode: BlendMode.dstIn,
+            shaderCallback: (bounds) => const LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.transparent,
+                Colors.transparent,
+                Color(0x40FFFFFF),
+                Colors.white,
+                Colors.white,
+                Color(0x40FFFFFF),
+                Colors.transparent,
+                Colors.transparent,
+              ],
+              stops: [0, .06, .18, .34, .66, .82, .94, 1],
+            ).createShader(bounds),
+            child: NotificationListener<ScrollNotification>(
+              onNotification: (n) {
+                if (n is ScrollStartNotification && n.dragDetails != null) {
+                  _onLyricUserScroll();
+                } else if (n is UserScrollNotification &&
+                    n.direction != ScrollDirection.idle &&
+                    !_lyricProgrammatic) {
+                  _onLyricUserScroll();
+                }
+                return false;
+              },
+              child: ListView.builder(
+                controller: _lyricScroll,
+                padding: EdgeInsets.symmetric(
+                  vertical: math.max(c.maxHeight * .5, 40),
+                ),
+                itemCount: _lyrics.length,
+                itemBuilder: (context, i) {
+                  final line = _lyrics[i];
+                  final current = i == _currentLyricIdx();
+                  return InkWell(
+                    key: _lyricKeys.putIfAbsent(i, () => GlobalKey()),
+                    onTap: () => _seekTo(line.t),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 7),
+                      child: Text(
+                        _displayLyric(line),
+                        style: TextStyle(
+                          fontSize: current ? 18 : 15,
+                          fontWeight: current
+                              ? FontWeight.w700
+                              : FontWeight.normal,
+                          color: current ? p.text : p.dim,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
