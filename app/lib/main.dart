@@ -242,6 +242,8 @@ DateTime _lastMedia3Sync = DateTime.fromMillisecondsSinceEpoch(0);
 bool _media3SessionStarted = false;
 // 「不显示通知栏媒体卡片」开关的上次状态（用于切回显示时重新拉起会话服务）
 bool _media3Hidden = false;
+// 最近一次已下发到原生层的封面隐私选项，用于让切换绕过常规状态同步节流。
+bool _media3LogoCover = false;
 String _media3ArtworkLoadKey = '';
 
 /// MediaSession 控制命令（Kotlin → Dart，mpv 执行）
@@ -316,6 +318,7 @@ void _syncMedia3State() {
   final title = t?.title ?? '';
   if (w == null || title.isEmpty) {
     _media3Hidden = hideCard;
+    _media3LogoCover = appState.notifCover;
     _media3ArtworkLoadKey = '';
     AndroidMedia3.clearSession();
     return;
@@ -329,6 +332,7 @@ void _syncMedia3State() {
     AndroidMedia3.ensureSession();
   }
   _media3Hidden = hideCard;
+  _media3LogoCover = appState.notifCover;
   AndroidMedia3.updateState(
     isPlaying: AppPlayer.instance.isNowPlaying,
     positionMs: AppPlayer.instance.currentPosition * 1000,
@@ -399,9 +403,11 @@ void _bindMedia3Sync() {
   });
   appState.addListener(() {
     final now = DateTime.now();
-    // 隐藏卡片开关必须立即刷新，不能被常规状态同步节流吞掉。
-    final hideCardChanged = appState.lsCover != _media3Hidden;
-    if (hideCardChanged ||
+    // 隐私相关开关必须立即刷新，不能被常规状态同步节流吞掉。
+    final privacySettingChanged =
+        appState.lsCover != _media3Hidden ||
+        appState.notifCover != _media3LogoCover;
+    if (privacySettingChanged ||
         now.difference(_lastMedia3Sync).inMilliseconds > 1000) {
       _lastMedia3Sync = now;
       _syncMedia3State();

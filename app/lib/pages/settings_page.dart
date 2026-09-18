@@ -798,20 +798,14 @@ class _SettingsPageState extends State<SettingsPage> {
                     '通知栏封面显示项目 logo',
                     '开启后封面位置显示项目 logo，不显示真实封面',
                     app.notifCover,
-                    (v) {
-                      app.notifCover = v;
-                      app.notify();
-                    },
+                    app.setNotifCover,
                   ),
                   _switchRow(
                     Icons.privacy_tip_outlined,
                     '定时关闭后释放系统接口',
                     '到点清除锁屏媒体卡片与通知',
                     app.releaseInterface,
-                    (v) {
-                      app.releaseInterface = v;
-                      app.notify();
-                    },
+                    app.setReleaseInterface,
                     showDivider: false,
                   ),
                 ]),

@@ -233,7 +233,7 @@ class AppState extends ChangeNotifier {
   // 设置开关
   bool clipboardDetect = true;
   bool lsCover = false; // 不显示通知栏媒体卡片（隐私）
-  bool notifCover = false; // 通知栏封面显示项目 logo（隐私，暂无 logo 用占位图）
+  bool notifCover = false; // 通知栏封面显示项目 logo（隐私）
   bool releaseInterface = true;
   bool doNotRememberPlaybackProgress = false;
   // 安卓音频（默认关闭）
@@ -753,6 +753,12 @@ class AppState extends ChangeNotifier {
     if (cd != null) clipboardDetect = cd == '1';
     final lsCoverSetting = SettingsStore.get('ls_cover');
     if (lsCoverSetting != null) lsCover = lsCoverSetting == '1';
+    final notifCoverSetting = SettingsStore.get('notif_cover');
+    if (notifCoverSetting != null) notifCover = notifCoverSetting == '1';
+    final releaseInterfaceSetting = SettingsStore.get('release_interface');
+    if (releaseInterfaceSetting != null) {
+      releaseInterface = releaseInterfaceSetting == '1';
+    }
     final ep = SettingsStore.get('ear_pause');
     if (ep != null) earPause = ep == '1';
     final iae = SettingsStore.get('ignore_audio_focus');
@@ -1197,6 +1203,18 @@ class AppState extends ChangeNotifier {
   void setLsCover(bool v) {
     lsCover = v;
     SettingsStore.set('ls_cover', v ? '1' : '0');
+    notifyListeners();
+  }
+
+  void setNotifCover(bool v) {
+    notifCover = v;
+    SettingsStore.set('notif_cover', v ? '1' : '0');
+    notifyListeners();
+  }
+
+  void setReleaseInterface(bool v) {
+    releaseInterface = v;
+    SettingsStore.set('release_interface', v ? '1' : '0');
     notifyListeners();
   }
 
