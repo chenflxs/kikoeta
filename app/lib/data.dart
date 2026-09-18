@@ -175,6 +175,7 @@ class AppState extends ChangeNotifier {
   String recommenderUuid = '';
   int serverEpoch = 0;
   int loginEpoch = 0;
+
   /// 已勾选的年龄分级：0=全年龄、1=R15、2=R18。
   /// 空集合和三项全选都表示不过滤年龄。
   final Set<int> ageFilters = <int>{};
@@ -270,6 +271,8 @@ class AppState extends ChangeNotifier {
 
   // 桌面歌词
   bool desktopLyricsOn = false;
+  // 播放器宽屏时的临时抑制状态，不写入设置，离开宽屏后自动恢复。
+  bool desktopLyricsTemporarilyHidden = false;
   bool lyricsLibraryAuto = false;
   double lyricsFontSize = 20;
   int lyricsColor = 0xFFFFFFFF;
@@ -1200,6 +1203,12 @@ class AppState extends ChangeNotifier {
   void setDesktopLyricsOn(bool v) {
     desktopLyricsOn = v;
     SettingsStore.set('desktop_lyrics', v ? '1' : '0');
+    notifyListeners();
+  }
+
+  void setDesktopLyricsTemporarilyHidden(bool v) {
+    if (desktopLyricsTemporarilyHidden == v) return;
+    desktopLyricsTemporarilyHidden = v;
     notifyListeners();
   }
 

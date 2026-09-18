@@ -32,7 +32,7 @@ class PlayerPage extends StatefulWidget {
   State<PlayerPage> createState() => _PlayerPageState();
 }
 
-class _PlayerPageState extends State<PlayerPage> {
+class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   final PageController _pageCtrl = PageController();
   final List<LyricLine> _lyrics = [];
   final List<StreamSubscription> _subs = [];
@@ -46,15 +46,12 @@ class _PlayerPageState extends State<PlayerPage> {
   final Map<int, GlobalKey> _lyricKeys = {};
   Timer? _lyricFollowTimer;
   bool _lyricAutoFollow = true;
-  bool _lyricProgrammatic = false;
-  bool _lyricNeedsLayoutSync = true;
-  bool _lyricSyncQueued = false;
   int _lyricScrollToken = 0;
   int _lastAutoIdx = -1;
   int _lrcOffsetMs = 0; // 字幕偏移（毫秒，正数表示歌词提前显示）
   String? _lyricSourceName; // 当前歌词来源（在线文件名 / 本地文件名）
-  double _lyricPanelWidth = 320;
-  double _lyricViewportHeight = 0;
+  Size _lyricViewportSize = Size.zero;
+  bool? _lyricViewportIsWide;
   bool _switching = false; // 切歌防抖：避免 completed 与手动点击重复触发
   DateTime? _lastAutoNext; // completed 自动跳转去重
   final Map<String, String> _convCache = {};
@@ -71,6 +68,7 @@ class _PlayerPageState extends State<PlayerPage> {
   bool _wideChromeVisible = true;
   bool _wideCoverMenuVisible = false;
   bool _androidLandscapeStatusBarHidden = false;
+  bool _appInForeground = true;
 
   Player get _player => AppPlayer.instance.player;
   bool get _opened => AppPlayer.instance.opened;
@@ -85,6 +83,10 @@ class _PlayerPageState extends State<PlayerPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    _appInForeground =
+        lifecycle == null || lifecycle == AppLifecycleState.resumed;
     _lastConv = app.conv;
     _lastLibraryAuto = app.lyricsLibraryAuto;
     _lastAppPlaying = app.playing;
@@ -97,11 +99,18 @@ class _PlayerPageState extends State<PlayerPage> {
         if (mounted) {
           // 值未变化时跳过重建（同一秒内重复 tick 不重绘整页）
           if (d != _pos) {
+            final previousLyricIdx = _lyrics.isEmpty ? -1 : _currentLyricIdx();
+            final nextLyricIdx = _lyrics.isEmpty ? -1 : _lyricIdxAt(d);
+            final lyricChanged = nextLyricIdx != previousLyricIdx;
+            if (lyricChanged && _lyricAutoFollow) {
+              // 滚动与高亮渐变同时开始，避免先切换样式再等待帧后定位。
+              _transitionToRenderedLyric(nextLyricIdx);
+            }
             setState(() => _pos = d);
-            // 当前行字号会随播放位置变化，等待新布局完成后再计算滚动位置。
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) _maybeAutoScrollLyric();
-            });
+            if (lyricChanged && _lyricAutoFollow) {
+              // 尚未布局时再请求定位；已启动的过渡不能被帧后 jumpTo 打断。
+              _requestLyricAlignment();
+            }
           } else {
             _maybeAutoScrollLyric();
           }
@@ -195,13 +204,11 @@ class _PlayerPageState extends State<PlayerPage> {
         _lyrics.clear();
         _lyricKeys.clear();
         _lastAutoIdx = -1;
-        _lyricNeedsLayoutSync = true;
       });
     } else {
       _lyrics.clear();
       _lyricKeys.clear();
       _lastAutoIdx = -1;
-      _lyricNeedsLayoutSync = true;
     }
     LyricsHub.instance.setLyrics(const [], app.conv);
     final currentTrack = app.queue.isEmpty ? null : track;
@@ -244,7 +251,6 @@ class _PlayerPageState extends State<PlayerPage> {
             ..addAll(l);
           _lyricKeys.clear();
           _lastAutoIdx = -1;
-          _lyricNeedsLayoutSync = true;
         });
         LyricsHub.instance.setLyrics(_lyrics, app.conv);
       }
@@ -264,7 +270,9 @@ class _PlayerPageState extends State<PlayerPage> {
   @override
   void dispose() {
     _restoreAndroidStatusBar();
+    WidgetsBinding.instance.removeObserver(this);
     app.removeListener(_onAppStateChanged);
+    app.setDesktopLyricsTemporarilyHidden(false);
     for (final s in _subs) {
       s.cancel();
     }
@@ -295,7 +303,7 @@ class _PlayerPageState extends State<PlayerPage> {
     if (app.conv != _lastConv) {
       _lastConv = app.conv;
       _convCache.clear();
-      _lyricNeedsLayoutSync = true;
+      _lastAutoIdx = -1;
       LyricsHub.instance.setConv(app.conv);
       needsRebuild = true;
     }
@@ -591,8 +599,12 @@ class _PlayerPageState extends State<PlayerPage> {
       LogicalKeyboardKey.findKeyByKeyId(keyId) ?? fallback;
 
   void _setWideLayoutActive(bool active) {
-    if (_wideLayoutActive == active) return;
+    if (_wideLayoutActive == active) {
+      _syncWideAndroidDesktopLyrics();
+      return;
+    }
     _wideLayoutActive = active;
+    _syncWideAndroidDesktopLyrics();
     if (active) {
       _showWideChrome();
       return;
@@ -640,6 +652,18 @@ class _PlayerPageState extends State<PlayerPage> {
     action();
   }
 
+  void _syncWideAndroidDesktopLyrics() {
+    app.setDesktopLyricsTemporarilyHidden(
+      Platform.isAndroid && _wideLayoutActive && _appInForeground,
+    );
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _appInForeground = state == AppLifecycleState.resumed;
+    _syncWideAndroidDesktopLyrics();
+  }
+
   void _syncAndroidLandscapeStatusBar(Size size) {
     final hide = Platform.isAndroid && size.width > size.height;
     if (_androidLandscapeStatusBarHidden == hide) return;
@@ -684,6 +708,9 @@ class _PlayerPageState extends State<PlayerPage> {
     );
     final w = app.playWork;
     if (w == null || app.queue.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _setWideLayoutActive(false);
+      });
       return Scaffold(
         backgroundColor: p.bg,
         body: Center(
@@ -756,8 +783,12 @@ class _PlayerPageState extends State<PlayerPage> {
                     final useWideLayout =
                         screenSize.height > 0 &&
                         screenSize.width / screenSize.height >= 2;
+                    final routeIsCurrent =
+                        ModalRoute.of(context)?.isCurrent ?? true;
                     WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (mounted) _setWideLayoutActive(useWideLayout);
+                      if (mounted) {
+                        _setWideLayoutActive(useWideLayout && routeIsCurrent);
+                      }
                     });
                     if (useWideLayout) return _wideLandscape();
                     if (c.maxWidth >= 700) return _landscape();
@@ -808,8 +839,7 @@ class _PlayerPageState extends State<PlayerPage> {
     _lyricAutoFollow = true;
     _lyricFollowTimer?.cancel();
     _lastAutoIdx = -1;
-    _lyricNeedsLayoutSync = true;
-    _queueLyricLayoutSync();
+    _requestLyricAlignment(animated: false, force: true);
   }
 
   // ---------- 横屏：左封面上 + 下控件，右歌词 ----------
@@ -1134,15 +1164,7 @@ class _PlayerPageState extends State<PlayerPage> {
     }
     return LayoutBuilder(
       builder: (context, c) {
-        if ((_lyricPanelWidth - c.maxWidth).abs() > .5) {
-          _lyricNeedsLayoutSync = true;
-        }
-        _lyricPanelWidth = c.maxWidth;
-        if ((_lyricViewportHeight - c.maxHeight).abs() > .5) {
-          _lyricNeedsLayoutSync = true;
-        }
-        _lyricViewportHeight = c.maxHeight;
-        _queueLyricLayoutSync();
+        _trackLyricViewport(Size(c.maxWidth, c.maxHeight), isWide: true);
         return ScrollConfiguration(
           behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
           child: ShaderMask(
@@ -1162,50 +1184,117 @@ class _PlayerPageState extends State<PlayerPage> {
               ],
               stops: [0, .06, .18, .34, .66, .82, .94, 1],
             ).createShader(bounds),
-            child: NotificationListener<ScrollNotification>(
-              onNotification: (n) {
-                if (n is ScrollStartNotification && n.dragDetails != null) {
-                  _onLyricUserScroll();
-                } else if (n is UserScrollNotification &&
-                    n.direction != ScrollDirection.idle &&
-                    !_lyricProgrammatic) {
-                  _onLyricUserScroll();
-                }
-                return false;
-              },
-              child: ListView.builder(
-                controller: _lyricScroll,
-                padding: EdgeInsets.symmetric(
-                  vertical: math.max(c.maxHeight * .5, 40),
-                ),
-                itemCount: _lyrics.length,
-                itemBuilder: (context, i) {
-                  final line = _lyrics[i];
-                  final current = i == _currentLyricIdx();
-                  return InkWell(
-                    key: _lyricKeys.putIfAbsent(i, () => GlobalKey()),
-                    onTap: () => _seekTo(line.t),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 7),
-                      child: Text(
-                        _displayLyric(line),
-                        style: TextStyle(
-                          fontSize: current ? 18 : 15,
-                          fontWeight: current
-                              ? FontWeight.w700
-                              : FontWeight.normal,
-                          color: current ? p.text : p.dim,
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
+            child: _buildLyricScrollView(
+              viewportHeight: c.maxHeight,
+              isWide: true,
             ),
           ),
         );
       },
     );
+  }
+
+  Widget _buildLyricScrollView({
+    required double viewportHeight,
+    required bool isWide,
+  }) {
+    final currentIdx = _currentLyricIdx();
+    final edgeSpace = math.max(viewportHeight * .5, 40.0);
+    return NotificationListener<ScrollNotification>(
+      onNotification: _handleLyricScrollNotification,
+      child: SingleChildScrollView(
+        controller: _lyricScroll,
+        child: Column(
+          children: [
+            SizedBox(height: edgeSpace),
+            for (var i = 0; i < _lyrics.length; i++)
+              SizedBox(
+                width: double.infinity,
+                child: InkWell(
+                  key: _lyricKeys.putIfAbsent(i, GlobalKey.new),
+                  onTap: () => _seekTo(_lyrics[i].t),
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(
+                      vertical: 7,
+                      horizontal: isWide ? 0 : 20,
+                    ),
+                    child: _buildLyricLineText(
+                      _displayLyric(_lyrics[i]),
+                      current: i == currentIdx,
+                      isWide: isWide,
+                    ),
+                  ),
+                ),
+              ),
+            SizedBox(height: edgeSpace),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLyricLineText(
+    String text, {
+    required bool current,
+    required bool isWide,
+  }) {
+    final alignment = isWide ? Alignment.centerLeft : Alignment.center;
+    final textAlign = isWide ? TextAlign.start : TextAlign.center;
+    final activeStyle = TextStyle(
+      fontSize: isWide ? 18 : 16,
+      fontWeight: FontWeight.w700,
+      color: p.text,
+    );
+    final inactiveStyle = TextStyle(
+      fontSize: isWide ? 15 : 14.5,
+      fontWeight: FontWeight.normal,
+      color: p.dim,
+    );
+    return Stack(
+      alignment: alignment,
+      children: [
+        // 每一行始终按高亮样式预留空间，切换高亮时行高和换行不变。
+        ExcludeSemantics(
+          child: Opacity(
+            opacity: 0,
+            child: Text(text, textAlign: textAlign, style: activeStyle),
+          ),
+        ),
+        AnimatedDefaultTextStyle(
+          duration: const Duration(milliseconds: 320),
+          curve: Curves.easeOutCubic,
+          style: current ? activeStyle : inactiveStyle,
+          child: Text(text, textAlign: textAlign),
+        ),
+      ],
+    );
+  }
+
+  bool _handleLyricScrollNotification(ScrollNotification notification) {
+    final userDriven =
+        notification is ScrollStartNotification &&
+            notification.dragDetails != null ||
+        notification is ScrollUpdateNotification &&
+            notification.dragDetails != null ||
+        notification is OverscrollNotification &&
+            notification.dragDetails != null;
+    if (userDriven) _onLyricUserScroll();
+    return false;
+  }
+
+  void _trackLyricViewport(Size size, {required bool isWide}) {
+    final changed =
+        (_lyricViewportSize.width - size.width).abs() > .5 ||
+        (_lyricViewportSize.height - size.height).abs() > .5 ||
+        _lyricViewportIsWide != isWide;
+    if (changed) {
+      _lyricViewportSize = size;
+      _lyricViewportIsWide = isWide;
+      _lastAutoIdx = -1;
+    }
+    if (changed || _lastAutoIdx < 0) {
+      _requestLyricAlignment(animated: false, force: true);
+    }
   }
 
   Widget _topBar({bool showControls = true}) {
@@ -1706,13 +1795,11 @@ class _PlayerPageState extends State<PlayerPage> {
                 )
               : LayoutBuilder(
                   builder: (ctx, c) {
-                    if ((_lyricPanelWidth - c.maxWidth).abs() > 0.5) {
-                      _lyricNeedsLayoutSync = true;
-                    }
-                    _lyricPanelWidth = c.maxWidth;
                     final h = c.maxHeight;
-                    _lyricViewportHeight = h * 0.6;
-                    _queueLyricLayoutSync();
+                    _trackLyricViewport(
+                      Size(c.maxWidth, h * 0.6),
+                      isWide: false,
+                    );
                     return Stack(
                       children: [
                         // 歌词仅在垂直居中的 60% 面积内展示（上下各 20% 留白）
@@ -1734,57 +1821,9 @@ class _PlayerPageState extends State<PlayerPage> {
                               ],
                               stops: const [0.0, 0.14, 0.86, 1.0],
                             ).createShader(bounds),
-                            child: NotificationListener<ScrollNotification>(
-                              onNotification: (n) {
-                                // 用户在自动滚动过程中接管列表时，先到达的
-                                // ScrollStartNotification 仍需取消自动跟随。
-                                if (n is ScrollStartNotification &&
-                                    n.dragDetails != null) {
-                                  _onLyricUserScroll();
-                                } else if (n is UserScrollNotification &&
-                                    n.direction != ScrollDirection.idle &&
-                                    !_lyricProgrammatic) {
-                                  _onLyricUserScroll();
-                                }
-                                return false;
-                              },
-                              child: ListView.builder(
-                                controller: _lyricScroll,
-                                // 上下各留半屏空白，保证第一行与最后一行也能居中
-                                padding: EdgeInsets.symmetric(
-                                  vertical: math.max(h * 0.3, 40),
-                                ),
-                                itemCount: _lyrics.length,
-                                itemBuilder: (ctx, i) {
-                                  final l = _lyrics[i];
-                                  final current = i == _currentLyricIdx();
-                                  final main = _displayLyric(l);
-                                  return InkWell(
-                                    key: _lyricKeys.putIfAbsent(
-                                      i,
-                                      () => GlobalKey(),
-                                    ),
-                                    onTap: () => _seekTo(l.t),
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 7,
-                                        horizontal: 20,
-                                      ),
-                                      child: Text(
-                                        main,
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          fontSize: current ? 16 : 14.5,
-                                          fontWeight: current
-                                              ? FontWeight.w700
-                                              : FontWeight.normal,
-                                          color: current ? p.text : p.dim,
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
+                            child: _buildLyricScrollView(
+                              viewportHeight: h * 0.6,
+                              isWide: false,
                             ),
                           ),
                         ),
@@ -2261,7 +2300,6 @@ class _PlayerPageState extends State<PlayerPage> {
       _lyricKeys.clear();
       _lyricSourceName = pick?.title;
       _lastAutoIdx = -1;
-      _lyricNeedsLayoutSync = true;
     });
     LyricsHub.instance.setManualLyrics(_lyrics, app.conv);
     if (ctx.mounted) Navigator.pop(ctx);
@@ -2296,7 +2334,6 @@ class _PlayerPageState extends State<PlayerPage> {
         _lyricKeys.clear();
         _lyricSourceName = f.name;
         _lastAutoIdx = -1;
-        _lyricNeedsLayoutSync = true;
       });
       LyricsHub.instance.setManualLyrics(_lyrics, app.conv);
       _maybeAutoScrollLyric();
@@ -2350,14 +2387,17 @@ class _PlayerPageState extends State<PlayerPage> {
       _lyricKeys.clear();
       _lyricSourceName = selected.relativePath;
       _lastAutoIdx = -1;
-      _lyricNeedsLayoutSync = true;
     });
     LyricsHub.instance.setManualLyrics(_lyrics, app.conv);
     _maybeAutoScrollLyric();
   }
 
   int _currentLyricIdx() {
-    final positionMs = _pos * 1000;
+    return _lyricIdxAt(_pos);
+  }
+
+  int _lyricIdxAt(int positionSeconds) {
+    final positionMs = positionSeconds * 1000;
     for (var i = 0; i < _lyrics.length; i++) {
       final t = _lyrics[i].t * 1000 + _lrcOffsetMs;
       final next = i == _lyrics.length - 1
@@ -2370,142 +2410,104 @@ class _PlayerPageState extends State<PlayerPage> {
     return 0;
   }
 
-  void _queueLyricLayoutSync([int attempt = 0]) {
-    if (!_lyricNeedsLayoutSync ||
-        !_lyricAutoFollow ||
-        _lyrics.isEmpty ||
-        _lyricSyncQueued) {
-      return;
-    }
-    _lyricSyncQueued = true;
+  /// 播放位置变化时：若处于自动跟随状态，把当前行滚到中间。
+  void _maybeAutoScrollLyric() {
+    _requestLyricAlignment();
+  }
+
+  void _requestLyricAlignment({bool animated = true, bool force = false}) {
+    if (!_lyricAutoFollow || _lyrics.isEmpty) return;
+    final idx = _currentLyricIdx();
+    if (!force && idx == _lastAutoIdx) return;
+    _lastAutoIdx = idx;
+    final token = ++_lyricScrollToken;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _lyricSyncQueued = false;
-      if (!mounted ||
-          !_lyricAutoFollow ||
-          _lyrics.isEmpty ||
-          !_lyricNeedsLayoutSync) {
-        return;
-      }
-      // 页面刚从 PageView 的非当前页切入时，ListView 可能还没有 attach。
-      // 多等几帧，避免把“没有 client”误判成已经完成定位。
-      if (!_lyricScroll.hasClients) {
-        if (attempt < 4) _queueLyricLayoutSync(attempt + 1);
-        return;
-      }
-      _lyricNeedsLayoutSync = false;
-      final idx = _currentLyricIdx();
-      _lastAutoIdx = idx;
-      _scrollLyricTo(idx, animated: false);
+      _alignLyricToRenderedLine(idx, token, animated: animated);
     });
   }
 
-  /// 播放位置变化时：若处于自动跟随状态，把当前行滚到中间
-  void _maybeAutoScrollLyric() {
-    if (!_lyricAutoFollow || _lyrics.isEmpty || !_lyricScroll.hasClients) {
+  void _alignLyricToRenderedLine(
+    int idx,
+    int token, {
+    required bool animated,
+    int attempt = 0,
+  }) {
+    if (!mounted ||
+        token != _lyricScrollToken ||
+        !_lyricAutoFollow ||
+        idx < 0 ||
+        idx >= _lyrics.length) {
       return;
     }
-    final idx = _currentLyricIdx();
-    if (idx != _lastAutoIdx) {
-      _lastAutoIdx = idx;
-      _scrollLyricTo(idx);
+    if (!_lyricScroll.hasClients) {
+      _retryLyricAlignment(idx, token, animated, attempt);
+      return;
     }
-  }
 
-  /// 把第 idx 行滚动到列表中间
-  void _scrollLyricTo(int idx, {bool animated = true}) {
-    if (!_lyricScroll.hasClients || _lyrics.isEmpty) return;
-    idx = idx.clamp(0, _lyrics.length - 1).toInt();
-    final token = ++_lyricScrollToken;
-    final target = _lyricScrollTarget(idx);
-    _lyricProgrammatic = true;
+    final target = _renderedLyricTarget(idx);
+    if (target == null) {
+      _retryLyricAlignment(idx, token, animated, attempt);
+      return;
+    }
     if (animated) {
-      _lyricScroll
-          .animateTo(
-            target,
-            duration: const Duration(milliseconds: 320),
-            curve: Curves.easeOutCubic,
-          )
-          .whenComplete(() {
-            if (token == _lyricScrollToken) {
-              _settleLyricScroll(idx, token);
-            }
-          });
+      unawaited(_animateLyricTo(target));
     } else {
       _lyricScroll.jumpTo(target);
-      _settleLyricScroll(idx, token);
     }
   }
 
-  double _lyricScrollTarget(int idx) {
-    final width = math.max(_lyricPanelWidth, 100.0);
-    final viewportHeight = _lyricViewportHeight > 0
-        ? _lyricViewportHeight
-        : _lyricScroll.position.viewportDimension;
-    final topPadding = math.max(viewportHeight * 0.5, 40.0);
-    var offset = 0.0;
-    for (var i = 0; i < idx; i++) {
-      offset += _lyricLineHeight(_displayLyric(_lyrics[i]), width, false);
+  void _transitionToRenderedLyric(int idx) {
+    if (!_lyricAutoFollow || idx < 0 || idx >= _lyrics.length) return;
+    final target = _renderedLyricTarget(idx);
+    if (target == null) return;
+    ++_lyricScrollToken;
+    _lastAutoIdx = idx;
+    unawaited(_animateLyricTo(target));
+  }
+
+  double? _renderedLyricTarget(int idx) {
+    if (!_lyricScroll.hasClients || idx < 0 || idx >= _lyrics.length) {
+      return null;
     }
-    final h = _lyricLineHeight(_displayLyric(_lyrics[idx]), width, true);
-    // 目标为“顶部留白 + 当前行中心 - 视口中心”，确保当前行居中。
-    var target = (topPadding + offset + h / 2 - viewportHeight / 2)
+    final renderObject = _lyricKeys[idx]?.currentContext?.findRenderObject();
+    if (renderObject == null || !renderObject.attached) return null;
+    // 所有歌词行都已参与布局，因此目标位置完全取自真实 RenderObject，
+    // 不再使用字体、换行数或累计行高估算。
+    final viewport = RenderAbstractViewport.of(renderObject);
+    return viewport
+        .getOffsetToReveal(renderObject, .5)
+        .offset
         .clamp(0.0, _lyricScroll.position.maxScrollExtent)
         .toDouble();
-    final itemContext = _lyricKeys[idx]?.currentContext;
-    final itemRenderObject = itemContext?.findRenderObject();
-    if (itemRenderObject != null) {
-      // 优先使用真实渲染位置，避免 Text 的字体度量/换行与估算不一致。
-      final viewport = RenderAbstractViewport.of(itemRenderObject);
-      target = viewport
-          .getOffsetToReveal(itemRenderObject, 0.5)
-          .offset
-          .clamp(0.0, _lyricScroll.position.maxScrollExtent)
-          .toDouble();
-    }
-    return target;
   }
 
-  void _settleLyricScroll(int idx, int token, [int attempt = 0]) {
+  void _retryLyricAlignment(int idx, int token, bool animated, int attempt) {
+    if (attempt >= 6) {
+      if (token == _lyricScrollToken) {
+        _lastAutoIdx = -1;
+      }
+      return;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || token != _lyricScrollToken) return;
-      if (!_lyricScroll.hasClients || _lyrics.isEmpty) {
-        _lyricProgrammatic = false;
-        return;
-      }
-
-      // 第一次跳转时目标行可能还没被 ListView 建出来，只能使用估算位置。
-      // 等它建出来后再用真实 RenderObject 位置校准，避免累计行高误差。
-      final itemContext = _lyricKeys[idx]?.currentContext;
-      if (itemContext != null) {
-        final target = _lyricScrollTarget(idx);
-        if ((target - _lyricScroll.offset).abs() > 0.5) {
-          _lyricScroll.jumpTo(target);
-        }
-      }
-      if (attempt < 2) {
-        _settleLyricScroll(idx, token, attempt + 1);
-      } else {
-        _lyricProgrammatic = false;
-      }
+      _alignLyricToRenderedLine(
+        idx,
+        token,
+        animated: animated,
+        attempt: attempt + 1,
+      );
     });
   }
 
-  /// 计算歌词实际排版后的行高，避免按字符数估算造成累计滚动误差。
-  double _lyricLineHeight(String text, double width, bool current) {
-    final fontSize = current ? 16.0 : 14.5;
-    final contentWidth = math.max(width - 40, 40.0);
-    final painter = TextPainter(
-      text: TextSpan(
-        text: text,
-        style: TextStyle(
-          fontSize: fontSize,
-          fontWeight: current ? FontWeight.w700 : FontWeight.normal,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-      textAlign: TextAlign.center,
-    )..layout(maxWidth: contentWidth);
-    return painter.height + 14;
+  Future<void> _animateLyricTo(double target) async {
+    try {
+      await _lyricScroll.animateTo(
+        target,
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOutCubic,
+      );
+    } catch (_) {
+      // 页面切换或用户接管滚动时，当前动画允许被正常取消。
+    }
   }
 
   /// 歌词实际显示文本（繁简互转）
@@ -2531,14 +2533,16 @@ class _PlayerPageState extends State<PlayerPage> {
 
   /// 用户手动滑动歌词列表：暂停自动跟随，3 秒无操作后回到当前行
   void _onLyricUserScroll() {
-    if (_lyricProgrammatic) return;
+    // dragDetails 只会来自真实触摸/鼠标拖动；递增 token 立即废弃
+    // 正在执行或等待布局的自动定位请求。
+    ++_lyricScrollToken;
     _lyricAutoFollow = false;
     _lyricFollowTimer?.cancel();
     _lyricFollowTimer = Timer(const Duration(seconds: 3), () {
       if (!mounted) return;
       _lyricAutoFollow = true;
       _lastAutoIdx = -1;
-      _scrollLyricTo(_currentLyricIdx());
+      _requestLyricAlignment(force: true);
     });
   }
 
