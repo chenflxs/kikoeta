@@ -105,7 +105,7 @@ class WindowsTrayService with TrayListener, WindowListener {
 
   Future<void> _togglePlayback() async {
     if (_app.playing) {
-      await AppPlayer.instance.player.pause();
+      await AppPlayer.instance.pause();
       _app.playing = false;
       _app.notify();
       return;
@@ -136,7 +136,7 @@ class WindowsTrayService with TrayListener, WindowListener {
       _app.notify();
       return;
     }
-    await AppPlayer.instance.player.play();
+    await AppPlayer.instance.play();
     _app.playing = true;
     _app.notify();
   }

@@ -47,7 +47,7 @@ Future<void> main() async {
   // 安卓音频控制：耳机拔出/焦点丢失 → 暂停播放
   AndroidAudio.init();
   AndroidAudio.onPauseRequested = () {
-    AppPlayer.instance.player.pause();
+    AppPlayer.instance.pause();
   };
   if (!kIsWeb && Platform.isAndroid) {
     AndroidAudio.setEarPause(appState.earPause);
@@ -198,7 +198,7 @@ Future<void> _advanceAfterCompletion() async {
   try {
     if (appState.playMode == 2) {
       await AppPlayer.instance.player.seek(Duration.zero);
-      await AppPlayer.instance.player.play();
+      await AppPlayer.instance.play();
       return;
     }
     if (appState.playMode == 0 && appState.trackIdx == queue.length - 1) {
@@ -250,10 +250,10 @@ String _media3ArtworkLoadKey = '';
 void _media3Command(String action, int positionMs) {
   switch (action) {
     case 'play':
-      AppPlayer.instance.player.play();
+      AppPlayer.instance.play();
       break;
     case 'pause':
-      AppPlayer.instance.player.pause();
+      AppPlayer.instance.pause();
       break;
     case 'stop':
       AppPlayer.instance.stop();

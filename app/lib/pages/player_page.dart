@@ -62,6 +62,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   late String _lastUiStateSig;
   bool _opening = false; // 正在打开媒体
   bool _buffering = false; // 缓冲中
+  bool _reconnecting = false; // 网络流自动重连中
   int _lastSavedPos = 0; // 上次保存播放位置（节流）
   Future<void>? _restoreFuture;
   bool _wideLayoutActive = false;
@@ -93,6 +94,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     _lastTrackIdx = app.trackIdx;
     _lastUiStateSig = _uiStateSig;
     _syncPlayerSnapshot();
+    _reconnecting = AppPlayer.instance.isReconnecting;
     app.addListener(_onAppStateChanged);
     _subs.add(
       AppPlayer.instance.position.listen((d) {
@@ -135,6 +137,13 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
         app.notify();
         setState(() {});
         _toast('播放失败：${_friendlyPlayError(e)}');
+      }),
+    );
+    _subs.add(
+      AppPlayer.instance.reconnecting.listen((reconnecting) {
+        if (!mounted || reconnecting == _reconnecting) return;
+        setState(() => _reconnecting = reconnecting);
+        if (reconnecting) _toast('网络波动，正在自动重连…');
       }),
     );
     _subs.add(
@@ -220,10 +229,23 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
           trackTitle: currentTrack?.title,
           trackPath: currentTrack?.path,
         );
-        final trackKey = ApiService.lyricMatchKey(currentTrack?.title ?? '');
-        final matched = library
-            .where((file) => ApiService.lyricMatchKey(file.name) == trackKey)
+        final trackTitle = currentTrack?.title ?? '';
+        var matched = library
+            .where(
+              (file) => ApiService.lyricMatchScore(trackTitle, file.name) > 0,
+            )
             .toList();
+        // 与在线歌词保持一致：没有标题命中时才以曲目编号作为最后兜底。
+        if (matched.isEmpty) {
+          final ordinal = ApiService.lyricTrackOrdinal(trackTitle);
+          if (ordinal != null) {
+            matched = library
+                .where(
+                  (file) => ApiService.lyricTrackOrdinal(file.name) == ordinal,
+                )
+                .toList();
+          }
+        }
         final candidates = matched.isNotEmpty
             ? matched
             : (library.length == 1 ? library : const <LyricsLibraryFile>[]);
@@ -574,7 +596,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     await _restoreFuture;
     if (!mounted) return;
     if (app.playing) {
-      await _player.pause();
+      await AppPlayer.instance.pause();
       app.playing = false;
     } else {
       if (_opened) {
@@ -585,7 +607,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
             await _player.seek(Duration(seconds: resume));
           } catch (_) {}
         }
-        await _player.play();
+        await AppPlayer.instance.play();
       } else {
         await _openCurrent();
       }
@@ -796,7 +818,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                   },
                 ),
               ),
-              if (_opening || _buffering)
+              if (_opening || _buffering || _reconnecting)
                 Positioned.fill(
                   child: IgnorePointer(
                     child: Container(

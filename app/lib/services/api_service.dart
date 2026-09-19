@@ -710,6 +710,119 @@ class ApiService {
     return stem.trim();
   }
 
+  /// 返回两个媒体/歌词文件名的标题匹配分数。
+  ///
+  /// 先保留完整标准化名称的精确匹配；不相等时，再从分隔符外的连续片段
+  /// 中寻找双方共有的标题。这样 `01-标题-NOSE`、`标题-SE_HIGH` 和
+  /// `标题(seなし)` 可以归到同一标题，而不会把某一侧各自最长的附加标记
+  /// 当作曲名。纯数字片段仍由 [lyricTrackOrdinal] 单独兜底。
+  static int lyricMatchScore(String trackName, String lyricName) {
+    final trackKey = lyricMatchKey(trackName);
+    final lyricKey = lyricMatchKey(lyricName);
+    if (trackKey.isEmpty || lyricKey.isEmpty) return 0;
+    // 足够大的固定值，保证完整名精确匹配永远优于片段匹配。
+    if (trackKey == lyricKey) return 100000;
+
+    final trackSpans = _lyricTitleSpans(trackKey);
+    final lyricSpans = _lyricTitleSpans(lyricKey);
+    var best = 0;
+    for (final entry in trackSpans.entries) {
+      final other = lyricSpans[entry.key];
+      if (other == null) continue;
+      // 相同片段的权重通常相等；取较小值使将来调整标准化规则时仍保守。
+      final score = entry.value < other ? entry.value : other;
+      if (score > best) best = score;
+    }
+    // 片段命中也要先于格式、语言等候选排序；权重仅用于同级标题比较。
+    return best == 0 ? 0 : 1000 + best;
+  }
+
+  /// 文件名按常见分隔符拆开后生成所有连续标题片段。
+  ///
+  /// 括号内通常是 `seなし`、语言、版本等注释，因此不参与主标题匹配；只有
+  /// 文件名没有任何括号外内容时才退回使用其中的文字，避免完全无法匹配。
+  static Map<String, int> _lyricTitleSpans(String name) {
+    final primary = _splitLyricTitleParts(name, includeAnnotations: false);
+    final parts = primary.isNotEmpty
+        ? primary
+        : _splitLyricTitleParts(name, includeAnnotations: true);
+    final spans = <String, int>{};
+    for (var start = 0; start < parts.length; start++) {
+      var joined = '';
+      for (var end = start; end < parts.length; end++) {
+        joined += parts[end];
+        if (!_hasNonNumericTitleContent(joined)) continue;
+        final weight = _lyricTitleWeight(joined);
+        final previous = spans[joined];
+        if (previous == null || weight > previous) spans[joined] = weight;
+      }
+    }
+    return spans;
+  }
+
+  static List<String> _splitLyricTitleParts(
+    String name, {
+    required bool includeAnnotations,
+  }) {
+    const openBrackets = '([{（［【';
+    const closeBrackets = ')]}）］】';
+    const separators = '-_./\\·・,，、:：;；|｜~～—–−';
+    final parts = <String>[];
+    final current = StringBuffer();
+    var bracketDepth = 0;
+
+    void flush() {
+      final part = current.toString().trim();
+      current.clear();
+      if (part.isNotEmpty) parts.add(part);
+    }
+
+    for (final rune in name.runes) {
+      final char = String.fromCharCode(rune);
+      if (openBrackets.contains(char)) {
+        if (bracketDepth == 0) flush();
+        bracketDepth++;
+        continue;
+      }
+      if (closeBrackets.contains(char)) {
+        if (bracketDepth > 0) bracketDepth--;
+        if (bracketDepth == 0) flush();
+        continue;
+      }
+      if (bracketDepth > 0 && !includeAnnotations) continue;
+      if (char.trim().isEmpty || separators.contains(char)) {
+        flush();
+      } else {
+        current.write(char);
+      }
+    }
+    flush();
+    return parts;
+  }
+
+  static bool _hasNonNumericTitleContent(String value) => value.runes.any(
+    (rune) =>
+        !(rune >= 0x30 && rune <= 0x39) && !(rune >= 0xff10 && rune <= 0xff19),
+  );
+
+  static int _lyricTitleWeight(String value) {
+    var weight = 0;
+    for (final rune in value.runes) {
+      weight += _isHanOrKana(rune) ? 2 : 1;
+    }
+    return weight;
+  }
+
+  static bool _isHanOrKana(int rune) =>
+      (rune >= 0x3400 && rune <= 0x4dbf) || // CJK Unified Ideographs Ext. A
+      (rune >= 0x4e00 && rune <= 0x9fff) || // CJK Unified Ideographs
+      (rune >= 0xf900 && rune <= 0xfaff) || // CJK Compatibility Ideographs
+      (rune >= 0x20000 && rune <= 0x2fa1f) || // supplementary Han blocks
+      (rune >= 0x3040 && rune <= 0x309f) || // Hiragana
+      (rune >= 0x30a0 && rune <= 0x30ff) || // Katakana
+      (rune >= 0x31f0 && rune <= 0x31ff) || // Katakana Phonetic Extensions
+      (rune >= 0xff66 && rune <= 0xff9d); // Half-width Katakana
+
   static String _stripKnownExtension(String value, Set<String> extensions) {
     final dot = value.lastIndexOf('.');
     if (dot <= 0 || !extensions.contains(value.substring(dot))) return value;
@@ -736,11 +849,14 @@ class ApiService {
     required String? trackTitle,
     required String? trackPath,
   }) {
-    final trackKey = lyricMatchKey(trackTitle ?? '');
-    if (trackKey.isEmpty) return const [];
+    if (lyricMatchKey(trackTitle ?? '').isEmpty) return const [];
     final trackFolder = _parentPath(trackPath ?? '');
+    final nameScores = <_LyricCandidate, int>{
+      for (final candidate in candidates)
+        candidate: lyricMatchScore(trackTitle ?? '', candidate.title),
+    };
     var sameName = candidates
-        .where((candidate) => lyricMatchKey(candidate.title) == trackKey)
+        .where((candidate) => (nameScores[candidate] ?? 0) > 0)
         .toList();
     // 部分作品的字幕仅保留曲目编号，或附加了额外标题/语言标签，无法与
     // 完整音频名相等。仅在没有完整匹配时，以同目录前置编号兜底。
@@ -756,11 +872,14 @@ class ApiService {
         .where((candidate) => _parentPath(candidate.path) == trackFolder)
         .toList();
     final matched = sameFolderName.isNotEmpty ? sameFolderName : sameName;
-    matched.sort(_compareLyricCandidates);
+    matched.sort((a, b) {
+      final nameScore = (nameScores[b] ?? 0).compareTo(nameScores[a] ?? 0);
+      if (nameScore != 0) return nameScore;
+      return _compareLyricCandidates(a, b);
+    });
     return matched;
   }
 
-  @visibleForTesting
   static String? lyricTrackOrdinal(String name) {
     var stem = lyricMatchKey(name);
     // 删除开头的语言/字幕标签，例如 [CHS]、(字幕)。
@@ -798,11 +917,14 @@ class ApiService {
       candidates,
       trackTitle: trackTitle,
       trackPath: trackPath,
-    ).toSet();
+    );
+    final matchOrder = <_LyricCandidate, int>{
+      for (var i = 0; i < matched.length; i++) matched[i]: i,
+    };
     candidates.sort((a, b) {
-      final aMatches = matched.contains(a);
-      final bMatches = matched.contains(b);
-      if (aMatches != bMatches) return aMatches ? -1 : 1;
+      final aOrder = matchOrder[a] ?? candidates.length;
+      final bOrder = matchOrder[b] ?? candidates.length;
+      if (aOrder != bOrder) return aOrder.compareTo(bOrder);
       return _compareLyricCandidates(a, b);
     });
   }

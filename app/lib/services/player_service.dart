@@ -13,6 +13,16 @@ const _eqHz = ['31', '62', '125', '250', '500', '1k', '2k', '4k', '8k', '16k'];
 /// 而真正的“播完”（EOF）只会在媒体实际播放结束后发生，远晚于该窗口。
 const _suppressWindow = Duration(seconds: 2);
 
+/// 网络流中断后的自动重连间隔。最后一档会持续重试，避免网络恢复后仍
+/// 需要切歌才能重新建立 mpv 的媒体会话。
+const _reconnectDelays = <Duration>[
+  Duration(seconds: 1),
+  Duration(seconds: 2),
+  Duration(seconds: 4),
+  Duration(seconds: 8),
+  Duration(seconds: 15),
+];
+
 /// 全局媒体播放器单例。
 ///
 /// 播放器随应用生命周期常驻，退出播放器页面时不会销毁，
@@ -47,7 +57,10 @@ class AppPlayer {
         }
         _completedCtrl.add(null);
       }),
-      player.stream.error.listen((e) => _errorCtrl.add(e.toString())),
+      player.stream.error.listen((e) {
+        _errorCtrl.add(e.toString());
+        _scheduleReconnect();
+      }),
     ];
   }
 
@@ -64,6 +77,10 @@ class AppPlayer {
   /// stop()/open() 后的 completed 抑制截止时间；到点自动失效，避免被去重流卡死
   DateTime? _suppressCompletedUntil;
   int _releaseGeneration = 0;
+  int _reconnectGeneration = 0;
+  String? _remoteUrl;
+  bool _playbackRequested = false;
+  bool _reconnecting = false;
 
   int _lastPos = 0;
   int _lastDur = 0;
@@ -76,6 +93,7 @@ class AppPlayer {
   final _completedCtrl = StreamController<void>.broadcast();
   final _releasedCtrl = StreamController<void>.broadcast();
   final _errorCtrl = StreamController<String>.broadcast();
+  final _reconnectingCtrl = StreamController<bool>.broadcast();
 
   late final List<StreamSubscription> _subs;
 
@@ -86,6 +104,10 @@ class AppPlayer {
   Stream<void> get completed => _completedCtrl.stream;
   Stream<void> get released => _releasedCtrl.stream;
   Stream<String> get error => _errorCtrl.stream;
+  Stream<bool> get reconnecting => _reconnectingCtrl.stream;
+
+  /// 当前网络媒体是否正等待下一次重连。
+  bool get isReconnecting => _reconnecting;
 
   /// 当前播放位置（秒）
   int get currentPosition => _lastPos;
@@ -108,9 +130,16 @@ class AppPlayer {
 
   /// 打开网络音频：桌面始终经本地代理转发；Android 在启用应用 HTTP
   /// 代理时也走本地代理，未启用时直连并附带该媒体域的 Bearer token。
-  Future<void> openMediaUrl(String url, {bool autoplay = true}) async {
+  Future<void> openMediaUrl(
+    String url, {
+    bool autoplay = true,
+    bool preserveReconnect = false,
+  }) async {
+    if (!preserveReconnect) _cancelReconnect();
+    _playbackRequested = autoplay;
+    _remoteUrl = url;
     final generation = _releaseGeneration;
-    await stop();
+    await _stop(preservePlaybackRequest: true);
     if (generation != _releaseGeneration) return;
     final httpProxy = await httpProxyConfig();
     if (generation != _releaseGeneration) return;
@@ -137,12 +166,18 @@ class AppPlayer {
       return;
     }
     openedUrl = url;
+    // stop() 期间可能刚好收到旧媒体的错误事件；新媒体已经成功打开时，
+    // 取消其排队的旧重连，避免稍后又把当前媒体重新打开一次。
+    if (!preserveReconnect) _cancelReconnect();
   }
 
   /// 打开已下载的真实文件，不经过网络代理。
   Future<void> openLocalPath(String path, {bool autoplay = true}) async {
+    _cancelReconnect();
+    _playbackRequested = autoplay;
+    _remoteUrl = null;
     final generation = _releaseGeneration;
-    await stop();
+    await _stop(preservePlaybackRequest: true);
     if (generation != _releaseGeneration) return;
     await open(Media(path), autoplay: autoplay);
     openedUrl = path;
@@ -150,15 +185,105 @@ class AppPlayer {
 
   /// 停止播放（抑制 stop 后短时间内残留的 completed，避免被误判为播放完成）
   Future<void> stop() async {
+    _cancelReconnect();
+    _playbackRequested = false;
+    await _stop();
+  }
+
+  Future<void> _stop({bool preservePlaybackRequest = false}) async {
+    if (!preservePlaybackRequest) _playbackRequested = false;
     _suppressCompletedUntil = DateTime.now().add(_suppressWindow);
     try {
       await player.stop();
     } catch (_) {}
   }
 
+  /// 带播放意图地暂停。网络重连等待期间调用时会同时取消后续重试。
+  Future<void> pause() async {
+    _cancelReconnect();
+    _playbackRequested = false;
+    await player.pause();
+  }
+
+  /// 恢复播放。若上一次是网络流错误，不复用已失效的 mpv 会话，而是立即
+  /// 重开原始 URL；这样网络恢复后点击一次播放即可生效。
+  Future<void> play() async {
+    _playbackRequested = true;
+    if (_reconnecting && _remoteUrl != null) {
+      _cancelReconnect();
+      _scheduleReconnect(immediate: true);
+      return;
+    }
+    await player.play();
+  }
+
+  void _cancelReconnect() {
+    _reconnectGeneration++;
+    _setReconnecting(false);
+  }
+
+  void _setReconnecting(bool value) {
+    if (_reconnecting == value) return;
+    _reconnecting = value;
+    _reconnectingCtrl.add(value);
+  }
+
+  void _scheduleReconnect({bool immediate = false}) {
+    final url = _remoteUrl;
+    if (url == null || !_playbackRequested || _reconnecting) return;
+    final generation = ++_reconnectGeneration;
+    _setReconnecting(true);
+    unawaited(_reconnect(url, generation, immediate: immediate));
+  }
+
+  Future<void> _reconnect(
+    String url,
+    int generation, {
+    required bool immediate,
+  }) async {
+    var attempt = immediate ? -1 : 0;
+    // open() 会把 position 流归零；重试失败时仍保留第一次断流前的位置。
+    final resumePosition = Duration(seconds: _lastPos);
+    while (generation == _reconnectGeneration && _playbackRequested) {
+      if (attempt >= 0) {
+        final delayIndex = attempt
+            .clamp(0, _reconnectDelays.length - 1)
+            .toInt();
+        final delay = _reconnectDelays[delayIndex];
+        await Future<void>.delayed(delay);
+      }
+      if (generation != _reconnectGeneration || !_playbackRequested) return;
+
+      // 位置由播放器最后一个有效 position 事件提供；网络中断后该值不会被
+      // stop() 归零，因此可从中断处附近恢复，而不是从开头重新播放。
+      opened = false;
+      try {
+        await openMediaUrl(url, autoplay: true, preserveReconnect: true);
+        if (generation != _reconnectGeneration || !_playbackRequested) {
+          // 用户在 open() 尚未完成时点了暂停；仅在仍是同一媒体时补一次暂停，
+          // 不影响期间已切换到的新媒体。
+          if (_remoteUrl == url && !_playbackRequested) {
+            await player.pause();
+          }
+          return;
+        }
+        if (resumePosition > Duration.zero) {
+          try {
+            await player.seek(resumePosition);
+          } catch (_) {}
+        }
+        _setReconnecting(false);
+        return;
+      } catch (_) {
+        attempt++;
+      }
+    }
+  }
+
   /// 停止并解除当前媒体关联，用于隐私模式等需要立即丢弃播放上下文的场景。
   Future<void> releaseMedia() async {
     _releaseGeneration++;
+    _cancelReconnect();
     await stop();
     opened = false;
     openedUrl = null;
@@ -232,10 +357,13 @@ class AppPlayer {
 
   /// 应用退出时释放（平时播放器常驻，不随页面销毁）
   void dispose() {
+    _cancelReconnect();
+    _playbackRequested = false;
     for (final s in _subs) {
       s.cancel();
     }
     _releasedCtrl.close();
+    _reconnectingCtrl.close();
     player.dispose();
   }
 }

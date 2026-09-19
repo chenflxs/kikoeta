@@ -912,9 +912,7 @@ class LyricsLibraryService {
   LyricsLibraryFile _candidate(LyricsLibraryFile f) => f;
   int _matchScore(LyricsLibraryFile file, String? title, String? path) {
     var score = _formatPriority(file.name) * 10;
-    if (title != null &&
-        ApiService.lyricMatchKey(file.name) == ApiService.lyricMatchKey(title))
-      score += 1000;
+    if (title != null) score += ApiService.lyricMatchScore(title, file.name);
     if (path != null &&
         _parent(file.relativePath).toLowerCase() == _parent(path).toLowerCase())
       score += 100;

@@ -1008,7 +1008,7 @@ class MiniPlayer extends StatelessWidget {
                 if (app.playing) {
                   // 真实暂停底层播放器（状态经 playing 事件流自动回同步）
                   try {
-                    await AppPlayer.instance.player.pause();
+                    await AppPlayer.instance.pause();
                   } catch (_) {}
                 } else {
                   // 未打开媒体（如重启恢复的队列）：进播放器页打开
@@ -1017,7 +1017,7 @@ class MiniPlayer extends StatelessWidget {
                     return;
                   }
                   try {
-                    await AppPlayer.instance.player.play();
+                    await AppPlayer.instance.play();
                   } catch (_) {}
                 }
               },
