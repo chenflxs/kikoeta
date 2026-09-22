@@ -30,6 +30,13 @@ class LyricsOverlay(
     private val context: Context,
     private val events: MethodChannel,
 ) {
+    companion object {
+        // SYSTEM_ALERT_WINDOW does not belong to the Activity window. If Android keeps the
+        // process alive after the task is closed, a newly-created Activity must first remove
+        // the overlay owned by the previous Activity or both views will remain on screen.
+        private var activeOverlay: LyricsOverlay? = null
+    }
+
     private val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
     private var root: LinearLayout? = null
@@ -67,6 +74,10 @@ class LyricsOverlay(
         portrait: Boolean,
         portraitWidthDp: Double,
     ) {
+        if (activeOverlay !== this) {
+            activeOverlay?.hide()
+            activeOverlay = this
+        }
         this.portrait = portrait
         overlayWidth = if (portrait) {
             WindowManager.LayoutParams.MATCH_PARENT
@@ -242,8 +253,22 @@ class LyricsOverlay(
     }
 
     fun hide() {
-        root?.let { if (visible) wm.removeView(it) }
+        root?.let { view ->
+            if (visible) {
+                // The view may already have been detached by Activity teardown. Cleanup must
+                // remain idempotent so lifecycle destruction can safely call it every time.
+                runCatching { wm.removeViewImmediate(view) }
+            }
+        }
         visible = false
+        if (activeOverlay === this) activeOverlay = null
+    }
+
+    fun dispose() {
+        hide()
+        root = null
+        textView = null
+        lockBtn = null
     }
 
     private fun dp(v: Int): Int = (v * context.resources.displayMetrics.density).toInt()

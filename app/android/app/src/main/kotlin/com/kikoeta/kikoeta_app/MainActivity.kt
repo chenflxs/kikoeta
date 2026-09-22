@@ -28,6 +28,15 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    override fun onDestroy() {
+        // Application overlays are independent of the Activity window. Explicitly remove the
+        // lyrics view while this Activity still owns its WindowManager; otherwise a process kept
+        // alive by the battery-optimization exemption can leave it behind across app restarts.
+        overlay?.dispose()
+        overlay = null
+        super.onDestroy()
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         registerAudioControl(flutterEngine)
