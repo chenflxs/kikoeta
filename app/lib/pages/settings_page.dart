@@ -11,6 +11,8 @@ import '../services/android_battery.dart';
 import '../services/android_lyrics_overlay.dart';
 import '../services/api_service.dart';
 import '../services/desktop_lyrics_overlay.dart';
+import '../services/lyrics_library_broadcast_service.dart';
+import '../services/lyrics_library_service.dart';
 import '../services/player_service.dart';
 import '../services/update_service.dart';
 import '../src/rust/api/translate.dart';
@@ -543,6 +545,24 @@ class _SettingsPageState extends State<SettingsPage> {
                       app.setDesktopLyricsOn(v);
                     },
                   ),
+                  _switchRow(
+                    Icons.cell_tower,
+                    '歌词库广播',
+                    '只读 API 服务 · 端口 2377',
+                    app.lyricsLibraryBroadcastOn,
+                    (v) async {
+                      try {
+                        await LyricsLibraryBroadcastService.instance.setEnabled(
+                          v,
+                        );
+                        app.setLyricsLibraryBroadcastOn(v);
+                      } catch (e) {
+                        if (mounted) {
+                          _toast(v ? '无法开启歌词库广播：$e' : '关闭歌词库广播失败：$e');
+                        }
+                      }
+                    },
+                  ),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(14, 4, 14, 4),
                     child: Row(
@@ -706,7 +726,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     _switchRow(
                       Icons.speaker_group_outlined,
                       '忽略音频焦点',
-                      '其他应用抢占音频焦点时不暂停',
+                      '与其他应用同时播放，互不打断',
                       app.ignoreAudioFocus,
                       (v) => app.setIgnoreAudioFocus(v),
                     ),
@@ -1700,8 +1720,10 @@ class _SettingsPageState extends State<SettingsPage> {
     } catch (_) {}
     DesktopLyricsOverlay.instance.hide();
     await AndroidLyricsOverlay.instance.hide();
+    await LyricsLibraryBroadcastService.instance.stop();
     // 清空内存 + SQLite（loginRequired 回到 true，自动切到登录页）
     app.resetAll();
+    LyricsLibraryService.instance.resetIndexCache();
     if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()

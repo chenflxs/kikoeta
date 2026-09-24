@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../services/lyrics_library_service.dart';
 import '../theme.dart';
+import '../widgets.dart';
 
 class LyricsLibraryPage extends StatefulWidget {
   const LyricsLibraryPage({super.key});
@@ -18,7 +19,9 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
   List<String> _workIds = [];
   Map<String, int> _directoryCounts = {};
   Set<String> _aiWorkIds = {};
+  Set<String> _onlineWorkIds = {};
   Map<String, List<LyricsLibraryFile>> _files = {};
+  String _source = 'local';
   bool _loading = false;
   bool _importing = false;
   bool _deleting = false;
@@ -31,6 +34,7 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
   int _countLoadToken = 0;
   int _visibleCount = _batchSize;
   bool _loadingMore = false;
+  int _refreshGeneration = 0;
 
   @override
   void initState() {
@@ -75,8 +79,12 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除歌词库作品'),
-        content: Text('确定删除选中的 ${_selected.length} 个作品目录吗？'),
+        title: Text(_source == 'remote' ? '移除远程作品' : '删除歌词库作品'),
+        content: Text(
+          _source == 'remote'
+              ? '确定移除选中的 ${_selected.length} 个远程作品索引吗？'
+              : '确定删除选中的 ${_selected.length} 个作品目录吗？',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -84,21 +92,30 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('删除'),
+            child: Text(_source == 'remote' ? '移除' : '删除'),
           ),
         ],
       ),
     );
+    if (!mounted) return;
     if (ok != true) return;
     setState(() => _deleting = true);
     try {
-      await _service.deleteWorks(Set.of(_selected));
+      if (_source == 'remote') {
+        await _service.removeOnlineWorks(Set.of(_selected));
+      } else {
+        await _service.deleteWorks(Set.of(_selected));
+      }
       if (!mounted) return;
       setState(() {
         _selected.clear();
         _selecting = false;
       });
-      await _refresh();
+      if (_source == 'remote') {
+        await _reloadRecords();
+      } else {
+        await _refresh();
+      }
     } finally {
       if (mounted) {
         setState(() => _deleting = false);
@@ -115,33 +132,42 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
 
     if (records.isEmpty) {
       // 首次使用时没有索引，只能立即扫描以发现已有的歌词目录。
-      await _refresh();
+      if (_source == 'local') await _refresh();
       return;
     }
 
     // 确保缓存内容至少完成一帧绘制后才扫描磁盘；扫描期间仍保留已显示的
     // 条目，外部新增或删除的文件夹会在后台同步回来。
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _refresh();
+      if (mounted && _source == 'local') _refresh();
     });
   }
 
   void _applyRecords(List<LyricsLibraryRecord> records) {
+    final localRecords = records.where((record) => !record.online).toList();
+    final remoteRecords = records.where((record) => record.online).toList();
+    final sourceRecords = _source == 'remote' ? remoteRecords : localRecords;
     final directoryCounts = <String, int>{};
     final aiWorkIds = <String>{};
-    for (final record in records) {
+    final onlineWorkIds = <String>{};
+    for (final record in sourceRecords) {
+      final firstForWork = !directoryCounts.containsKey(record.workId);
       directoryCounts.update(
         record.workId,
         (count) => count + 1,
         ifAbsent: () => 1,
       );
-      if (record.isAi) aiWorkIds.add(record.workId);
+      if (record.isAi && (!record.online || firstForWork)) {
+        aiWorkIds.add(record.workId);
+      }
+      if (record.online) onlineWorkIds.add(record.workId);
     }
     final ids = directoryCounts.keys.toList()..sort();
     setState(() {
       _workIds = ids;
       _directoryCounts = directoryCounts;
       _aiWorkIds = aiWorkIds;
+      _onlineWorkIds = onlineWorkIds;
       _files = {};
       _fileCounts.clear();
       _visibleCount = _batchSize;
@@ -149,16 +175,59 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
     _loadCounts(ids.take(_batchSize).toList());
   }
 
+  Future<void> _changeSource(String source) async {
+    if (!mounted || source == _source) return;
+    ++_refreshGeneration;
+    ++_countLoadToken;
+    setState(() {
+      _source = source;
+      _loading = false;
+      _loadingMore = false;
+      _selected.clear();
+      _selecting = false;
+    });
+    final records = await _service.records();
+    if (!mounted || _source != source) return;
+    _applyRecords(records);
+  }
+
+  Future<void> _reloadRecords() async {
+    final records = await _service.records();
+    if (mounted) _applyRecords(records);
+  }
+
+  Future<void> _onRemoteLibraryChanged(bool switchToRemote) async {
+    if (switchToRemote && _source != 'remote') {
+      await _changeSource('remote');
+    } else {
+      await _reloadRecords();
+    }
+  }
+
   Future<void> _refresh({bool deep = false}) async {
     if (_loading && !deep) return;
+    final source = _source;
+    final generation = ++_refreshGeneration;
     setState(() => _loading = true);
     try {
-      final records = await _service.refresh(deep: deep);
-      if (mounted) {
+      bool shouldCancel() => !mounted || generation != _refreshGeneration;
+      final records = source == 'remote'
+          ? await _service.refreshRemoteLibraries(shouldCancel: shouldCancel)
+          : await _service.refresh(
+              deep: deep,
+              shouldCancel: deep ? null : shouldCancel,
+            );
+      if (mounted && generation == _refreshGeneration) {
         _applyRecords(records);
       }
+    } catch (error) {
+      if (mounted && generation == _refreshGeneration) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('刷新失败：$error')));
+      }
     } finally {
-      if (mounted) {
+      if (mounted && generation == _refreshGeneration) {
         setState(() => _loading = false);
       }
     }
@@ -189,18 +258,9 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
     try {
       final kind = await showDialog<String>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('选择导入内容'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, 'folder'),
-              child: const Text('文件夹'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, 'zip'),
-              child: const Text('ZIP 压缩包'),
-            ),
-          ],
+        builder: (_) => _LyricsLibraryImportDialog(
+          service: _service,
+          onRemoteChanged: _onRemoteLibraryChanged,
         ),
       );
       if (kind == null) return;
@@ -244,11 +304,13 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
             ],
           ),
         );
+        if (!mounted) return;
         if (proceed != true) return;
       }
       final scanProgress = ValueNotifier<LyricsImportProgress>(
         const LyricsImportProgress(phase: '正在检查文件冲突', current: 0, total: 0),
       );
+      final scanNavigator = Navigator.of(context, rootNavigator: true);
       final scanDialog = showDialog<void>(
         context: context,
         barrierDismissible: false,
@@ -262,7 +324,7 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
           onProgress: (value) => scanProgress.value = value,
         );
       } finally {
-        if (mounted) Navigator.of(context, rootNavigator: true).pop();
+        if (scanNavigator.mounted) scanNavigator.pop();
         scanProgress.dispose();
       }
       await scanDialog;
@@ -296,10 +358,12 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
             ) ??
             LyricsImportConflict.cancel;
       }
+      if (!mounted) return;
       if (conflict == LyricsImportConflict.cancel) return;
       final progress = ValueNotifier<LyricsImportProgress>(
         const LyricsImportProgress(phase: '准备导入', current: 0, total: 0),
       );
+      final progressNavigator = Navigator.of(context, rootNavigator: true);
       final progressDialog = showDialog<void>(
         context: context,
         barrierDismissible: false,
@@ -313,11 +377,15 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
           onProgress: (value) => progress.value = value,
         );
       } finally {
-        if (mounted) Navigator.of(context, rootNavigator: true).pop();
+        if (progressNavigator.mounted) progressNavigator.pop();
         progress.dispose();
       }
       await progressDialog;
-      await _refresh();
+      if (_source != 'local') {
+        await _changeSource('local');
+      } else {
+        await _reloadRecords();
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -354,10 +422,25 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
 
   Future<void> _showFiles(String workId) async {
     final cached = _files[workId];
-    final files = cached ?? await _service.listFiles(workId: workId);
+    final files =
+        cached ??
+        (_onlineWorkIds.contains(workId)
+            ? (await _service.remoteFilesForWork(workId))
+                  .map(
+                    (file) => LyricsLibraryFile(
+                      workId: workId,
+                      relativePath: file.relativePath,
+                      name: file.name,
+                      extension: file.extension,
+                      absolutePath: '',
+                    ),
+                  )
+                  .toList()
+            : await _service.listFiles(workId: workId));
     if (cached == null && mounted) {
       setState(() => _files[workId] = files);
     }
+    if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -384,8 +467,12 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除歌词'),
-        content: Text('确定删除 $workId 的全部歌词文件吗？'),
+        title: Text(_source == 'remote' ? '移除远程作品' : '删除歌词'),
+        content: Text(
+          _source == 'remote'
+              ? '确定移除 $workId 的远程作品索引吗？'
+              : '确定删除 $workId 的全部歌词文件吗？',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -393,16 +480,27 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('删除'),
+            child: Text(_source == 'remote' ? '移除' : '删除'),
           ),
         ],
       ),
     );
+    if (!mounted) return;
     if (ok != true) return;
     setState(() => _deleting = true);
     try {
-      await _service.deleteWorks({workId});
-      if (mounted) await _refresh();
+      if (_source == 'remote') {
+        await _service.removeOnlineWorks({workId});
+      } else {
+        await _service.deleteWorks({workId});
+      }
+      if (mounted) {
+        if (_source == 'remote') {
+          await _reloadRecords();
+        } else {
+          await _refresh();
+        }
+      }
     } finally {
       if (mounted) setState(() => _deleting = false);
     }
@@ -445,6 +543,31 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
                 ],
               ),
         title: const Text('歌词库'),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(48),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Pill(
+                    label: '本地',
+                    selected: _source == 'local',
+                    onTap: () => _changeSource('local'),
+                  ),
+                  const SizedBox(width: 8),
+                  Pill(
+                    label: '在线',
+                    selected: _source == 'remote',
+                    onTap: () => _changeSource('remote'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
         actions: [
           if (_searching)
             IconButton(
@@ -499,11 +622,14 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
           ),
           Semantics(
             button: true,
-            label: '刷新歌词库',
-            hint: '长按执行深度刷新',
+            label: _source == 'remote' ? '刷新全部远程库' : '刷新歌词库',
+            hint: _source == 'remote' ? '同步所有已导入远程库的作品索引' : '长按执行深度刷新',
             child: InkResponse(
               onTap: _loading || _importing || _deleting ? null : _refresh,
-              onLongPress: _loading || _importing || _deleting
+              onLongPress: _source == 'remote' ||
+                      _loading ||
+                      _importing ||
+                      _deleting
                   ? null
                   : _deepRefresh,
               radius: 24,
@@ -544,7 +670,15 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
             ),
           Expanded(
             child: ids.isEmpty
-                ? const Center(child: Text('暂无数据，点击右上角导入'))
+                ? Center(
+                    child: _loading
+                        ? const CircularProgressIndicator()
+                        : Text(
+                            _source == 'remote'
+                                ? '暂无远程作品，点击右上角导入并连接远程库'
+                                : '暂无数据，点击右上角导入',
+                          ),
+                  )
                 : LayoutBuilder(
                     builder: (context, constraints) {
                       final count = (constraints.maxWidth / 210).floor().clamp(
@@ -574,6 +708,7 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
                             final fileCount = _fileCounts[id];
                             final directoryCount = _directoryCounts[id] ?? 0;
                             final isAi = _aiWorkIds.contains(id);
+                            final isOnline = _onlineWorkIds.contains(id);
                             return Stack(
                               children: [
                                 InkWell(
@@ -637,8 +772,8 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
                                               const SizedBox(height: 3),
                                               Text(
                                                 fileCount == null
-                                                    ? '正在统计文件 · $directoryCount 个目录'
-                                                    : '$fileCount 个歌词/字幕文件 · $directoryCount 个目录',
+                                                    ? '正在统计歌词文件'
+                                                    : '$fileCount 个歌词/字幕文件 · ${isOnline ? '远程' : '$directoryCount 个目录'}',
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
                                                 style: TextStyle(
@@ -649,27 +784,18 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
                                             ],
                                           ),
                                         ),
-                                        if (isAi)
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 6,
-                                              vertical: 3,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: p.accent.withValues(
-                                                alpha: .14,
-                                              ),
-                                              borderRadius:
-                                                  BorderRadius.circular(5),
-                                            ),
-                                            child: Text(
-                                              'AI',
-                                              style: TextStyle(
-                                                color: p.accent,
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.w800,
-                                              ),
-                                            ),
+                                        if (isAi || isOnline)
+                                          Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              if (isAi)
+                                                _sourceBadge('AI', p.accent),
+                                              if (isOnline) ...[
+                                                if (isAi)
+                                                  const SizedBox(height: 3),
+                                                _sourceBadge('在线', p.orange),
+                                              ],
+                                            ],
                                           ),
                                       ],
                                     ),
@@ -705,6 +831,18 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
       ),
     );
   }
+
+  Widget _sourceBadge(String label, Color color) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: .14),
+      borderRadius: BorderRadius.circular(5),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w800),
+    ),
+  );
 
   Widget _searchField(Palette p) {
     return AnimatedContainer(
@@ -764,6 +902,310 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
             ),
         ],
       ),
+    );
+  }
+}
+
+class _LyricsLibraryImportDialog extends StatefulWidget {
+  final LyricsLibraryService service;
+  final Future<void> Function(bool switchToRemote) onRemoteChanged;
+
+  const _LyricsLibraryImportDialog({
+    required this.service,
+    required this.onRemoteChanged,
+  });
+
+  @override
+  State<_LyricsLibraryImportDialog> createState() =>
+      _LyricsLibraryImportDialogState();
+}
+
+class _LyricsLibraryImportDialogState
+    extends State<_LyricsLibraryImportDialog> {
+  final _url = TextEditingController();
+  String _section = 'local';
+  String? _error;
+  bool _connecting = false;
+  bool _reordering = false;
+  String? _refreshingUrl;
+  List<String> _remoteUrls = [];
+
+  bool get _busy => _connecting || _reordering || _refreshingUrl != null;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRemoteSources();
+  }
+
+  Future<void> _loadRemoteSources() async {
+    final urls = await widget.service.remoteLibraryUrls();
+    final lastUrl = await widget.service.lastRemoteUrl;
+    if (!mounted) return;
+    setState(() => _remoteUrls = urls);
+    if (_url.text.isEmpty) _url.text = lastUrl;
+  }
+
+  @override
+  void dispose() {
+    _url.dispose();
+    super.dispose();
+  }
+
+  Future<void> _connect() async {
+    if (_busy) return;
+    setState(() {
+      _connecting = true;
+      _error = null;
+    });
+    try {
+      await widget.service.connectRemoteLibrary(_url.text);
+      await widget.onRemoteChanged(true);
+      final urls = await widget.service.remoteLibraryUrls();
+      if (mounted) {
+        _url.clear();
+        setState(() => _remoteUrls = urls);
+      }
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _connecting = false);
+    }
+  }
+
+  Future<void> _refreshOne(String url) async {
+    if (_busy) return;
+    setState(() {
+      _refreshingUrl = url;
+      _error = null;
+    });
+    try {
+      await widget.service.refreshRemoteLibrary(url);
+      await widget.onRemoteChanged(false);
+    } catch (error) {
+      if (mounted) setState(() => _error = '刷新 $url 失败：$error');
+    } finally {
+      if (mounted) setState(() => _refreshingUrl = null);
+    }
+  }
+
+  Future<void> _reorder(int oldIndex, int newIndex) async {
+    if (_busy) return;
+    if (oldIndex == newIndex) return;
+    final previous = List<String>.of(_remoteUrls);
+    final reordered = List<String>.of(previous);
+    final moved = reordered.removeAt(oldIndex);
+    reordered.insert(newIndex, moved);
+    setState(() {
+      _remoteUrls = reordered;
+      _reordering = true;
+      _error = null;
+    });
+    try {
+      await widget.service.setRemoteLibraryOrder(reordered);
+      await widget.onRemoteChanged(false);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _remoteUrls = previous;
+          _error = '调整优先级失败：$error';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _reordering = false);
+    }
+  }
+
+  Widget _navItem(String key, String label, IconData icon) {
+    final selected = _section == key;
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 7),
+      child: ListTile(
+        dense: true,
+        selected: selected,
+        selectedTileColor: colors.primary.withValues(alpha: .1),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        leading: Icon(icon, size: 19, color: selected ? colors.primary : null),
+        title: Text(label, style: const TextStyle(fontSize: 13)),
+        onTap: () => setState(() {
+          _section = key;
+          _error = null;
+        }),
+      ),
+    );
+  }
+
+  Widget _remoteSourceList() {
+    if (_remoteUrls.isEmpty) {
+      return const SizedBox(
+        height: 84,
+        child: Center(child: Text('尚未导入远程库')),
+      );
+    }
+    return SizedBox(
+      height: 180,
+      child: ReorderableListView.builder(
+        buildDefaultDragHandles: false,
+        padding: EdgeInsets.zero,
+        itemCount: _remoteUrls.length,
+        onReorderItem: _reorder,
+        itemBuilder: (context, index) {
+          final url = _remoteUrls[index];
+          return Card(
+            key: ValueKey(url),
+            margin: const EdgeInsets.only(bottom: 4),
+            child: ListTile(
+              dense: true,
+              contentPadding: const EdgeInsets.only(left: 4, right: 2),
+              leading: ReorderableDragStartListener(
+                index: index,
+                child: const Padding(
+                  padding: EdgeInsets.all(8),
+                  child: Icon(Icons.drag_handle, size: 20),
+                ),
+              ),
+              title: Text(url, maxLines: 1, overflow: TextOverflow.ellipsis),
+              subtitle: Text('优先级 ${index + 1}'),
+              trailing: IconButton(
+                tooltip: '只刷新此远程库',
+                onPressed: _busy ? null : () => _refreshOne(url),
+                icon: _refreshingUrl == url
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final contentHeight = (MediaQuery.sizeOf(context).height -
+            MediaQuery.viewInsetsOf(context).bottom -
+            160)
+        .clamp(240.0, 420.0)
+        .toDouble();
+    return AlertDialog(
+      title: const Text('导入歌词库'),
+      content: SizedBox(
+        width: 520,
+        height: contentHeight,
+        child: Row(
+          children: [
+            SizedBox(
+              width: 132,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _navItem('local', '本地文件', Icons.folder_open_outlined),
+                  _navItem('remote', '远程库', Icons.cloud_outlined),
+                ],
+              ),
+            ),
+            const VerticalDivider(width: 20),
+            Expanded(
+              child: _section == 'local'
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Text(
+                          '选择要导入的歌词文件或压缩包。',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                        const SizedBox(height: 18),
+                        FilledButton.tonalIcon(
+                          onPressed: () => Navigator.pop(context, 'folder'),
+                          icon: const Icon(Icons.folder_open_outlined),
+                          label: const Text('选择文件夹'),
+                        ),
+                        const SizedBox(height: 10),
+                        FilledButton.icon(
+                          onPressed: () => Navigator.pop(context, 'zip'),
+                          icon: const Icon(Icons.archive_outlined),
+                          label: const Text('选择 ZIP 压缩包'),
+                        ),
+                      ],
+                    )
+                  : SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const Text(
+                            '输入开启了歌词库广播的设备地址。',
+                            style: TextStyle(fontSize: 13),
+                          ),
+                          const SizedBox(height: 10),
+                          TextField(
+                            controller: _url,
+                            autofocus: true,
+                            keyboardType: TextInputType.url,
+                            decoration: const InputDecoration(
+                              labelText: 'HTTP / HTTPS 地址',
+                              hintText: 'http://192.168.1.20:2377',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            onSubmitted: (_) => _connect(),
+                          ),
+                          const SizedBox(height: 8),
+                          FilledButton.icon(
+                            onPressed: _busy ? null : _connect,
+                            icon: _connecting
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.link),
+                            label: Text(_connecting ? '正在连接并同步' : '导入远程库'),
+                          ),
+                          const SizedBox(height: 7),
+                          Text(
+                            '导入时只同步作品索引；播放时再下载该作品的全部歌词。',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          if (_error != null) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              _error!,
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.error,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                          const Divider(height: 22),
+                          const Text(
+                            '已导入的远程库（从上到下优先级递减，拖动排序）',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          const SizedBox(height: 7),
+                          _remoteSourceList(),
+                        ],
+                      ),
+                    ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('关闭'),
+        ),
+      ],
     );
   }
 }

@@ -9,6 +9,7 @@ import '../data.dart';
 import 'api_service.dart';
 import 'app_paths.dart';
 import 'settings_store.dart';
+import 'lyrics_library_remote_client.dart';
 import '../src/rust/api/textcodec.dart';
 
 String _normalizeRelative(String value) => value
@@ -20,16 +21,25 @@ class LyricsLibraryRecord {
   final String workId;
   final String relativePath;
   final bool isAi;
+  final bool online;
+  final String remoteUrl;
+  final int fileCount;
   const LyricsLibraryRecord({
     required this.workId,
     required this.relativePath,
     this.isAi = false,
+    this.online = false,
+    this.remoteUrl = '',
+    this.fileCount = 0,
   });
 
   Map<String, dynamic> toJson() => {
     'workId': workId,
     'relativePath': relativePath,
     'isAi': isAi,
+    'online': online,
+    if (remoteUrl.isNotEmpty) 'remoteUrl': remoteUrl,
+    if (online) 'fileCount': fileCount,
   };
 
   factory LyricsLibraryRecord.fromJson(Map<String, dynamic> json) =>
@@ -37,6 +47,11 @@ class LyricsLibraryRecord {
         workId: (json['workId'] as String? ?? '').toUpperCase(),
         relativePath: _normalizeRelative(json['relativePath'] as String? ?? ''),
         isAi: json['isAi'] == true,
+        online: json['online'] == true || json['isOnline'] == true,
+        remoteUrl: json['remoteUrl'] as String? ?? '',
+        fileCount: json['fileCount'] is num
+            ? (json['fileCount'] as num).toInt()
+            : 0,
       );
 }
 
@@ -77,7 +92,7 @@ class LyricsTranslationInput {
 
 enum LyricsImportConflict { skip, overwrite, cancel }
 
-enum LyricsLibraryStatus { none, local, ai }
+enum LyricsLibraryStatus { none, local, online, ai }
 
 class LyricsImportProgress {
   final String phase;
@@ -132,6 +147,9 @@ class LyricsLibraryService {
   LyricsLibraryService._();
   static final instance = LyricsLibraryService._();
   static const _key = 'lyrics_library_entries';
+  static const _remoteSourcesKey = 'lyrics_library_remote_sources';
+  static const _sourceRequestGap = Duration(seconds: 2);
+  static const _globalRequestGap = Duration(milliseconds: 300);
   static const supportedExtensions = {
     '.lrc',
     '.txt',
@@ -150,12 +168,25 @@ class LyricsLibraryService {
   static const _maxPathPartBytes = 120;
 
   List<LyricsLibraryRecord> _records = [];
+  List<String> _remoteUrls = [];
   bool _loaded = false;
   final ValueNotifier<int> _revision = ValueNotifier(0);
+  Future<void> _indexRequestTail = Future.value();
+  final Map<String, Future<List<RemoteLibraryWork>>> _pendingIndexRequests = {};
+  final Map<String, DateTime> _lastSourceRequestAt = {};
+  DateTime? _lastIndexRequestAt;
 
   ValueListenable<int> get revision => _revision;
 
   void _notifyChanged() => _revision.value++;
+
+  /// Drop the in-memory copy after the application settings database is reset.
+  void resetIndexCache() {
+    _records = [];
+    _remoteUrls = [];
+    _loaded = false;
+    _notifyChanged();
+  }
 
   Future<String> get root async {
     // Windows 便携版的歌词库与 kikoeta.exe 同级，避免落到 kikoeta_data。
@@ -171,18 +202,48 @@ class LyricsLibraryService {
     if (_loaded) return;
     _loaded = true;
     final raw = SettingsStore.get(_key);
-    if (raw == null || raw.isEmpty) return;
-    try {
-      _records = (jsonDecode(raw) as List)
-          .whereType<Map>()
-          .map(
-            (e) => LyricsLibraryRecord.fromJson(Map<String, dynamic>.from(e)),
-          )
-          .where((e) => e.workId.isNotEmpty && e.relativePath.isNotEmpty)
-          .toList();
-    } catch (_) {
-      _records = [];
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        _records = (jsonDecode(raw) as List)
+            .whereType<Map>()
+            .map(
+              (e) => LyricsLibraryRecord.fromJson(Map<String, dynamic>.from(e)),
+            )
+            .where((e) => e.workId.isNotEmpty && e.relativePath.isNotEmpty)
+            .toList();
+      } catch (_) {
+        _records = [];
+      }
     }
+
+    // Older installations only stored the URL on each online record and the
+    // last connected URL. Keep that order when creating the source list.
+    void addRemoteUrl(String value) {
+      try {
+        final url = LyricsLibraryRemoteClient.normalizeBaseUrl(value).toString();
+        if (!_remoteUrls.contains(url)) _remoteUrls.add(url);
+      } catch (_) {}
+    }
+
+    final storedSources = SettingsStore.get(_remoteSourcesKey);
+    if (storedSources != null && storedSources.isNotEmpty) {
+      try {
+        for (final value
+            in (jsonDecode(storedSources) as List).whereType<String>()) {
+          addRemoteUrl(value);
+        }
+      } catch (_) {}
+    }
+    final indexedUrls = _records
+        .where((record) => record.online && record.remoteUrl.isNotEmpty)
+        .map((record) => record.remoteUrl)
+        .toSet();
+    for (final url in indexedUrls) {
+      addRemoteUrl(url);
+    }
+    final lastUrl = SettingsStore.get('lyrics_library_remote_last_url');
+    if (lastUrl != null && lastUrl.isNotEmpty) addRemoteUrl(lastUrl);
+    if (storedSources == null && _remoteUrls.isNotEmpty) _saveRemoteUrls();
   }
 
   Future<void> _save() async {
@@ -192,9 +253,281 @@ class LyricsLibraryService {
     );
   }
 
+  void _saveRemoteUrls() =>
+      SettingsStore.set(_remoteSourcesKey, jsonEncode(_remoteUrls));
+
+  List<LyricsLibraryRecord> _orderedOnlineRecords(
+    Iterable<LyricsLibraryRecord> records,
+  ) {
+    final bySource = <String, List<LyricsLibraryRecord>>{};
+    for (final record in records.where((record) => record.online)) {
+      (bySource[record.remoteUrl] ??= []).add(record);
+    }
+    final ordered = <LyricsLibraryRecord>[];
+    for (final url in _remoteUrls) {
+      final group = bySource.remove(url);
+      if (group != null) ordered.addAll(group);
+    }
+    for (final group in bySource.values) {
+      ordered.addAll(group);
+    }
+    return ordered;
+  }
+
   Future<List<LyricsLibraryRecord>> records() async {
     await _load();
-    return List.unmodifiable(_records);
+    return List.unmodifiable([
+      ..._records.where((record) => !record.online),
+      ..._orderedOnlineRecords(_records),
+    ]);
+  }
+
+  Future<List<String>> remoteLibraryUrls() async {
+    await _load();
+    return List.unmodifiable(_remoteUrls);
+  }
+
+  Future<void> setRemoteLibraryOrder(List<String> urls) async {
+    await _load();
+    if (urls.length != _remoteUrls.length ||
+        urls.toSet().length != urls.length ||
+        !urls.toSet().containsAll(_remoteUrls)) {
+      throw ArgumentError('远程库列表已变化，请重新打开导入窗口');
+    }
+    _remoteUrls = List.of(urls);
+    _saveRemoteUrls();
+    _notifyChanged();
+  }
+
+  Future<String> get lastRemoteUrl async =>
+      SettingsStore.get('lyrics_library_remote_last_url') ?? '';
+
+  /// Serializes index requests, coalesces overlapping requests to the same
+  /// source, and spaces repeat requests without skipping an explicit refresh.
+  Future<List<RemoteLibraryWork>> _fetchRemoteWorks(String url) {
+    final pending = _pendingIndexRequests[url];
+    if (pending != null) return pending;
+    final request = _indexRequestTail.then((_) async {
+      var next = DateTime.now();
+      final lastGlobal = _lastIndexRequestAt;
+      if (lastGlobal != null) {
+        final allowed = lastGlobal.add(_globalRequestGap);
+        if (allowed.isAfter(next)) next = allowed;
+      }
+      final lastSource = _lastSourceRequestAt[url];
+      if (lastSource != null) {
+        final allowed = lastSource.add(_sourceRequestGap);
+        if (allowed.isAfter(next)) next = allowed;
+      }
+      final delay = next.difference(DateTime.now());
+      if (delay > Duration.zero) await Future.delayed(delay);
+      final started = DateTime.now();
+      _lastIndexRequestAt = started;
+      _lastSourceRequestAt[url] = started;
+      return LyricsLibraryRemoteClient.fetchWorks(url);
+    });
+    _pendingIndexRequests[url] = request;
+    _indexRequestTail = request.then<void>((_) {}, onError: (_) {});
+    request.then(
+      (_) {
+        _pendingIndexRequests.remove(url);
+      },
+      onError: (_) {
+        _pendingIndexRequests.remove(url);
+      },
+    );
+    return request;
+  }
+
+  Future<void> _replaceRemoteIndex(
+    String url, {
+    bool register = false,
+    bool Function()? shouldCancel,
+  }) async {
+    final works = await _fetchRemoteWorks(url);
+    if (shouldCancel?.call() ?? false) return;
+    final localWorkIds = _records
+        .where((record) => !record.online)
+        .map((record) => record.workId)
+        .toSet();
+    final addedWorkIds = <String>{};
+    _records.removeWhere((record) => record.online && record.remoteUrl == url);
+    for (final work in works) {
+      if (localWorkIds.contains(work.workId) ||
+          !addedWorkIds.add(work.workId)) {
+        continue;
+      }
+      _records.add(
+        LyricsLibraryRecord(
+          workId: work.workId,
+          relativePath: work.workId,
+          isAi: work.isAi,
+          online: true,
+          remoteUrl: url,
+          fileCount: work.fileCount,
+        ),
+      );
+    }
+    if (register) {
+      if (!_remoteUrls.contains(url)) {
+        _remoteUrls.add(url);
+        _saveRemoteUrls();
+      }
+      SettingsStore.set('lyrics_library_remote_last_url', url);
+    }
+    await _save();
+    _notifyChanged();
+  }
+
+  /// Fetches a broadcast index and records remote work metadata without
+  /// downloading lyric files. Local works always take precedence.
+  Future<List<LyricsLibraryRecord>> connectRemoteLibrary(String value) async {
+    await _load();
+    final url = LyricsLibraryRemoteClient.normalizeBaseUrl(value).toString();
+    await refresh();
+    await _replaceRemoteIndex(url, register: true);
+    return records();
+  }
+
+  Future<List<LyricsLibraryRecord>> refreshRemoteLibrary(String value) async {
+    await _load();
+    final url = LyricsLibraryRemoteClient.normalizeBaseUrl(value).toString();
+    if (!_remoteUrls.contains(url)) throw StateError('该远程库尚未导入');
+    await refresh();
+    await _replaceRemoteIndex(url);
+    return records();
+  }
+
+  Future<List<LyricsLibraryRecord>> refreshRemoteLibraries({
+    bool Function()? shouldCancel,
+  }) async {
+    await _load();
+    final urls = List<String>.of(_remoteUrls);
+    if (urls.isEmpty) return records();
+    await refresh(shouldCancel: shouldCancel);
+    if (shouldCancel?.call() ?? false) return records();
+    Object? lastError;
+    var refreshed = 0;
+    for (final url in urls) {
+      if (shouldCancel?.call() ?? false) break;
+      try {
+        await _replaceRemoteIndex(url, shouldCancel: shouldCancel);
+        if (shouldCancel?.call() ?? false) break;
+        refreshed++;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    if (shouldCancel?.call() ?? false) return records();
+    if (refreshed == 0 && lastError != null) throw lastError;
+    return records();
+  }
+
+  Future<void> removeOnlineWorks(Set<String> workIds) async {
+    await _load();
+    _records.removeWhere(
+      (record) => record.online && workIds.contains(record.workId),
+    );
+    await _save();
+    _notifyChanged();
+  }
+
+  Future<List<RemoteLibraryFileInfo>> remoteFilesForWork(String workId) async {
+    await _load();
+    final id = workId.toUpperCase();
+    final remoteRecords = _orderedOnlineRecords(
+      _records.where((record) => record.workId == id),
+    );
+    for (final record in remoteRecords) {
+      if (record.remoteUrl.isEmpty) continue;
+      try {
+        final items = await LyricsLibraryRemoteClient.fetchFileIndex(
+          record.remoteUrl,
+          id,
+        );
+        if (items.isNotEmpty) return items;
+      } catch (_) {}
+    }
+    return const [];
+  }
+
+  Future<bool> _downloadOnlineWork(String workId) async {
+    await _load();
+    final id = workId.toUpperCase();
+    final remoteRecords = _orderedOnlineRecords(
+      _records.where((record) => record.workId == id),
+    );
+    for (final record in remoteRecords) {
+      if (record.remoteUrl.isEmpty) continue;
+      try {
+        final files = await LyricsLibraryRemoteClient.fetchLyrics(
+          record.remoteUrl,
+          id,
+        );
+        await _importRemoteWork(id, files);
+        return true;
+      } catch (_) {
+        // Try another connected source for the same work before giving up.
+      }
+    }
+    return false;
+  }
+
+  Future<void> _importRemoteWork(
+    String workId,
+    List<RemoteLibraryFile> files,
+  ) async {
+    final id = workId.toUpperCase();
+    final existing = await listFiles(workId: id);
+    if (existing.isNotEmpty) {
+      _records.removeWhere((record) => record.online && record.workId == id);
+      await _save();
+      _notifyChanged();
+      return;
+    }
+    final base = await root;
+    final stage = Directory(
+      _join(base, '.online-${DateTime.now().microsecondsSinceEpoch}'),
+    );
+    await stage.create(recursive: true);
+    var hasAi = false;
+    try {
+      for (final file in files) {
+        final clean = _cleanRelative(file.relativePath);
+        if (clean.isEmpty ||
+            clean.split('/').any((part) => part == '.' || part == '..') ||
+            !supportedExtensions.contains(_extension(clean))) {
+          continue;
+        }
+        final target = File(_join(stage.path, clean));
+        await target.parent.create(recursive: true);
+        await target.writeAsBytes(file.bytes, flush: true);
+        hasAi = hasAi || file.isAi;
+      }
+      if (!(await _containsSupportedFile(stage))) {
+        throw const FormatException('远程作品没有有效歌词文件');
+      }
+      final target = Directory(_join(base, id));
+      if (await target.exists()) {
+        if (await _containsSupportedFile(target)) {
+          await refresh();
+          return;
+        }
+        await target.delete(recursive: true);
+      }
+      await stage.rename(target.path);
+      _records
+        ..removeWhere((record) => record.workId == id)
+        ..add(LyricsLibraryRecord(workId: id, relativePath: id, isAi: hasAi));
+      await _save();
+      _notifyChanged();
+    } finally {
+      if (await stage.exists()) {
+        try {
+          await stage.delete(recursive: true);
+        } catch (_) {}
+      }
+    }
   }
 
   static const largeImportBytes = 200 * 1024 * 1024;
@@ -232,7 +565,9 @@ class LyricsLibraryService {
     if (workIds.isEmpty) return;
     await _load();
     final base = await root;
-    final removed = _records.where((r) => workIds.contains(r.workId)).toList();
+    final removed = _records
+        .where((r) => !r.online && workIds.contains(r.workId))
+        .toList();
     for (final record in removed) {
       final dir = Directory(_join(base, record.relativePath));
       if (await dir.exists()) {
@@ -246,14 +581,21 @@ class LyricsLibraryService {
     _notifyChanged();
   }
 
-  Future<List<LyricsLibraryRecord>> refresh({bool deep = false}) async {
+  Future<List<LyricsLibraryRecord>> refresh({
+    bool deep = false,
+    bool Function()? shouldCancel,
+  }) async {
     await _load();
+    if (shouldCancel?.call() ?? false) return List.unmodifiable(_records);
     final base = Directory(await root);
+    if (shouldCancel?.call() ?? false) return List.unmodifiable(_records);
     final discovered = <LyricsLibraryRecord>[];
     final discoveredPaths = <String>{};
+    final onlineRecords = _records.where((record) => record.online).toList();
     final existingAiPaths = {
       for (final record in _records)
-        '${record.workId}\u0000${record.relativePath}': record.isAi,
+        if (!record.online)
+          '${record.workId}\u0000${record.relativePath}': record.isAi,
     };
     if (await base.exists()) {
       if (deep) {
@@ -267,6 +609,8 @@ class LyricsLibraryService {
       // 完整扫描并清理无效目录。
       if (!deep) {
         for (final record in _records) {
+          if (shouldCancel?.call() ?? false) return List.unmodifiable(_records);
+          if (record.online) continue;
           final dir = Directory(_join(base.path, record.relativePath));
           if (!await dir.exists()) continue;
           discovered.add(record);
@@ -277,6 +621,7 @@ class LyricsLibraryService {
         recursive: deep,
         followLinks: false,
       )) {
+        if (shouldCancel?.call() ?? false) return List.unmodifiable(_records);
         if (entity is! Directory) continue;
         final rel = _relative(base.path, entity.path);
         if (!discoveredPaths.add(rel)) continue;
@@ -298,7 +643,12 @@ class LyricsLibraryService {
         );
       }
     }
-    _records = discovered;
+    if (shouldCancel?.call() ?? false) return List.unmodifiable(_records);
+    final localWorkIds = discovered.map((record) => record.workId).toSet();
+    _records = [
+      ...discovered,
+      ...onlineRecords.where((record) => !localWorkIds.contains(record.workId)),
+    ];
     await _save();
     _notifyChanged();
     return records();
@@ -388,18 +738,26 @@ class LyricsLibraryService {
   /// 同时重复创建歌词库目录并分别读取相同的作品目录记录。
   Future<Map<String, int>> countFilesForWorks(Iterable<String> workIds) async {
     await _load();
-    final base = await root;
     final ids = workIds.map((id) => id.toUpperCase()).toSet();
+    if (ids.isEmpty) return {};
+    final onlineCounts = <String, int>{};
+    for (final record in _orderedOnlineRecords(_records)) {
+      if (ids.contains(record.workId)) {
+        onlineCounts.putIfAbsent(record.workId, () => record.fileCount);
+      }
+    }
+    final base = await root;
     final result = <String, int>{};
     for (final id in ids) {
-      result[id] = await _countFiles(base, id);
+      final localCount = await _countFiles(base, id);
+      result[id] = localCount > 0 ? localCount : (onlineCounts[id] ?? 0);
     }
     return result;
   }
 
   Future<List<LyricsLibraryFile>> _listFiles(String base, String id) async {
     final out = <LyricsLibraryFile>[];
-    for (final record in _records.where((r) => r.workId == id)) {
+    for (final record in _records.where((r) => r.workId == id && !r.online)) {
       final dir = Directory(_join(base, record.relativePath));
       if (!await dir.exists()) continue;
       await for (final entity in dir.list(
@@ -428,7 +786,7 @@ class LyricsLibraryService {
 
   Future<int> _countFiles(String base, String id) async {
     var count = 0;
-    for (final record in _records.where((r) => r.workId == id)) {
+    for (final record in _records.where((r) => r.workId == id && !r.online)) {
       final dir = Directory(_join(base, record.relativePath));
       if (!await dir.exists()) continue;
       await for (final entity in dir.list(
@@ -452,11 +810,21 @@ class LyricsLibraryService {
   Future<LyricsLibraryStatus> statusForWork(String workId) async {
     await _load();
     final id = workId.toUpperCase();
-    final records = _records.where((record) => record.workId == id);
-    if (records.any((record) => record.isAi)) return LyricsLibraryStatus.ai;
-    return records.isEmpty
-        ? LyricsLibraryStatus.none
-        : LyricsLibraryStatus.local;
+    final localRecords = _records.where(
+      (record) => record.workId == id && !record.online,
+    );
+    if (localRecords.isNotEmpty) {
+      return localRecords.any((record) => record.isAi)
+          ? LyricsLibraryStatus.ai
+          : LyricsLibraryStatus.local;
+    }
+    final onlineRecords = _orderedOnlineRecords(
+      _records.where((record) => record.workId == id),
+    );
+    if (onlineRecords.isEmpty) return LyricsLibraryStatus.none;
+    return onlineRecords.first.isAi
+        ? LyricsLibraryStatus.ai
+        : LyricsLibraryStatus.online;
   }
 
   Future<List<LyricsLibraryFile>> matchingFiles({
@@ -464,7 +832,14 @@ class LyricsLibraryService {
     String? trackTitle,
     String? trackPath,
   }) async {
-    final files = await listFiles(workId: workId);
+    var files = await listFiles(workId: workId);
+    if (files.isEmpty &&
+        _records.any(
+          (record) => record.workId == workId.toUpperCase() && record.online,
+        )) {
+      await _downloadOnlineWork(workId);
+      files = await listFiles(workId: workId);
+    }
     final candidates = files.map((f) => _candidate(f)).toList();
     candidates.sort((a, b) {
       final ma = _matchScore(a, trackTitle, trackPath);
@@ -518,7 +893,7 @@ class LyricsLibraryService {
     final target = File(_join(base, clean));
     await _load();
     final workDirs = _records
-        .where((r) => r.workId == id)
+        .where((r) => r.workId == id && !r.online)
         .map((r) => _join(base, r.relativePath))
         .toList();
     if (workDirs.isEmpty) workDirs.add(_join(base, id));
@@ -536,7 +911,7 @@ class LyricsLibraryService {
     final workDir = workDirs.firstWhere((dir) => _isWithin(target.path, dir));
     final relDir = _relative(base, workDir);
     final index = _records.indexWhere(
-      (r) => r.workId == id && r.relativePath == relDir,
+      (r) => !r.online && r.workId == id && r.relativePath == relDir,
     );
     final record = LyricsLibraryRecord(
       workId: id,
@@ -548,6 +923,7 @@ class LyricsLibraryService {
     } else {
       _records.add(record);
     }
+    _records.removeWhere((r) => r.online && r.workId == id);
     await _save();
     _notifyChanged();
     return record;

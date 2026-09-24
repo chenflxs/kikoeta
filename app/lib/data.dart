@@ -271,6 +271,7 @@ class AppState extends ChangeNotifier {
 
   // 桌面歌词
   bool desktopLyricsOn = false;
+  bool lyricsLibraryBroadcastOn = false;
   // 播放器宽屏时的临时抑制状态，不写入设置，离开宽屏后自动恢复。
   bool desktopLyricsTemporarilyHidden = false;
   bool lyricsLibraryAuto = false;
@@ -806,6 +807,10 @@ class AppState extends ChangeNotifier {
     }
     final dl = SettingsStore.get('desktop_lyrics');
     if (dl != null) desktopLyricsOn = dl == '1';
+    final libraryBroadcast = SettingsStore.get('lyrics_library_broadcast');
+    if (libraryBroadcast != null) {
+      lyricsLibraryBroadcastOn = libraryBroadcast == '1';
+    }
     final lla = SettingsStore.get('lyrics_library_auto');
     if (lla != null) lyricsLibraryAuto = lla == '1';
     final lfs = SettingsStore.get('lyrics_font_size');
@@ -1224,6 +1229,12 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setLyricsLibraryBroadcastOn(bool v) {
+    lyricsLibraryBroadcastOn = v;
+    SettingsStore.set('lyrics_library_broadcast', v ? '1' : '0');
+    notifyListeners();
+  }
+
   void setDesktopLyricsTemporarilyHidden(bool v) {
     if (desktopLyricsTemporarilyHidden == v) return;
     desktopLyricsTemporarilyHidden = v;
@@ -1563,6 +1574,7 @@ class AppState extends ChangeNotifier {
     updateIgnoredVersion = '';
     mediaCacheLimitMb = 1024;
     desktopLyricsOn = false;
+    lyricsLibraryBroadcastOn = false;
     lyricsFontSize = 20;
     lyricsColor = 0xFFFFFFFF;
     lyricsOutlineColor = 0xFF000000;

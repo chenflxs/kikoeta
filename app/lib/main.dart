@@ -27,6 +27,7 @@ import 'services/windows_tray_service.dart';
 import 'services/lyrics_hub.dart';
 import 'services/update_service.dart';
 import 'services/download_service.dart';
+import 'services/lyrics_library_broadcast_service.dart';
 import 'services/api_service.dart';
 import 'src/rust/api/kikoeru_api.dart';
 import 'theme.dart';
@@ -41,6 +42,13 @@ Future<void> main() async {
   await SettingsStore.init();
   await DownloadManager.instance.init();
   await appState.loadFromRust();
+  if (appState.lyricsLibraryBroadcastOn) {
+    try {
+      await LyricsLibraryBroadcastService.instance.start();
+    } catch (_) {
+      appState.setLyricsLibraryBroadcastOn(false);
+    }
+  }
   await UpdateService.initialize();
   // Windows 首次运行：自动创建桌面/开始菜单快捷方式（仅 release，幂等）
   ShortcutService.ensureShortcuts();

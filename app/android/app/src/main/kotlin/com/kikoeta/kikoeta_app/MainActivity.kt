@@ -18,12 +18,17 @@ class MainActivity : FlutterActivity() {
     private var overlay: LyricsOverlay? = null
     private var audioControlChannel: MethodChannel? = null
     private var earPauseReceiver: BroadcastReceiver? = null
+    private var ignoreAudioFocus = false
+    private var playbackActive = false
+    private var hasAudioFocus = false
 
     // 音频焦点丢失 → 通知 Dart 暂停
     private val audioFocusListener = AudioManager.OnAudioFocusChangeListener { change ->
-        if (change == AudioManager.AUDIOFOCUS_LOSS ||
-            change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT
+        if (playbackActive && !ignoreAudioFocus &&
+            (change == AudioManager.AUDIOFOCUS_LOSS ||
+                change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
         ) {
+            setPlaybackActive(false)
             audioControlChannel?.invokeMethod("pause", null)
         }
     }
@@ -34,6 +39,8 @@ class MainActivity : FlutterActivity() {
         // alive by the battery-optimization exemption can leave it behind across app restarts.
         overlay?.dispose()
         overlay = null
+        setPlaybackActive(false)
+        setEarPauseEnabled(false)
         super.onDestroy()
     }
 
@@ -245,6 +252,10 @@ class MainActivity : FlutterActivity() {
                     setIgnoreAudioFocus(call.argument<Boolean>("ignore") == true)
                     result.success(null)
                 }
+                "setPlaybackActive" -> {
+                    setPlaybackActive(call.argument<Boolean>("active") == true)
+                    result.success(null)
+                }
                 else -> result.notImplemented()
             }
         }
@@ -275,19 +286,33 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    /** 音频焦点：默认响应（被抢占时暂停）；开启「忽略」后不请求、不响应 */
+    /** 设置仅改变焦点策略；空闲时不申请焦点。 */
     private fun setIgnoreAudioFocus(ignore: Boolean) {
+        ignoreAudioFocus = ignore
+        updateAudioFocus()
+    }
+
+    /** 播放开始前申请焦点，暂停或停止后释放。 */
+    private fun setPlaybackActive(active: Boolean) {
+        playbackActive = active
+        updateAudioFocus()
+    }
+
+    private fun updateAudioFocus() {
         val am = getSystemService(AUDIO_SERVICE) as AudioManager
-        if (ignore) {
+        if (ignoreAudioFocus || !playbackActive) {
+            if (hasAudioFocus) {
+                hasAudioFocus = false
+                @Suppress("DEPRECATION")
+                am.abandonAudioFocus(audioFocusListener)
+            }
+        } else if (!hasAudioFocus) {
             @Suppress("DEPRECATION")
-            am.abandonAudioFocus(audioFocusListener)
-        } else {
-            @Suppress("DEPRECATION")
-            am.requestAudioFocus(
+            hasAudioFocus = am.requestAudioFocus(
                 audioFocusListener,
                 AudioManager.STREAM_MUSIC,
                 AudioManager.AUDIOFOCUS_GAIN,
-            )
+            ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
         }
     }
 }

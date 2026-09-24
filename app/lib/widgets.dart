@@ -337,6 +337,7 @@ class _LyricsStatusBadgeState extends State<LyricsStatusBadge> {
         final localStatus = snapshot.data ?? LyricsLibraryStatus.none;
         final (label, color) = switch (localStatus) {
           LyricsLibraryStatus.ai => ('AI歌词', p.accent),
+          LyricsLibraryStatus.online => ('远程歌词', p.orange),
           LyricsLibraryStatus.local => ('本地歌词', p.orange),
           LyricsLibraryStatus.none when widget.work.hasSubtitle => (
             '在线歌词',

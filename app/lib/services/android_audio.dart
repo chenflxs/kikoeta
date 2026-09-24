@@ -25,10 +25,17 @@ class AndroidAudio {
     } catch (_) {}
   }
 
-  /// 忽略音频焦点开关（仅安卓；开启后其他应用抢占焦点时不暂停）
+  /// 忽略音频焦点开关（仅安卓；开启后不申请焦点，也不因焦点丢失暂停）
   static Future<void> setIgnoreAudioFocus(bool ignore) async {
     try {
       await _ch.invokeMethod('setIgnoreAudioFocus', {'ignore': ignore});
+    } catch (_) {}
+  }
+
+  /// 实际播放前申请焦点；暂停、停止或播放结束后释放（仅安卓）。
+  static Future<void> setPlaybackActive(bool active) async {
+    try {
+      await _ch.invokeMethod('setPlaybackActive', {'active': active});
     } catch (_) {}
   }
 }

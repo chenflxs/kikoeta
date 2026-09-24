@@ -5,6 +5,7 @@ import 'package:media_kit/media_kit.dart' hide Track;
 
 import '../src/rust/api/proxy.dart';
 import '../src/rust/api/simple.dart';
+import 'android_audio.dart';
 
 const _eqHz = ['31', '62', '125', '250', '500', '1k', '2k', '4k', '8k', '16k'];
 
@@ -56,6 +57,9 @@ class AppPlayer {
           return;
         }
         _completedCtrl.add(null);
+        if (Platform.isAndroid) {
+          unawaited(AndroidAudio.setPlaybackActive(false));
+        }
       }),
       player.stream.error.listen((e) {
         _errorCtrl.add(e.toString());
@@ -124,7 +128,17 @@ class AppPlayer {
     _lastDur = 0;
     _posCtrl.add(_lastPos);
     _durCtrl.add(_lastDur);
-    await player.open(media, play: autoplay);
+    if (Platform.isAndroid && autoplay) {
+      await AndroidAudio.setPlaybackActive(true);
+    }
+    try {
+      await player.open(media, play: autoplay);
+    } catch (_) {
+      if (Platform.isAndroid && autoplay) {
+        await AndroidAudio.setPlaybackActive(false);
+      }
+      rethrow;
+    }
     opened = true;
   }
 
@@ -193,6 +207,9 @@ class AppPlayer {
   Future<void> _stop({bool preservePlaybackRequest = false}) async {
     if (!preservePlaybackRequest) _playbackRequested = false;
     _suppressCompletedUntil = DateTime.now().add(_suppressWindow);
+    if (Platform.isAndroid) {
+      await AndroidAudio.setPlaybackActive(false);
+    }
     try {
       await player.stop();
     } catch (_) {}
@@ -202,6 +219,9 @@ class AppPlayer {
   Future<void> pause() async {
     _cancelReconnect();
     _playbackRequested = false;
+    if (Platform.isAndroid) {
+      await AndroidAudio.setPlaybackActive(false);
+    }
     await player.pause();
   }
 
@@ -214,7 +234,17 @@ class AppPlayer {
       _scheduleReconnect(immediate: true);
       return;
     }
-    await player.play();
+    if (Platform.isAndroid) {
+      await AndroidAudio.setPlaybackActive(true);
+    }
+    try {
+      await player.play();
+    } catch (_) {
+      if (Platform.isAndroid) {
+        await AndroidAudio.setPlaybackActive(false);
+      }
+      rethrow;
+    }
   }
 
   void _cancelReconnect() {
@@ -359,6 +389,9 @@ class AppPlayer {
   void dispose() {
     _cancelReconnect();
     _playbackRequested = false;
+    if (Platform.isAndroid) {
+      unawaited(AndroidAudio.setPlaybackActive(false));
+    }
     for (final s in _subs) {
       s.cancel();
     }

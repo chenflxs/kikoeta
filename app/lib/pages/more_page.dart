@@ -168,7 +168,9 @@ class _MorePageState extends State<MorePage> {
                 '歌词库',
                 null,
                 onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const LyricsLibraryPage()),
+                  MaterialPageRoute(
+                    builder: (_) => const LyricsLibraryPage(),
+                  ),
                 ),
               ),
               _row(
