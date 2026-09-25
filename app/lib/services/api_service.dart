@@ -1116,12 +1116,33 @@ class ApiService {
         children: _parseNodes(raw is List ? raw : null, path, base),
       );
     }).toList();
-    // 文件夹始终在文件前，同级按文件名自然排序（数字感知）
-    nodes.sort((a, b) {
-      if (a.isDir != b.isDir) return a.isDir ? -1 : 1;
-      return _naturalCompare(a.title, b.title);
-    });
+    nodes.sort(_compareMediaNodes);
     return nodes;
+  }
+
+  /// 为已保存的媒体树补上与在线曲目相同的同级排序，不修改下载记录。
+  static List<MediaNode> sortedMediaNodes(List<MediaNode> nodes) {
+    return (nodes
+          .map(
+            (node) => MediaNode(
+              title: node.title,
+              type: node.type,
+              path: node.path,
+              url: node.url,
+              downloadUrl: node.downloadUrl,
+              duration: node.duration,
+              children: sortedMediaNodes(node.children),
+            ),
+          )
+          .toList())
+      ..sort(_compareMediaNodes);
+  }
+
+  static int _compareMediaNodes(MediaNode a, MediaNode b) {
+    final byTitle = _naturalCompare(a.title, b.title);
+    if (byTitle != 0) return byTitle;
+    if (a.isDir != b.isDir) return a.isDir ? -1 : 1;
+    return 0;
   }
 
   static String _resolveMediaUrl(String base, String value) {

@@ -92,7 +92,7 @@ class _WorkPageState extends State<WorkPage> {
     _seenLoginEpoch = app.loginEpoch;
     _languageEditions = work.languageEditions;
     if (downloadItem != null) {
-      _tree = downloadItem!.tree;
+      _tree = ApiService.sortedMediaNodes(downloadItem!.tree);
       _tracksFailed = false;
       _applyDownloadSmartPath();
     }
@@ -524,7 +524,7 @@ class _WorkPageState extends State<WorkPage> {
   Future<void> _refreshWork() async {
     if (downloadItem != null) {
       setState(() {
-        _tree = downloadItem!.tree;
+        _tree = ApiService.sortedMediaNodes(downloadItem!.tree);
         _tracksFailed = false;
         _applyDownloadSmartPath();
       });
