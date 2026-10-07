@@ -239,6 +239,12 @@ class AppState extends ChangeNotifier {
   // 安卓音频（默认关闭）
   bool earPause = false; // 拔出耳机自动暂停
   bool ignoreAudioFocus = false; // 忽略音频焦点
+  static const playbackSeekMinSeconds = 5;
+  static const playbackSeekMaxSeconds = 60;
+  static const playbackSeekStepSeconds = 5;
+  static const playbackSeekDefaultSeconds = 10;
+  int playbackSeekBackwardSeconds = playbackSeekDefaultSeconds;
+  int playbackSeekForwardSeconds = playbackSeekDefaultSeconds;
   int playbackToggleShortcutKey = LogicalKeyboardKey.space.keyId;
   int playbackPreviousShortcutKey = LogicalKeyboardKey.pageUp.keyId;
   int playbackNextShortcutKey = LogicalKeyboardKey.pageDown.keyId;
@@ -764,6 +770,14 @@ class AppState extends ChangeNotifier {
     if (ep != null) earPause = ep == '1';
     final iae = SettingsStore.get('ignore_audio_focus');
     if (iae != null) ignoreAudioFocus = iae == '1';
+    playbackSeekBackwardSeconds = normalizePlaybackSeekSeconds(
+      int.tryParse(SettingsStore.get('playback_seek_backward_seconds') ?? '') ??
+          playbackSeekDefaultSeconds,
+    );
+    playbackSeekForwardSeconds = normalizePlaybackSeekSeconds(
+      int.tryParse(SettingsStore.get('playback_seek_forward_seconds') ?? '') ??
+          playbackSeekDefaultSeconds,
+    );
     playbackToggleShortcutKey = _readShortcutKey(
       'playback_shortcut_toggle',
       LogicalKeyboardKey.space.keyId,
@@ -1149,6 +1163,28 @@ class AppState extends ChangeNotifier {
     SettingsStore.set('do_not_remember_playback_progress', value ? '1' : '0');
     // 立即覆盖已保存的进度，确保刚切换后关闭程序也遵循新设置。
     savePlayState();
+    notifyListeners();
+  }
+
+  static int normalizePlaybackSeekSeconds(int value) {
+    final clamped = value.clamp(playbackSeekMinSeconds, playbackSeekMaxSeconds);
+    return (clamped / playbackSeekStepSeconds).round() *
+        playbackSeekStepSeconds;
+  }
+
+  void setPlaybackSeekBackwardSeconds(int value) {
+    final normalized = normalizePlaybackSeekSeconds(value);
+    if (playbackSeekBackwardSeconds == normalized) return;
+    playbackSeekBackwardSeconds = normalized;
+    SettingsStore.set('playback_seek_backward_seconds', '$normalized');
+    notifyListeners();
+  }
+
+  void setPlaybackSeekForwardSeconds(int value) {
+    final normalized = normalizePlaybackSeekSeconds(value);
+    if (playbackSeekForwardSeconds == normalized) return;
+    playbackSeekForwardSeconds = normalized;
+    SettingsStore.set('playback_seek_forward_seconds', '$normalized');
     notifyListeners();
   }
 
@@ -1557,6 +1593,8 @@ class AppState extends ChangeNotifier {
     doNotRememberPlaybackProgress = false;
     earPause = false;
     ignoreAudioFocus = false;
+    playbackSeekBackwardSeconds = playbackSeekDefaultSeconds;
+    playbackSeekForwardSeconds = playbackSeekDefaultSeconds;
     playbackToggleShortcutKey = LogicalKeyboardKey.space.keyId;
     playbackPreviousShortcutKey = LogicalKeyboardKey.pageUp.keyId;
     playbackNextShortcutKey = LogicalKeyboardKey.pageDown.keyId;

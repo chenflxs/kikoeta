@@ -346,6 +346,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   String get _uiStateSig =>
       '${app.desktopLyricsOn}|${app.playMode}|${app.volume}|'
       '${app.volumeBoostLevel}|${app.sleepEndAt?.millisecondsSinceEpoch}|'
+      '${app.playbackSeekBackwardSeconds}|${app.playbackSeekForwardSeconds}|'
       '${app.queue.length}|${app.playWork?.rj ?? ''}|${app.lyricsLibraryAuto}';
 
   void _syncPlayerSnapshot({bool rebuild = false}) {
@@ -765,14 +766,14 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
             LogicalKeyboardKey.arrowLeft,
           ),
         ): () =>
-            _seekRelative(-10),
+            _seekRelative(-app.playbackSeekBackwardSeconds),
         SingleActivator(
           _shortcutKey(
             app.playbackSeekForwardShortcutKey,
             LogicalKeyboardKey.arrowRight,
           ),
         ): () =>
-            _seekRelative(10),
+            _seekRelative(app.playbackSeekForwardSeconds),
       },
       child: Focus(
         autofocus: true,
@@ -1406,12 +1407,16 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                   child: CoverArt(work: work, radius: 14),
                 );
                 final left = _seekCircle(
-                  Icons.replay_10,
-                  () => _seekRelative(-10),
+                  Icons.replay,
+                  app.playbackSeekBackwardSeconds,
+                  '快退',
+                  () => _seekRelative(-app.playbackSeekBackwardSeconds),
                 );
                 final right = _seekCircle(
-                  Icons.forward_30,
-                  () => _seekRelative(30),
+                  Icons.rotate_right,
+                  app.playbackSeekForwardSeconds,
+                  '快进',
+                  () => _seekRelative(app.playbackSeekForwardSeconds),
                 );
                 return SizedBox(
                   width: c.maxWidth,
@@ -1754,17 +1759,43 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _seekCircle(IconData icon, VoidCallback onTap) {
-    return Material(
-      color: p.surface2.withValues(alpha: .5),
-      shape: const CircleBorder(),
-      child: InkWell(
-        onTap: onTap,
-        customBorder: const CircleBorder(),
-        child: SizedBox(
-          width: 44,
-          height: 44,
-          child: Icon(icon, size: 24, color: p.text.withValues(alpha: .75)),
+  Widget _seekCircle(
+    IconData icon,
+    int seconds,
+    String label,
+    VoidCallback onTap,
+  ) {
+    final color = p.text.withValues(alpha: .75);
+    return Tooltip(
+      message: '$label $seconds 秒',
+      child: Material(
+        color: p.surface2.withValues(alpha: .5),
+        shape: const CircleBorder(),
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const CircleBorder(),
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Icon(icon, size: 32, color: color),
+                Padding(
+                  padding: const EdgeInsets.only(top: 3),
+                  child: Text(
+                    '$seconds',
+                    style: TextStyle(
+                      fontSize: 10,
+                      height: 1,
+                      fontWeight: FontWeight.w700,
+                      color: color,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

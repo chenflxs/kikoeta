@@ -428,7 +428,10 @@ class _WorkPageState extends State<WorkPage> {
       _toast('SFW 模式下不能播放非全年龄作品');
       return;
     }
-    final audio = _collectAudio(files);
+    final selectedExt = selected == null ? null : _ext(selected.title);
+    final audio = _collectAudio(files)
+        .where((item) => selectedExt == null || _ext(item.title) == selectedExt)
+        .toList();
     if (audio.isEmpty) {
       _toast('暂无音频文件（文件流需登录后可用）');
       return;
@@ -1387,9 +1390,7 @@ class _WorkPageState extends State<WorkPage> {
                                 _linkChip(
                                   Icons.person_outline,
                                   work.va.replaceFirst('CV. ', ''),
-                                  () => _searchAndBack(
-                                    work.va.replaceFirst('CV. ', ''),
-                                  ),
+                                  _selectVoiceActor,
                                   maxWidth: constraints.maxWidth,
                                 ),
                             ],
@@ -1660,6 +1661,82 @@ class _WorkPageState extends State<WorkPage> {
     app.requestSearch(q);
   }
 
+  Future<void> _selectVoiceActor() async {
+    final names = work.va
+        .replaceFirst('CV. ', '')
+        .split(' / ')
+        .map((name) => name.trim())
+        .where((name) => name.isNotEmpty)
+        .toSet()
+        .toList();
+    if (names.isEmpty) return;
+    if (names.length == 1) {
+      _searchAndBack(names.single);
+      return;
+    }
+
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        backgroundColor: p.surface,
+        surfaceTintColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '选择 CV',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: p.text,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: '关闭',
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) => Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final name in names)
+                            _linkChip(
+                              Icons.person_outline,
+                              name,
+                              () => Navigator.of(dialogContext).pop(name),
+                              maxWidth: constraints.maxWidth,
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (mounted && selected != null) _searchAndBack(selected);
+  }
+
   Widget _linkChip(
     IconData icon,
     String label,
@@ -1734,7 +1811,7 @@ class _WorkPageState extends State<WorkPage> {
       child: OutlinedButton(
         onPressed: _openingLanguageEdition ? null : _showLanguageEditions,
         style: OutlinedButton.styleFrom(
-          foregroundColor: p.muted,
+          foregroundColor: p.accent,
           padding: const EdgeInsets.symmetric(horizontal: 8),
           minimumSize: Size.zero,
           visualDensity: VisualDensity.compact,
@@ -1742,7 +1819,14 @@ class _WorkPageState extends State<WorkPage> {
           side: BorderSide(color: p.line),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
         ),
-        child: const Text('多语言', style: TextStyle(fontSize: 11.5)),
+        child: Text(
+          '多语言',
+          style: TextStyle(
+            fontSize: 11.5,
+            decoration: TextDecoration.underline,
+            decorationColor: p.accent,
+          ),
+        ),
       ),
     );
   }

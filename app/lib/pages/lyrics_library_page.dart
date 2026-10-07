@@ -928,9 +928,14 @@ class _LyricsLibraryImportDialogState
   bool _connecting = false;
   bool _reordering = false;
   String? _refreshingUrl;
+  String? _removingUrl;
   List<String> _remoteUrls = [];
 
-  bool get _busy => _connecting || _reordering || _refreshingUrl != null;
+  bool get _busy =>
+      _connecting ||
+      _reordering ||
+      _refreshingUrl != null ||
+      _removingUrl != null;
 
   @override
   void initState() {
@@ -986,6 +991,42 @@ class _LyricsLibraryImportDialogState
       if (mounted) setState(() => _error = '刷新 $url 失败：$error');
     } finally {
       if (mounted) setState(() => _refreshingUrl = null);
+    }
+  }
+
+  Future<void> _removeRemoteLibrary(String url) async {
+    if (_busy) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除远程库'),
+        content: Text('确定移除远程库 $url 及其已同步的作品索引吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+    setState(() {
+      _removingUrl = url;
+      _error = null;
+    });
+    try {
+      await widget.service.removeRemoteLibrary(url);
+      await widget.onRemoteChanged(false);
+      final urls = await widget.service.remoteLibraryUrls();
+      if (mounted) setState(() => _remoteUrls = urls);
+    } catch (error) {
+      if (mounted) setState(() => _error = '删除 $url 失败：$error');
+    } finally {
+      if (mounted) setState(() => _removingUrl = null);
     }
   }
 
@@ -1066,11 +1107,12 @@ class _LyricsLibraryImportDialogState
                 ),
               ),
               title: Text(url, maxLines: 1, overflow: TextOverflow.ellipsis),
-              subtitle: Text('优先级 ${index + 1}'),
+              subtitle: Text('优先级 ${index + 1} · 长按删除'),
+              onLongPress: _busy ? null : () => _removeRemoteLibrary(url),
               trailing: IconButton(
                 tooltip: '只刷新此远程库',
                 onPressed: _busy ? null : () => _refreshOne(url),
-                icon: _refreshingUrl == url
+                icon: _refreshingUrl == url || _removingUrl == url
                     ? const SizedBox(
                         width: 18,
                         height: 18,
@@ -1087,118 +1129,151 @@ class _LyricsLibraryImportDialogState
 
   @override
   Widget build(BuildContext context) {
+    final isPortrait =
+        MediaQuery.orientationOf(context) == Orientation.portrait;
     final contentHeight = (MediaQuery.sizeOf(context).height -
             MediaQuery.viewInsetsOf(context).bottom -
             160)
         .clamp(240.0, 420.0)
         .toDouble();
+    final sectionContent = _section == 'local'
+        ? Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                '选择要导入的歌词文件或压缩包。',
+                style: TextStyle(fontSize: 13),
+              ),
+              const SizedBox(height: 18),
+              FilledButton.tonalIcon(
+                onPressed: () => Navigator.pop(context, 'folder'),
+                icon: const Icon(Icons.folder_open_outlined),
+                label: const Text('选择文件夹'),
+              ),
+              const SizedBox(height: 10),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(context, 'zip'),
+                icon: const Icon(Icons.archive_outlined),
+                label: const Text('选择 ZIP 压缩包'),
+              ),
+            ],
+          )
+        : SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  '输入开启了歌词库广播的设备地址。',
+                  style: TextStyle(fontSize: 13),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _url,
+                  autofocus: true,
+                  keyboardType: TextInputType.url,
+                  decoration: const InputDecoration(
+                    labelText: 'HTTP / HTTPS 地址',
+                    hintText: 'http://192.168.1.20:2377',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  onSubmitted: (_) => _connect(),
+                ),
+                const SizedBox(height: 8),
+                FilledButton.icon(
+                  onPressed: _busy ? null : _connect,
+                  icon: _connecting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.link),
+                  label: Text(_connecting ? '正在连接并同步' : '导入远程库'),
+                ),
+                const SizedBox(height: 7),
+                Text(
+                  '导入时只同步作品索引；播放时再下载该作品的全部歌词。',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    _error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+                const Divider(height: 22),
+                const Text(
+                  '已导入的远程库（从上到下优先级递减，拖动排序）',
+                  style: TextStyle(fontSize: 12),
+                ),
+                const SizedBox(height: 7),
+                _remoteSourceList(),
+              ],
+            ),
+          );
     return AlertDialog(
       title: const Text('导入歌词库'),
       content: SizedBox(
         width: 520,
         height: contentHeight,
-        child: Row(
-          children: [
-            SizedBox(
-              width: 132,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: isPortrait
+            ? Column(
                 children: [
-                  _navItem('local', '本地文件', Icons.folder_open_outlined),
-                  _navItem('remote', '远程库', Icons.cloud_outlined),
-                ],
-              ),
-            ),
-            const VerticalDivider(width: 20),
-            Expanded(
-              child: _section == 'local'
-                  ? Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const Text(
-                          '选择要导入的歌词文件或压缩包。',
-                          style: TextStyle(fontSize: 13),
+                  SizedBox(
+                    width: double.infinity,
+                    child: SegmentedButton<String>(
+                      showSelectedIcon: false,
+                      segments: const [
+                        ButtonSegment(
+                          value: 'local',
+                          label: Text('本地文件'),
+                          icon: Icon(Icons.folder_open_outlined),
                         ),
-                        const SizedBox(height: 18),
-                        FilledButton.tonalIcon(
-                          onPressed: () => Navigator.pop(context, 'folder'),
-                          icon: const Icon(Icons.folder_open_outlined),
-                          label: const Text('选择文件夹'),
-                        ),
-                        const SizedBox(height: 10),
-                        FilledButton.icon(
-                          onPressed: () => Navigator.pop(context, 'zip'),
-                          icon: const Icon(Icons.archive_outlined),
-                          label: const Text('选择 ZIP 压缩包'),
+                        ButtonSegment(
+                          value: 'remote',
+                          label: Text('远程库'),
+                          icon: Icon(Icons.cloud_outlined),
                         ),
                       ],
-                    )
-                  : SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          const Text(
-                            '输入开启了歌词库广播的设备地址。',
-                            style: TextStyle(fontSize: 13),
-                          ),
-                          const SizedBox(height: 10),
-                          TextField(
-                            controller: _url,
-                            autofocus: true,
-                            keyboardType: TextInputType.url,
-                            decoration: const InputDecoration(
-                              labelText: 'HTTP / HTTPS 地址',
-                              hintText: 'http://192.168.1.20:2377',
-                              border: OutlineInputBorder(),
-                              isDense: true,
-                            ),
-                            onSubmitted: (_) => _connect(),
-                          ),
-                          const SizedBox(height: 8),
-                          FilledButton.icon(
-                            onPressed: _busy ? null : _connect,
-                            icon: _connecting
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.link),
-                            label: Text(_connecting ? '正在连接并同步' : '导入远程库'),
-                          ),
-                          const SizedBox(height: 7),
-                          Text(
-                            '导入时只同步作品索引；播放时再下载该作品的全部歌词。',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                          if (_error != null) ...[
-                            const SizedBox(height: 6),
-                            Text(
-                              _error!,
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.error,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ],
-                          const Divider(height: 22),
-                          const Text(
-                            '已导入的远程库（从上到下优先级递减，拖动排序）',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                          const SizedBox(height: 7),
-                          _remoteSourceList(),
-                        ],
-                      ),
+                      selected: {_section},
+                      onSelectionChanged: (selection) => setState(() {
+                        _section = selection.first;
+                        _error = null;
+                      }),
                     ),
-            ),
-          ],
-        ),
+                  ),
+                  const Divider(height: 20),
+                  Expanded(child: sectionContent),
+                ],
+              )
+            : Row(
+                children: [
+                  SizedBox(
+                    width: 132,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _navItem(
+                          'local',
+                          '本地文件',
+                          Icons.folder_open_outlined,
+                        ),
+                        _navItem('remote', '远程库', Icons.cloud_outlined),
+                      ],
+                    ),
+                  ),
+                  const VerticalDivider(width: 20),
+                  Expanded(child: sectionContent),
+                ],
+              ),
       ),
       actions: [
         TextButton(

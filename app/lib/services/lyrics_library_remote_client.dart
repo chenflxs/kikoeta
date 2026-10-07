@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:io' show HttpClient;
 
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 
 const lyricsLibraryApiPath = 'api/lyrics-library/v1';
 
@@ -46,6 +48,10 @@ class RemoteLibraryFile {
 class LyricsLibraryRemoteClient {
   LyricsLibraryRemoteClient._();
 
+  static http.Client _newClient() => IOClient(
+    HttpClient()..connectionTimeout = const Duration(seconds: 10),
+  );
+
   static Uri normalizeBaseUrl(String value) {
     final input = value.trim();
     final uri = Uri.tryParse(input);
@@ -66,40 +72,81 @@ class LyricsLibraryRemoteClient {
     return base.replace(path: '$basePath/$lyricsLibraryApiPath/$suffix');
   }
 
-  static Future<Map<String, dynamic>> _getJson(Uri uri) async {
-    final response = await http
-        .get(uri, headers: const {'accept': 'application/json'})
-        .timeout(const Duration(seconds: 30));
-    if (response.statusCode != 200) {
-      throw HttpException('远程歌词库返回 HTTP ${response.statusCode}');
+  static Future<Map<String, dynamic>> _getJson(
+    Uri uri, {
+    Duration timeout = const Duration(seconds: 30),
+    http.Client? client,
+  }) async {
+    final activeClient = client ?? _newClient();
+    try {
+      final request = http.Request('GET', uri)
+        ..headers['accept'] = 'application/json';
+      final response = await activeClient.send(request).timeout(timeout);
+      if (response.statusCode != 200) {
+        throw HttpException('远程歌词库返回 HTTP ${response.statusCode}');
+      }
+      final bytes = await http.ByteStream(
+        response.stream.timeout(const Duration(seconds: 30)),
+      ).toBytes();
+      final decoded = jsonDecode(utf8.decode(bytes));
+      if (decoded is! Map<String, dynamic>) {
+        throw const FormatException('远程歌词库返回的数据格式无效');
+      }
+      return decoded;
+    } finally {
+      if (client == null) activeClient.close();
     }
-    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('远程歌词库返回的数据格式无效');
-    }
-    return decoded;
   }
 
   static Future<List<RemoteLibraryWork>> fetchWorks(String baseUrl) async {
-    final response = await _getJson(_uri(baseUrl, 'works'));
-    final rawWorks = response['works'];
-    if (rawWorks is! List) {
-      throw const FormatException('远程歌词库未提供作品列表');
+    final works = <RemoteLibraryWork>[];
+    final client = _newClient();
+    String? cursor;
+    try {
+      do {
+        final params = <String, String>{'limit': '1000'};
+        if (cursor != null) params['after'] = cursor;
+        final uri = _uri(baseUrl, 'works').replace(queryParameters: params);
+        // Older servers ignore pagination and return the entire index. Allow
+        // them more time while newer servers send bounded pages.
+        final response = await _getJson(
+          uri,
+          timeout: const Duration(minutes: 3),
+          client: client,
+        );
+        final rawWorks = response['works'];
+        if (rawWorks is! List) {
+          throw const FormatException('远程歌词库未提供作品列表');
+        }
+        works.addAll(_parseWorks(rawWorks));
+        final next = response['nextCursor'];
+        if (next == null) break;
+        if (next is! String ||
+            !RegExp(r'^(?:RJ|VJ|BJ)\d+$').hasMatch(next) ||
+            (cursor != null && next.compareTo(cursor) <= 0)) {
+          throw const FormatException('远程歌词库分页游标无效');
+        }
+        cursor = next;
+      } while (true);
+    } finally {
+      client.close();
     }
-    return rawWorks
-        .whereType<Map>()
-        .map((raw) {
-          final id = raw['workId']?.toString().toUpperCase() ?? '';
-          final count = raw['fileCount'];
-          return RemoteLibraryWork(
-            workId: id,
-            isAi: raw['isAi'] == true,
-            fileCount: count is num ? count.toInt().clamp(0, 100000) : 0,
-          );
-        })
-        .where((work) => RegExp(r'^(?:RJ|VJ|BJ)\d+$').hasMatch(work.workId))
-        .toList();
+    return works;
   }
+
+  static List<RemoteLibraryWork> _parseWorks(List rawWorks) => rawWorks
+      .whereType<Map>()
+      .map((raw) {
+        final id = raw['workId']?.toString().toUpperCase() ?? '';
+        final count = raw['fileCount'];
+        return RemoteLibraryWork(
+          workId: id,
+          isAi: raw['isAi'] == true,
+          fileCount: count is num ? count.toInt().clamp(0, 100000) : 0,
+        );
+      })
+      .where((work) => RegExp(r'^(?:RJ|VJ|BJ)\d+$').hasMatch(work.workId))
+      .toList();
 
   static Future<List<RemoteLibraryFileInfo>> fetchFileIndex(
     String baseUrl,

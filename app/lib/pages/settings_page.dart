@@ -19,6 +19,7 @@ import '../src/rust/api/translate.dart';
 import '../sheets.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import '../widgets/playback_seek_seconds_control.dart';
 
 class SettingsPage extends StatefulWidget {
   final AppState app;
@@ -672,6 +673,26 @@ class _SettingsPageState extends State<SettingsPage> {
                     '重启程序后恢复上次曲目，但从头开始播放',
                     app.doNotRememberPlaybackProgress,
                     app.setDoNotRememberPlaybackProgress,
+                  ),
+                  _row(
+                    icon: Icons.fast_rewind,
+                    title: '快退秒数',
+                    sub: '5–60 秒，每次调整 5 秒',
+                    trailing: PlaybackSeekSecondsControl(
+                      label: '快退',
+                      value: app.playbackSeekBackwardSeconds,
+                      onChanged: app.setPlaybackSeekBackwardSeconds,
+                    ),
+                  ),
+                  _row(
+                    icon: Icons.fast_forward,
+                    title: '快进秒数',
+                    sub: '5–60 秒，每次调整 5 秒',
+                    trailing: PlaybackSeekSecondsControl(
+                      label: '快进',
+                      value: app.playbackSeekForwardSeconds,
+                      onChanged: app.setPlaybackSeekForwardSeconds,
+                    ),
                   ),
                   _playbackShortcutRow(
                     icon: Icons.play_circle_outline,

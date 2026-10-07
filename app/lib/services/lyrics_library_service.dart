@@ -299,6 +299,22 @@ class LyricsLibraryService {
     _notifyChanged();
   }
 
+  Future<void> removeRemoteLibrary(String value) async {
+    await _load();
+    final url = LyricsLibraryRemoteClient.normalizeBaseUrl(value).toString();
+    if (!_remoteUrls.remove(url)) throw StateError('该远程库尚未导入');
+    _records.removeWhere((record) => record.online && record.remoteUrl == url);
+    _saveRemoteUrls();
+    if (await lastRemoteUrl == url) {
+      SettingsStore.set(
+        'lyrics_library_remote_last_url',
+        _remoteUrls.isEmpty ? '' : _remoteUrls.first,
+      );
+    }
+    await _save();
+    _notifyChanged();
+  }
+
   Future<String> get lastRemoteUrl async =>
       SettingsStore.get('lyrics_library_remote_last_url') ?? '';
 
@@ -384,7 +400,6 @@ class LyricsLibraryService {
   Future<List<LyricsLibraryRecord>> connectRemoteLibrary(String value) async {
     await _load();
     final url = LyricsLibraryRemoteClient.normalizeBaseUrl(value).toString();
-    await refresh();
     await _replaceRemoteIndex(url, register: true);
     return records();
   }
@@ -393,7 +408,6 @@ class LyricsLibraryService {
     await _load();
     final url = LyricsLibraryRemoteClient.normalizeBaseUrl(value).toString();
     if (!_remoteUrls.contains(url)) throw StateError('该远程库尚未导入');
-    await refresh();
     await _replaceRemoteIndex(url);
     return records();
   }
@@ -404,7 +418,6 @@ class LyricsLibraryService {
     await _load();
     final urls = List<String>.of(_remoteUrls);
     if (urls.isEmpty) return records();
-    await refresh(shouldCancel: shouldCancel);
     if (shouldCancel?.call() ?? false) return records();
     Object? lastError;
     var refreshed = 0;
@@ -747,9 +760,15 @@ class LyricsLibraryService {
       }
     }
     final base = await root;
+    final localById = <String, List<LyricsLibraryRecord>>{};
+    for (final record in _records) {
+      if (!record.online && ids.contains(record.workId)) {
+        (localById[record.workId] ??= []).add(record);
+      }
+    }
     final result = <String, int>{};
     for (final id in ids) {
-      final localCount = await _countFiles(base, id);
+      final localCount = await _countFiles(base, localById[id] ?? const []);
       result[id] = localCount > 0 ? localCount : (onlineCounts[id] ?? 0);
     }
     return result;
@@ -784,9 +803,12 @@ class LyricsLibraryService {
     return out;
   }
 
-  Future<int> _countFiles(String base, String id) async {
+  Future<int> _countFiles(
+    String base,
+    List<LyricsLibraryRecord> records,
+  ) async {
     var count = 0;
-    for (final record in _records.where((r) => r.workId == id && !r.online)) {
+    for (final record in records) {
       final dir = Directory(_join(base, record.relativePath));
       if (!await dir.exists()) continue;
       await for (final entity in dir.list(

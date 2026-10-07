@@ -56,23 +56,41 @@ class LyricsLibraryBroadcastService {
           .where((record) => !record.online)
           .toList();
       if (segments.length == 4) {
-        final ids = records.map((record) => record.workId).toSet().toList()
+        final rawLimit = request.uri.queryParameters['limit'];
+        final limit = rawLimit == null ? null : int.tryParse(rawLimit);
+        final after = request.uri.queryParameters['after'] ?? '';
+        if (rawLimit != null &&
+            (limit == null ||
+                limit < 1 ||
+                limit > 1000 ||
+                (after.isNotEmpty &&
+                    !RegExp(r'^(?:RJ|VJ|BJ)\d+$').hasMatch(after)))) {
+          await _writeJson(request.response, 400, {'error': 'invalid_query'});
+          return;
+        }
+        final aiById = <String, bool>{};
+        for (final record in records) {
+          aiById[record.workId] =
+              (aiById[record.workId] ?? false) || record.isAi;
+        }
+        final ids = aiById.keys.where((id) => id.compareTo(after) > 0).toList()
           ..sort();
-        final counts = await service.countFilesForWorks(ids);
+        final pageIds = limit == null ? ids : ids.take(limit).toList();
+        final counts = await service.countFilesForWorks(pageIds);
         await _writeJson(request.response, 200, {
           'version': 1,
-          'works': ids
+          'works': pageIds
               .where((id) => (counts[id] ?? 0) > 0)
               .map(
                 (id) => {
                   'workId': id,
-                  'isAi': records.any(
-                    (record) => record.workId == id && record.isAi,
-                  ),
+                  'isAi': aiById[id] ?? false,
                   'fileCount': counts[id] ?? 0,
                 },
               )
               .toList(),
+          if (limit != null)
+            'nextCursor': ids.length > pageIds.length ? pageIds.last : null,
         });
         return;
       }
