@@ -107,32 +107,29 @@ fn handle_request(request: tiny_http::Request) -> Result<(), String> {
     if let Some(a) = kikoeru_api::auth_header(&kikoeru_api::origin_of(&target)) {
         req = req.header("authorization", a);
     }
-    // 透传 Range，保证拖动进度条时 mpv 的 seek 可用
-    if let Some(range) = request.headers().iter().find(|h| h.field.equiv("Range")) {
-        req = req.header("range", range.value.as_str());
+    // Range 支持播放器 seek；If-Range 让下载续传与远端文件版本一致。
+    for name in ["Range", "If-Range", "Accept-Encoding"] {
+        if let Some(header) = request.headers().iter().find(|h| h.field.equiv(name)) {
+            req = req.header(name, header.value.as_str());
+        }
     }
     let resp = req
         .send()
         .map_err(|e| format!("转发流请求失败: {e}"))?;
 
     let status = resp.status().as_u16();
-    if status >= 400 {
-        let _ = request.respond(
-            Response::from_string(format!("upstream error {status}"))
-                .with_status_code(StatusCode(status)),
-        );
-        return Ok(());
-    }
 
     let mut headers = Vec::new();
     for name in [
         "content-type",
+        "content-encoding",
         "content-length",
         "accept-ranges",
         "content-range",
         "content-disposition",
         "etag",
         "last-modified",
+        "date",
         "cache-control",
     ] {
         if let Some(v) = resp.headers().get(name) {
@@ -208,4 +205,99 @@ fn hex_val(c: u8) -> Option<u8> {
 #[allow(dead_code)]
 pub fn proxy_port() -> Option<u16> {
     *PROXY_PORT.lock().ok()?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_forwarded_response(status: u16, content_range: &str, body: &str) {
+        let upstream = Server::http("127.0.0.1:0").unwrap();
+        let upstream_url = format!(
+            "http://127.0.0.1:{}/media",
+            upstream.server_addr().to_ip().unwrap().port()
+        );
+        let content_range = content_range.to_owned();
+        let expected_range = content_range.clone();
+        let body = body.to_owned();
+        let expected_body = body.clone();
+        let upstream_thread = std::thread::spawn(move || {
+            let request = upstream
+                .recv_timeout(Duration::from_secs(10))
+                .unwrap()
+                .expect("upstream request");
+            for (name, expected) in [
+                ("Range", "bytes=4-"),
+                ("If-Range", "\"version-one\""),
+                ("Accept-Encoding", "identity"),
+            ] {
+                assert_eq!(
+                    request
+                        .headers()
+                        .iter()
+                        .find(|h| h.field.equiv(name))
+                        .map(|h| h.value.as_str()),
+                    Some(expected)
+                );
+            }
+            let mut response = Response::from_string(body).with_status_code(StatusCode(status));
+            for (name, value) in [
+                ("content-range", content_range.as_str()),
+                ("etag", "\"version-one\""),
+                ("last-modified", "Wed, 07 Oct 2026 10:00:00 GMT"),
+                ("content-encoding", "identity"),
+            ] {
+                response.add_header(Header::from_bytes(name.as_bytes(), value.as_bytes()).unwrap());
+            }
+            request.respond(response).unwrap();
+        });
+        let proxy = Server::http("127.0.0.1:0").unwrap();
+        let proxy_url = format!(
+            "http://127.0.0.1:{}/stream?url={}",
+            proxy.server_addr().to_ip().unwrap().port(),
+            percent_encode(&upstream_url)
+        );
+        let proxy_thread = std::thread::spawn(move || {
+            handle_request(
+                proxy
+                    .recv_timeout(Duration::from_secs(10))
+                    .unwrap()
+                    .expect("proxy request"),
+            )
+            .unwrap();
+        });
+        let response = reqwest::blocking::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap()
+            .get(proxy_url)
+            .header("range", "bytes=4-")
+            .header("if-range", "\"version-one\"")
+            .header("accept-encoding", "identity")
+            .send()
+            .unwrap();
+        assert_eq!(response.status().as_u16(), status);
+        assert_eq!(response.headers()["content-range"], expected_range);
+        assert_eq!(response.headers()["etag"], "\"version-one\"");
+        assert_eq!(
+            response.headers()["last-modified"],
+            "Wed, 07 Oct 2026 10:00:00 GMT"
+        );
+        assert_eq!(response.headers()["content-encoding"], "identity");
+        assert_eq!(response.content_length(), Some(expected_body.len() as u64));
+        assert_eq!(response.text().unwrap(), expected_body);
+        proxy_thread.join().unwrap();
+        upstream_thread.join().unwrap();
+    }
+
+    #[test]
+    fn forwards_if_range_and_416_validation_headers() {
+        assert_forwarded_response(416, "bytes */4", "range rejected");
+    }
+
+    #[test]
+    fn forwards_partial_response_and_body_length() {
+        assert_forwarded_response(206, "bytes 4-7/8", "data");
+    }
 }

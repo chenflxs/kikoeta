@@ -156,6 +156,22 @@ class PlaylistInfo {
 }
 
 class AppState extends ChangeNotifier {
+  AppState({void Function(String, String)? playbackSettingsWriter})
+    : _writePlaybackSetting = playbackSettingsWriter ?? SettingsStore.set;
+
+  final void Function(String, String) _writePlaybackSetting;
+  Work? _savedPlaybackWork;
+  List<MediaNode>? _savedPlaybackQueue;
+  int _savedPlaybackQueueLength = -1;
+  String? _savedPlaybackStateId;
+  int _playbackStateSequence = 0;
+  int _savedPlaybackTrackIndex = -1;
+  int _savedPlaybackPosition = -1;
+  int _lastPlaybackPositionTick = 0;
+
+  // Opening a restored track emits position 0 before its saved seek completes.
+  bool restoringPlaybackPosition = false;
+
   ThemeMode themeMode = ThemeMode.system; // 跟随系统 / 浅色 / 深色
   int uiScalePercent = 100; // 应用 UI 缩放：25% - 200%，每档 25%
   int tab = 0; // 0 首页 / 1 收藏 / 2 更多
@@ -472,15 +488,30 @@ class AppState extends ChangeNotifier {
   }
 
   // ---------- 播放状态记忆（重启恢复，默认暂停） ----------
-  void savePlayState() {
+  bool get _samePlaybackStructure =>
+      identical(currentWork, _savedPlaybackWork) &&
+      identical(queue, _savedPlaybackQueue) &&
+      queue.length == _savedPlaybackQueueLength;
+
+  /// Save work and queue only when a new playback structure is selected.
+  void savePlayState({bool forceStructure = false}) {
     final w = currentWork;
     if (w == null || queue.isEmpty) {
-      SettingsStore.set('play_state', '');
+      clearPlayState();
       return;
     }
-    SettingsStore.set(
+    if (!forceStructure &&
+        _samePlaybackStructure &&
+        _savedPlaybackStateId != null) {
+      savePlayPosition();
+      return;
+    }
+    final stateId =
+        '${DateTime.now().microsecondsSinceEpoch}:${_playbackStateSequence++}';
+    _writePlaybackSetting(
       'play_state',
       jsonEncode({
+        'stateId': stateId,
         'work': {
           'rj': w.rj,
           'title': w.title,
@@ -502,12 +533,141 @@ class AppState extends ChangeNotifier {
         'position': doNotRememberPlaybackProgress ? 0 : resumePosition,
       }),
     );
+    _rememberSavedPlayback(stateId);
+  }
+
+  /// A small checkpoint avoids re-encoding the work and full queue on each tick.
+  void savePlayPosition() {
+    if (currentWork == null ||
+        queue.isEmpty ||
+        !_samePlaybackStructure ||
+        _savedPlaybackStateId == null) {
+      savePlayState();
+      return;
+    }
+    final position = doNotRememberPlaybackProgress ? 0 : resumePosition;
+    if (trackIdx == _savedPlaybackTrackIndex &&
+        position == _savedPlaybackPosition) {
+      return;
+    }
+    _writePlaybackSetting(
+      'play_state_position',
+      jsonEncode({
+        'stateId': _savedPlaybackStateId,
+        'trackIdx': trackIdx,
+        'position': position,
+      }),
+    );
+    _savedPlaybackTrackIndex = trackIdx;
+    _savedPlaybackPosition = position;
+    _lastPlaybackPositionTick = resumePosition;
+  }
+
+  /// Global player events and lifecycle saves share one throttle and restore guard.
+  void persistPlaybackPosition(
+    int position, {
+    required bool mediaOpened,
+    bool force = false,
+  }) {
+    if (currentWork == null || queue.isEmpty || restoringPlaybackPosition) {
+      return;
+    }
+    // A stopped/previous media session must not save into the newly selected track.
+    if (!mediaOpened) return;
+    if (!force && position <= 0) return;
+    if (!force && (position - _lastPlaybackPositionTick).abs() < 5) return;
+    _lastPlaybackPositionTick = position;
+    resumePosition = max(0, position);
+    savePlayPosition();
+  }
+
+  void _rememberSavedPlayback(String? stateId) {
+    _savedPlaybackWork = currentWork;
+    _savedPlaybackQueue = queue;
+    _savedPlaybackQueueLength = queue.length;
+    _savedPlaybackStateId = stateId;
+    _savedPlaybackTrackIndex = trackIdx;
+    _savedPlaybackPosition = doNotRememberPlaybackProgress ? 0 : resumePosition;
+    _lastPlaybackPositionTick = resumePosition;
   }
 
   /// 清空播放状态记忆（重置/播放完成时）
   void clearPlayState() {
-    SettingsStore.set('play_state', '');
+    _writePlaybackSetting('play_state', '');
+    _writePlaybackSetting('play_state_position', '');
     resumePosition = 0;
+    _savedPlaybackWork = null;
+    _savedPlaybackQueue = null;
+    _savedPlaybackQueueLength = -1;
+    _savedPlaybackStateId = null;
+    _savedPlaybackTrackIndex = -1;
+    _savedPlaybackPosition = -1;
+    _lastPlaybackPositionTick = 0;
+  }
+
+  /// Old play_state records remain readable; checkpoints must match the queue.
+  void restorePlayState(String? raw, {String? checkpoint}) {
+    currentWork = null;
+    queue = [];
+    trackIdx = 0;
+    resumePosition = 0;
+    playing = false;
+    String? stateId;
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final m = jsonDecode(raw) as Map<String, dynamic>;
+        final wm = m['work'] as Map<String, dynamic>;
+        currentWork = Work(
+          rj: wm['rj'] as String,
+          title: wm['title'] as String,
+          circle: wm['circle'] as String,
+          va: wm['va'] as String,
+          age: Age.values[(wm['age'] as int?) ?? 0],
+          dur: wm['dur'] as String? ?? '',
+          releaseDate: wm['releaseDate'] as String? ?? '',
+          tags: List<String>.from((wm['tags'] as List?) ?? const []),
+          grayTags: List<String>.from((wm['grayTags'] as List?) ?? const []),
+          grad: (wm['grad'] as int?) ?? 0,
+          coverUrl: wm['coverUrl'] as String?,
+          hasSubtitle: (wm['hasSubtitle'] as bool?) ?? false,
+          apiId: wm['apiId'] as int?,
+          hasReview: wm['hasReview'] as bool?,
+        );
+        queue = ((m['queue'] as List?) ?? const [])
+            .map((e) => _nodeFromJson(e as Map<String, dynamic>))
+            .toList();
+        if (queue.isEmpty) throw const FormatException('Empty playback queue');
+        trackIdx = ((m['trackIdx'] as int?) ?? 0).clamp(0, queue.length - 1);
+        resumePosition = max(0, (m['position'] as int?) ?? 0);
+        stateId = m['stateId'] as String?;
+        if (stateId != null && checkpoint != null && checkpoint.isNotEmpty) {
+          try {
+            final saved = jsonDecode(checkpoint) as Map<String, dynamic>;
+            final index = saved['trackIdx'];
+            final position = saved['position'];
+            if (saved['stateId'] == stateId &&
+                index is int &&
+                index >= 0 &&
+                index < queue.length &&
+                position is int &&
+                position >= 0) {
+              trackIdx = index;
+              resumePosition = position;
+            }
+          } catch (_) {
+            // A bad checkpoint must not discard the valid work and queue.
+          }
+        }
+        if (doNotRememberPlaybackProgress) resumePosition = 0;
+      } catch (_) {
+        currentWork = null;
+        queue = [];
+        trackIdx = 0;
+        resumePosition = 0;
+        stateId = null;
+      }
+    }
+    _rememberSavedPlayback(stateId);
   }
 
   Map<String, dynamic> _nodeToJson(MediaNode n) => {
@@ -1004,50 +1164,10 @@ class AppState extends ChangeNotifier {
       doNotRememberPlaybackProgress = doNotRememberProgress == '1';
     }
     // 恢复上次播放状态（作品/队列/位置，默认暂停，不自动播放）
-    final ps = SettingsStore.get('play_state');
-    if (ps != null && ps.isNotEmpty) {
-      try {
-        final m = jsonDecode(ps) as Map<String, dynamic>;
-        final wm = m['work'] as Map<String, dynamic>;
-        currentWork = Work(
-          rj: wm['rj'] as String,
-          title: wm['title'] as String,
-          circle: wm['circle'] as String,
-          va: wm['va'] as String,
-          age: Age.values[(wm['age'] as int?) ?? 0],
-          dur: wm['dur'] as String? ?? '',
-          releaseDate: wm['releaseDate'] as String? ?? '',
-          tags: List<String>.from((wm['tags'] as List?) ?? const []),
-          grayTags: List<String>.from((wm['grayTags'] as List?) ?? const []),
-          grad: (wm['grad'] as int?) ?? 0,
-          coverUrl: wm['coverUrl'] as String?,
-          hasSubtitle: (wm['hasSubtitle'] as bool?) ?? false,
-          apiId: wm['apiId'] as int?,
-          hasReview: wm['hasReview'] as bool?,
-        );
-        queue
-          ..clear()
-          ..addAll(
-            ((m['queue'] as List?) ?? const []).map(
-              (e) => _nodeFromJson(e as Map<String, dynamic>),
-            ),
-          );
-        trackIdx = ((m['trackIdx'] as int?) ?? 0).clamp(0, queue.length - 1);
-        resumePosition = doNotRememberPlaybackProgress
-            ? 0
-            : (m['position'] as int?) ?? 0;
-        if (queue.isEmpty) {
-          currentWork = null;
-          trackIdx = 0;
-          resumePosition = 0;
-        }
-      } catch (_) {
-        currentWork = null;
-        queue.clear();
-        trackIdx = 0;
-        resumePosition = 0;
-      }
-    }
+    restorePlayState(
+      SettingsStore.get('play_state'),
+      checkpoint: SettingsStore.get('play_state_position'),
+    );
   }
 
   void setThemeMode(ThemeMode m) {
@@ -1161,8 +1281,8 @@ class AppState extends ChangeNotifier {
     }
     doNotRememberPlaybackProgress = value;
     SettingsStore.set('do_not_remember_playback_progress', value ? '1' : '0');
-    // 立即覆盖已保存的进度，确保刚切换后关闭程序也遵循新设置。
-    savePlayState();
+    // 不记进度开启时也清除结构快照的回退位置，避免旧记录残留进度。
+    savePlayState(forceStructure: value);
     notifyListeners();
   }
 

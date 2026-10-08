@@ -323,7 +323,9 @@ class _LyricsStatusBadgeState extends State<LyricsStatusBadge> {
 
   void _reload() {
     if (!mounted) return;
-    setState(() => _status = _library.statusForWork(widget.work.rj));
+    setState(() {
+      _status = _library.statusForWork(widget.work.rj);
+    });
   }
 
   @override

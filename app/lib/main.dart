@@ -426,7 +426,6 @@ void _bindMedia3Sync() {
 final AppState appState = AppState();
 
 String? _persistedPlaybackTrack;
-int _persistedPlaybackPosition = 0;
 
 String? _playbackTrackKey() {
   if (appState.currentWork == null || appState.queue.isEmpty) return null;
@@ -439,7 +438,6 @@ String? _playbackTrackKey() {
 /// 位置流持续落盘，应用被系统直接终止时也只会损失最近几秒。
 void _bindPlaybackPersistence() {
   _persistedPlaybackTrack = _playbackTrackKey();
-  _persistedPlaybackPosition = appState.resumePosition;
   appState.addListener(_persistPlaybackTrackChange);
   AppPlayer.instance.position.listen(_persistPlaybackPositionTick);
   AppPlayer.instance.playing.listen((playing) {
@@ -456,8 +454,9 @@ void _persistPlaybackTrackChange() {
   final key = _playbackTrackKey();
   if (key == _persistedPlaybackTrack) return;
   _persistedPlaybackTrack = key;
-  _persistedPlaybackPosition = 0;
   if (key == null) return;
+  // Until the new track opens, ignore stop/position events from the previous media.
+  AppPlayer.instance.opened = false;
   // 切歌后立即保存曲目和从零开始的位置，避免异常退出恢复到旧曲目/旧进度。
   appState.resumePosition = 0;
   appState.savePlayState();
@@ -467,15 +466,11 @@ void _persistPlaybackPositionTick(int position, {bool force = false}) {
   final key = _playbackTrackKey();
   if (key == null) return;
   if (key != _persistedPlaybackTrack) _persistPlaybackTrackChange();
-  // 启动恢复尚未打开媒体时，播放器会先发出位置 0，不能覆盖已保存的进度。
-  if (!AppPlayer.instance.opened && !appState.playing && position == 0) {
-    return;
-  }
-  if (!force && position <= 0) return;
-  if (!force && (position - _persistedPlaybackPosition).abs() < 5) return;
-  _persistedPlaybackPosition = position;
-  appState.resumePosition = position;
-  appState.savePlayState();
+  appState.persistPlaybackPosition(
+    position,
+    mediaOpened: AppPlayer.instance.opened,
+    force: force,
+  );
 }
 
 class KikoetaApp extends StatefulWidget {

@@ -34,14 +34,13 @@ class PlayerPage extends StatefulWidget {
 
 class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   final PageController _pageCtrl = PageController();
-  final List<LyricLine> _lyrics = [];
+  List<LyricLine> get _lyrics => LyricsHub.instance.lyrics;
   final List<StreamSubscription> _subs = [];
   Timer? _sleepTimer;
   Timer? _wideChromeTimer;
   Timer? _wideCoverMenuTimer;
   int _pos = 0;
   int _dur = 0;
-  int _lyricSeq = 0;
   final ScrollController _lyricScroll = ScrollController();
   final Map<int, GlobalKey> _lyricKeys = {};
   Timer? _lyricFollowTimer;
@@ -49,21 +48,19 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   int _lyricScrollToken = 0;
   int _lastAutoIdx = -1;
   int _lrcOffsetMs = 0; // 字幕偏移（毫秒，正数表示歌词提前显示）
-  String? _lyricSourceName; // 当前歌词来源（在线文件名 / 本地文件名）
+  String? get _lyricSourceName => LyricsHub.instance.sourceName;
   Size _lyricViewportSize = Size.zero;
   bool? _lyricViewportIsWide;
   bool _switching = false; // 切歌防抖：避免 completed 与手动点击重复触发
   DateTime? _lastAutoNext; // completed 自动跳转去重
   final Map<String, String> _convCache = {};
   late String _lastConv;
-  late bool _lastLibraryAuto;
   late bool _lastAppPlaying;
   late int _lastTrackIdx;
   late String _lastUiStateSig;
   bool _opening = false; // 正在打开媒体
   bool _buffering = false; // 缓冲中
   bool _reconnecting = false; // 网络流自动重连中
-  int _lastSavedPos = 0; // 上次保存播放位置（节流）
   Future<void>? _restoreFuture;
   bool _wideLayoutActive = false;
   bool _wideChromeVisible = true;
@@ -89,7 +86,6 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     _appInForeground =
         lifecycle == null || lifecycle == AppLifecycleState.resumed;
     _lastConv = app.conv;
-    _lastLibraryAuto = app.lyricsLibraryAuto;
     _lastAppPlaying = app.playing;
     _lastTrackIdx = app.trackIdx;
     _lastUiStateSig = _uiStateSig;
@@ -116,12 +112,6 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
           } else {
             _maybeAutoScrollLyric();
           }
-        }
-        // 节流保存播放位置（每 5 秒），供重启恢复
-        if (d - _lastSavedPos >= 5) {
-          _lastSavedPos = d;
-          app.resumePosition = d;
-          app.savePlayState();
         }
       }),
     );
@@ -151,11 +141,6 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
         if (p != app.playing) {
           app.playing = p;
           app.notify();
-          if (!p) {
-            // 暂停/停止：保存当前位置
-            app.resumePosition = AppPlayer.instance.currentPosition;
-            app.savePlayState();
-          }
           if (mounted) setState(() {});
         }
       }),
@@ -181,112 +166,41 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
       // 全局播放器可能仍打开着上一部作品；目标媒体不同也必须重新打开。
       _openCurrent();
     }
-    _loadLyrics();
+    LyricsHub.instance.addListener(_onLyricsChanged);
+    LyricsHub.instance.bind(app);
+    _onLyricsChanged();
   }
 
   Future<void> _restorePlayback(int resume) async {
-    await _openCurrent(autoplay: false);
-    if (!AppPlayer.instance.opened || resume <= 0) return;
-    final target = Duration(seconds: resume);
-    for (var attempt = 0; attempt < 2; attempt++) {
-      try {
-        await _player.seek(target);
-      } catch (_) {}
-      if ((AppPlayer.instance.currentPosition - resume).abs() <= 1) break;
-      await Future<void>.delayed(const Duration(milliseconds: 120));
-    }
-    // 打开媒体时可能先发出位置 0 的暂停事件，恢复定位完成后重新
-    // 持久化一次，避免该初始化事件覆盖掉已保存的播放进度。
-    app.resumePosition = resume;
-    _lastSavedPos = resume;
-    app.savePlayState();
-    if (mounted) setState(() => _pos = resume);
-  }
-
-  Future<void> _loadLyrics() async {
-    final seq = ++_lyricSeq;
-    // 手动歌词只对当前曲目有效；切歌后回到自动匹配，不跨曲目沿用来源。
-    _lyricSourceName = null;
-    // 切歌后先清掉上一首的歌词；请求失败或新曲目无歌词时也不能保留旧内容。
-    if (mounted) {
-      setState(() {
-        _lyrics.clear();
-        _lyricKeys.clear();
-        _lastAutoIdx = -1;
-      });
-    } else {
-      _lyrics.clear();
-      _lyricKeys.clear();
-      _lastAutoIdx = -1;
-    }
-    LyricsHub.instance.setLyrics(const [], app.conv);
-    final currentTrack = app.queue.isEmpty ? null : track;
+    app.restoringPlaybackPosition = true;
     try {
-      List<LyricLine> l = const [];
-      if (app.lyricsLibraryAuto) {
-        final library = await LyricsLibraryService.instance.matchingFiles(
-          workId: work.rj,
-          trackTitle: currentTrack?.title,
-          trackPath: currentTrack?.path,
-        );
-        final trackTitle = currentTrack?.title ?? '';
-        var matched = library
-            .where(
-              (file) => ApiService.lyricMatchScore(trackTitle, file.name) > 0,
-            )
-            .toList();
-        // 与在线歌词保持一致：没有标题命中时才以曲目编号作为最后兜底。
-        if (matched.isEmpty) {
-          final ordinal = ApiService.lyricTrackOrdinal(trackTitle);
-          if (ordinal != null) {
-            matched = library
-                .where(
-                  (file) => ApiService.lyricTrackOrdinal(file.name) == ordinal,
-                )
-                .toList();
-          }
-        }
-        final candidates = matched.isNotEmpty
-            ? matched
-            : (library.length == 1 ? library : const <LyricsLibraryFile>[]);
-        for (final file in candidates) {
-          l = await LyricsLibraryService.instance.loadFile(file);
-          if (l.isNotEmpty) {
-            _lyricSourceName = file.relativePath;
-            break;
-          }
-        }
+      await _openCurrent(autoplay: false);
+      if (!AppPlayer.instance.opened || resume <= 0) return;
+      final target = Duration(seconds: resume);
+      for (var attempt = 0; attempt < 2; attempt++) {
+        try {
+          await _player.seek(target);
+        } catch (_) {}
+        if ((AppPlayer.instance.currentPosition - resume).abs() <= 1) break;
+        await Future<void>.delayed(const Duration(milliseconds: 120));
       }
-      if (l.isEmpty) {
-        l = await ApiService.fetchLrc(
-          app,
-          work,
-          trackTitle: currentTrack?.title,
-          trackPath: currentTrack?.path,
-          trackUrl: currentTrack?.url,
-        );
-      }
-      if (mounted && seq == _lyricSeq && !_sameLyrics(l, _lyrics)) {
-        setState(() {
-          _lyrics
-            ..clear()
-            ..addAll(l);
-          _lyricKeys.clear();
-          _lastAutoIdx = -1;
-        });
-        LyricsHub.instance.setLyrics(_lyrics, app.conv);
-      }
-    } catch (_) {}
+      app.resumePosition = resume;
+      app.savePlayPosition();
+      if (mounted) setState(() => _pos = resume);
+    } finally {
+      app.restoringPlaybackPosition = false;
+    }
   }
 
-  bool _sameLyrics(List<LyricLine> a, List<LyricLine> b) {
-    if (a.length != b.length) return false;
-    for (var i = 0; i < a.length; i++) {
-      if (a[i].t != b[i].t || a[i].jp != b[i].jp || a[i].zh != b[i].zh) {
-        return false;
-      }
-    }
-    return true;
+  void _onLyricsChanged() {
+    if (!mounted) return;
+    setState(() {
+      _lyricKeys.clear();
+      _convCache.clear();
+      _lastAutoIdx = -1;
+      ++_lyricScrollToken;
+    });
+    _requestLyricAlignment();
   }
 
   @override
@@ -294,6 +208,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     _restoreAndroidStatusBar();
     WidgetsBinding.instance.removeObserver(this);
     app.removeListener(_onAppStateChanged);
+    LyricsHub.instance.removeListener(_onLyricsChanged);
     app.setDesktopLyricsTemporarilyHidden(false);
     for (final s in _subs) {
       s.cancel();
@@ -305,10 +220,11 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     _lyricScroll.dispose();
     _pageCtrl.dispose();
     // 离开播放器页时保存播放位置（重启可恢复）
-    if (app.queue.isNotEmpty) {
-      app.resumePosition = AppPlayer.instance.currentPosition;
-      app.savePlayState();
-    }
+    app.persistPlaybackPosition(
+      AppPlayer.instance.currentPosition,
+      mediaOpened: AppPlayer.instance.opened,
+      force: true,
+    );
     super.dispose();
   }
 
@@ -318,20 +234,13 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     var needsRebuild = playingChanged;
     if (app.trackIdx != _lastTrackIdx) {
       _lastTrackIdx = app.trackIdx;
-      // 自动续播在应用常驻层推进队列，和手动切歌一样重新匹配歌词。
-      _loadLyrics();
+      // 歌词由全局中枢随曲目变化更新。
       needsRebuild = true;
     }
     if (app.conv != _lastConv) {
       _lastConv = app.conv;
       _convCache.clear();
       _lastAutoIdx = -1;
-      LyricsHub.instance.setConv(app.conv);
-      needsRebuild = true;
-    }
-    if (app.lyricsLibraryAuto != _lastLibraryAuto) {
-      _lastLibraryAuto = app.lyricsLibraryAuto;
-      _loadLyrics();
       needsRebuild = true;
     }
     final uiStateSig = _uiStateSig;
@@ -508,9 +417,8 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   }
 
   void _refreshLyricsForCurrentTrack() {
-    // 先同步索引快照，避免紧随后的 app.notify() 重复发起同一匹配请求。
+    // 索引快照用于页面更新；紧随的 app.notify() 交给中枢统一匹配。
     _lastTrackIdx = app.trackIdx;
-    _loadLyrics();
   }
 
   void _jumpTo(int idx) {
@@ -1182,7 +1090,10 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     if (_lyrics.isEmpty) {
       return Align(
         alignment: Alignment.centerLeft,
-        child: Text('暂无歌词', style: TextStyle(fontSize: 14, color: p.dim)),
+        child: Text(
+          LyricsHub.instance.loading ? '正在加载歌词…' : '暂无歌词',
+          style: TextStyle(fontSize: 14, color: p.dim),
+        ),
       );
     }
     return LayoutBuilder(
@@ -1376,7 +1287,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
       }
     }
     app.setDesktopLyricsOn(!app.desktopLyricsOn);
-    LyricsHub.instance.setLyrics(_lyrics, app.conv);
+    LyricsHub.instance.refreshOverlay();
   }
 
   Widget _coverBody({required bool alignLeft}) {
@@ -1842,7 +1753,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
           child: _lyrics.isEmpty
               ? Center(
                   child: Text(
-                    '暂无歌词',
+                    LyricsHub.instance.loading ? '正在加载歌词…' : '暂无歌词',
                     style: TextStyle(fontSize: 13, color: p.dim),
                   ),
                 )
@@ -2190,18 +2101,24 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   }
 
   Future<void> _pickOnlineLyric(BuildContext rootCtx) async {
+    final selection = LyricsHub.instance.captureSelection();
+    if (selection == null) return;
     List<LyricCandidate> cands;
     try {
       cands = await ApiService.lyricCandidates(
         app,
-        work,
-        trackTitle: app.queue.isEmpty ? null : track.title,
-        trackPath: app.queue.isEmpty ? null : track.path,
+        selection.work,
+        trackTitle: selection.track.title,
+        trackPath: selection.track.path,
       );
     } catch (_) {
       cands = const [];
     }
-    if (!mounted || !rootCtx.mounted) return;
+    if (!mounted ||
+        !rootCtx.mounted ||
+        !LyricsHub.instance.isSelectionCurrent(selection)) {
+      return;
+    }
     if (cands.isEmpty) {
       _toast('未找到在线歌词');
       return;
@@ -2255,7 +2172,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                       sub: '按曲目名与中文优先自动选择',
                       selected: _lyricSourceName == null,
                       onTap: () async {
-                        await _loadOnlineLyric(ctx, null);
+                        await _loadOnlineLyric(ctx, selection, null);
                       },
                     ),
                     ...cands.map(
@@ -2265,7 +2182,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                         sub: c.path,
                         selected: _lyricSourceName == c.title,
                         onTap: () async {
-                          await _loadOnlineLyric(ctx, c);
+                          await _loadOnlineLyric(ctx, selection, c);
                         },
                       ),
                     ),
@@ -2325,41 +2242,27 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _loadOnlineLyric(BuildContext ctx, LyricCandidate? pick) async {
-    // 覆盖正在进行的自动匹配，避免它稍后把手动选择的歌词替换回来。
-    final seq = ++_lyricSeq;
-    List<LyricLine> l;
-    try {
-      l = await ApiService.fetchLrc(
-        app,
-        work,
-        trackTitle: app.queue.isEmpty ? null : track.title,
-        trackPath: app.queue.isEmpty ? null : track.path,
-        trackUrl: app.queue.isEmpty ? null : track.url,
-        pick: pick,
-      );
-    } catch (_) {
-      l = const [];
-    }
-    if (!mounted || seq != _lyricSeq) return;
-    if (l.isEmpty) {
+  Future<void> _loadOnlineLyric(
+    BuildContext ctx,
+    LyricsTrackSelection selection,
+    LyricCandidate? pick,
+  ) async {
+    final loaded = await LyricsHub.instance.loadOnlineSelection(
+      selection,
+      pick,
+    );
+    if (!mounted || !LyricsHub.instance.isSelectionCurrent(selection)) return;
+    if (!loaded) {
       _toast('该歌词无法解析');
       return;
     }
-    setState(() {
-      _lyrics
-        ..clear()
-        ..addAll(l);
-      _lyricKeys.clear();
-      _lyricSourceName = pick?.title;
-      _lastAutoIdx = -1;
-    });
-    LyricsHub.instance.setManualLyrics(_lyrics, app.conv);
     if (ctx.mounted) Navigator.pop(ctx);
     _maybeAutoScrollLyric();
   }
 
   Future<void> _pickOfflineLyric() async {
+    final selection = LyricsHub.instance.captureSelection();
+    if (selection == null) return;
     final res = await FilePicker.pickFiles(
       dialogTitle: '选择歌词文件',
       type: FileType.custom,
@@ -2368,41 +2271,37 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     if (res == null || res.files.isEmpty) return;
     final f = res.files.single;
     final path = f.path;
-    if (path == null) return;
-    // 覆盖正在进行的自动匹配，避免它稍后把手动选择的歌词替换回来。
-    final seq = ++_lyricSeq;
-    try {
-      final bytes = await File(path).readAsBytes();
-      final decoded = apiDecodeText(bytes: bytes, encoding: '');
-      final l = ApiService.parseLyrics(decoded.text);
-      if (!mounted || seq != _lyricSeq) return;
-      if (l.isEmpty) {
-        _toast('文件中没有带时间轴的歌词');
-        return;
-      }
-      setState(() {
-        _lyrics
-          ..clear()
-          ..addAll(l);
-        _lyricKeys.clear();
-        _lyricSourceName = f.name;
-        _lastAutoIdx = -1;
-      });
-      LyricsHub.instance.setManualLyrics(_lyrics, app.conv);
-      _maybeAutoScrollLyric();
-    } catch (e) {
-      _toast('读取歌词失败：$e');
+    if (path == null ||
+        !mounted ||
+        !LyricsHub.instance.isSelectionCurrent(selection)) {
+      return;
     }
+    final loaded = await LyricsHub.instance.loadManualLyrics(
+      selection,
+      () async {
+        final bytes = await File(path).readAsBytes();
+        final decoded = apiDecodeText(bytes: bytes, encoding: '');
+        return ApiService.parseLyrics(decoded.text);
+      },
+      sourceName: f.name,
+    );
+    if (!mounted || !LyricsHub.instance.isSelectionCurrent(selection)) return;
+    if (!loaded) {
+      _toast('文件中没有可读取的带时间轴歌词');
+      return;
+    }
+    _maybeAutoScrollLyric();
   }
 
   Future<void> _pickLibraryLyric() async {
-    final currentTrack = app.queue.isEmpty ? null : track;
+    final selection = LyricsHub.instance.captureSelection();
+    if (selection == null) return;
     final files = await LyricsLibraryService.instance.matchingFiles(
-      workId: work.rj,
-      trackTitle: currentTrack?.title,
-      trackPath: currentTrack?.path,
+      workId: selection.work.rj,
+      trackTitle: selection.track.title,
+      trackPath: selection.track.path,
     );
-    if (!mounted) return;
+    if (!mounted || !LyricsHub.instance.isSelectionCurrent(selection)) return;
     if (files.isEmpty) {
       _toast('歌词库中没有该作品的歌词');
       return;
@@ -2426,22 +2325,21 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
         ),
       ),
     );
-    if (selected == null) return;
-    final l = await LyricsLibraryService.instance.loadFile(selected);
-    if (l.isEmpty || !mounted) {
+    if (selected == null ||
+        !mounted ||
+        !LyricsHub.instance.isSelectionCurrent(selection)) {
+      return;
+    }
+    final loaded = await LyricsHub.instance.loadManualLyrics(
+      selection,
+      () => LyricsLibraryService.instance.loadFile(selected),
+      sourceName: selected.relativePath,
+    );
+    if (!mounted || !LyricsHub.instance.isSelectionCurrent(selection)) return;
+    if (!loaded) {
       _toast('该歌词无法解析');
       return;
     }
-    ++_lyricSeq;
-    setState(() {
-      _lyrics
-        ..clear()
-        ..addAll(l);
-      _lyricKeys.clear();
-      _lyricSourceName = selected.relativePath;
-      _lastAutoIdx = -1;
-    });
-    LyricsHub.instance.setManualLyrics(_lyrics, app.conv);
     _maybeAutoScrollLyric();
   }
 

@@ -9,11 +9,13 @@ import '../routes.dart';
 import '../services/api_service.dart';
 import '../services/download_service.dart';
 import '../services/media_selection.dart';
+import '../services/media_tree.dart';
 import '../src/rust/api/kikoeru_api.dart';
 import '../src/rust/api/textcodec.dart';
 import '../src/rust/api/translate.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import '../widgets/media_tree_sliver.dart';
 import 'dictation_translation_page.dart';
 
 class WorkPage extends StatefulWidget {
@@ -77,6 +79,11 @@ class _WorkPageState extends State<WorkPage> {
       : AppColors.light;
 
   List<MediaNode>? _tree;
+  MediaTreeIndex? _treeIndex;
+  MediaTreeIndex? _mediaOnlyIndex;
+  MediaTreeIndex? _visibleIndex;
+  List<MediaTreeRow> _visibleRows = const [];
+  bool _rowsDirty = true;
   bool _tracksFailed = false;
   final MediaSelection _selection = MediaSelection();
   final Set<String> _expanded = {};
@@ -136,40 +143,78 @@ class _WorkPageState extends State<WorkPage> {
     }
   }
 
+  MediaTreeIndex _indexForTree() {
+    final tree = _tree ?? const <MediaNode>[];
+    if (!identical(_treeIndex?.roots, tree)) {
+      _treeIndex = MediaTreeIndex(tree);
+      _mediaOnlyIndex = null;
+      _rowsDirty = true;
+      _selection.bindTree(tree);
+    }
+    return _treeIndex!;
+  }
+
+  MediaTreeIndex _indexForVisibleTree() {
+    final full = _indexForTree();
+    final index = app.mediaFilesOnly
+        ? (_mediaOnlyIndex ??= MediaTreeIndex(_mediaOnlyTree(full.roots)))
+        : full;
+    if (!identical(_visibleIndex, index)) {
+      _visibleIndex = index;
+      _rowsDirty = true;
+    }
+    if (_rowsDirty) {
+      _visibleRows = index.visibleRows(_expanded);
+      _rowsDirty = false;
+    }
+    return index;
+  }
+
   void _applyDownloadSmartPath() {
     final tree = _tree;
     final item = downloadItem;
     if (tree == null || item == null || tree.isEmpty) return;
     _smartTarget = null;
     _expanded.clear();
+    _rowsDirty = true;
     var current = tree;
     while (current.length == 1 && current.first.isDir) {
       _expanded.add(current.first.path);
       current = current.first.children;
     }
+    final index = MediaTreeIndex(current);
     final manager = DownloadManager.instance;
-    List<MediaNode>? best;
-    var count = 0;
-    void scan(List<MediaNode> nodes, List<MediaNode> parents) {
-      var local = 0;
-      for (final node in nodes) {
-        if (node.isDir) {
-          scan(node.children, [...parents, node]);
-        } else if (manager.isDownloaded(item, node)) {
-          local++;
-        }
-      }
-      if (local > count && parents.isNotEmpty) {
-        count = local;
-        best = parents;
+    final counts = <int, int>{};
+    for (final row in index.rows) {
+      if (!row.node.isDir &&
+          row.parentIndex != null &&
+          manager.isDownloaded(item, row.node)) {
+        counts.update(
+          row.parentIndex!,
+          (value) => value + 1,
+          ifAbsent: () => 1,
+        );
       }
     }
-
-    scan(current, []);
-    if (best != null) {
-      for (final node in best!) {
-        _expanded.add(node.path);
+    MediaTreeRow? best;
+    var count = 0;
+    for (final row in index.rows) {
+      final local = counts[row.index] ?? 0;
+      // Match the former depth-first, postorder tie preference.
+      if (local > count ||
+          (local > 0 &&
+              local == count &&
+              best != null &&
+              (row.subtreeEnd < best.subtreeEnd ||
+                  (row.subtreeEnd == best.subtreeEnd &&
+                      row.depth > best.depth)))) {
+        count = local;
+        best = row;
       }
+    }
+    while (best != null) {
+      _expanded.add(best.node.path);
+      best = best.parentIndex == null ? null : index.rows[best.parentIndex!];
     }
   }
 
@@ -269,6 +314,7 @@ class _WorkPageState extends State<WorkPage> {
 
   /// 树加载完成后应用智能路径：展开到最佳目录并记录目标（供「查看全部文件」）
   void _applySmartPath() {
+    _rowsDirty = true;
     _smartTarget = null;
     if (app.initialPathBehavior != 'auto') return;
     final t = _tree;
@@ -292,6 +338,7 @@ class _WorkPageState extends State<WorkPage> {
     setState(() {
       _smartTarget = null;
       _expanded.clear();
+      _rowsDirty = true;
     });
   }
 
@@ -308,35 +355,41 @@ class _WorkPageState extends State<WorkPage> {
     }
     if (app.initialPathBehavior != 'auto' || tree.isEmpty) return path;
 
-    // 2) 递归统计每个文件夹：音频总时长 / 各扩展名文件数 / 是否无效果音
+    // 2) 按迭代索引统计音频，目录路径只在首次遇到时构建。
     final stats = <_DirStat>[];
-    void walk(List<MediaNode> nodes, List<String> folderPath) {
-      for (final n in nodes) {
-        if (n.isDir) {
-          walk(n.children, [...folderPath, n.title]);
-        } else if (_isAudio(n) && n.url != null && n.url!.isNotEmpty) {
-          final key = folderPath.join('/');
-          final hit = stats.where((x) => x.path.join('/') == key).firstOrNull;
-          if (hit != null) {
-            hit.duration += n.duration;
-            final ext = _ext(n.title);
-            hit.byExt[ext] = (hit.byExt[ext] ?? 0) + 1;
-          } else {
-            stats.add(
-              _DirStat(
-                path: List.of(folderPath),
-                duration: n.duration,
-                byExt: {_ext(n.title): 1},
-                se: _notNoSe(folderPath.join('/')),
-              ),
-            );
-          }
+    final byPath = <String, _DirStat>{};
+    final folderPaths = <int?, List<String>>{null: path};
+    final index = MediaTreeIndex(cur);
+    for (final row in index.rows) {
+      final n = row.node;
+      if (!_isAudio(n) || n.url == null || n.url!.isEmpty) continue;
+      final folderPath = folderPaths.putIfAbsent(row.parentIndex, () {
+        final titles = <String>[];
+        var parent = row.parentIndex;
+        while (parent != null) {
+          final folder = index.rows[parent];
+          titles.add(folder.node.title);
+          parent = folder.parentIndex;
         }
+        return [...path, ...titles.reversed];
+      });
+      final key = folderPath.join('/');
+      final hit = byPath[key];
+      if (hit != null) {
+        hit.duration += n.duration;
+        final ext = _ext(n.title);
+        hit.byExt[ext] = (hit.byExt[ext] ?? 0) + 1;
+      } else {
+        final stat = _DirStat(
+          path: List.of(folderPath),
+          duration: n.duration,
+          byExt: {_ext(n.title): 1},
+          se: _notNoSe(key),
+        );
+        byPath[key] = stat;
+        stats.add(stat);
       }
     }
-
-    walk(cur, path);
-
     // 3) 过滤附带/杂谈类目录
     const excludeWords = ['おまけ', '特典', '附赠', '杂谈', 'freetalk'];
     stats.removeWhere(
@@ -391,38 +444,11 @@ class _WorkPageState extends State<WorkPage> {
         RegExp(r'\.(mp3|ogg|opus|wav|aac|flac|webm|mp4|m4a|mka|aiff|wma|ape)$'),
       );
 
-  List<MediaNode> _collectAudio(Iterable<MediaNode> nodes) {
-    final out = <MediaNode>[];
-    void walk(List<MediaNode> list) {
-      for (final n in list) {
-        if (n.isDir) {
-          walk(n.children);
-        } else if (_isAudio(n)) {
-          out.add(n);
-        }
-      }
-    }
+  List<MediaNode> _collectAudio(Iterable<MediaNode> nodes) =>
+      MediaTreeIndex(nodes.toList()).files.where(_isAudio).toList();
 
-    walk(nodes.toList());
-    return out;
-  }
-
-  List<MediaNode> _collectDictationMedia(Iterable<MediaNode> nodes) {
-    final out = <MediaNode>[];
-    void walk(List<MediaNode> list) {
-      for (final node in list) {
-        if (node.isDir) {
-          walk(node.children);
-        } else if (_isMediaFile(node)) {
-          out.add(node);
-        }
-      }
-    }
-
-    walk(nodes.toList());
-    return out;
-  }
-
+  List<MediaNode> _collectDictationMedia(Iterable<MediaNode> nodes) =>
+      MediaTreeIndex(nodes.toList()).files.where(_isMediaFile).toList();
   void _playFiles(Iterable<MediaNode> files, {MediaNode? selected}) {
     if (app.sfwMode && work.age != Age.all) {
       _toast('SFW 模式下不能播放非全年龄作品');
@@ -499,29 +525,41 @@ class _WorkPageState extends State<WorkPage> {
 
   bool _isMediaFile(MediaNode n) => _isAudio(n) || _isVideo(n);
 
-  List<MediaNode> _mediaOnlyTree(Iterable<MediaNode> nodes) {
-    final visible = <MediaNode>[];
-    for (final node in nodes) {
+  List<MediaNode> _mediaOnlyTree(List<MediaNode> nodes) {
+    final index = MediaTreeIndex(nodes);
+    final copies = <int, MediaNode>{};
+    for (final row in index.rows.reversed) {
+      final node = row.node;
       if (!node.isDir) {
-        if (_isMediaFile(node)) visible.add(node);
+        if (_isMediaFile(node)) copies[row.index] = node;
         continue;
       }
-      final children = _mediaOnlyTree(node.children);
+      final children = <MediaNode>[];
+      for (
+        var child = row.index + 1;
+        child < row.subtreeEnd;
+        child = index.rows[child].subtreeEnd
+      ) {
+        final copy = copies[child];
+        if (copy != null) children.add(copy);
+      }
       if (children.isNotEmpty) {
-        visible.add(
-          MediaNode(
-            title: node.title,
-            type: node.type,
-            path: node.path,
-            children: children,
-            url: node.url,
-            downloadUrl: node.downloadUrl,
-            duration: node.duration,
-          ),
+        copies[row.index] = MediaNode(
+          title: node.title,
+          type: node.type,
+          path: node.path,
+          children: children,
+          url: node.url,
+          downloadUrl: node.downloadUrl,
+          duration: node.duration,
         );
       }
     }
-    return visible;
+    return [
+      for (final row in index.rows)
+        if (row.parentIndex == null && copies.containsKey(row.index))
+          copies[row.index]!,
+    ];
   }
 
   Future<void> _refreshWork() async {
@@ -894,44 +932,29 @@ class _WorkPageState extends State<WorkPage> {
   }
 
   List<PlaylistTrack> _selectedAudioTracks() {
-    final tree = _tree;
-    if (tree == null) return const [];
+    if (_tree == null) return const [];
+    final index = _indexForTree();
+    final selectedParents = List<bool>.filled(index.rows.length, false);
     final byPath = <String, PlaylistTrack>{};
-
-    void collect(Iterable<MediaNode> nodes) {
-      for (final n in nodes) {
-        if (n.isDir) {
-          collect(n.children);
-        } else if (_isAudio(n)) {
-          byPath[n.path] = PlaylistTrack(
-            title: n.title,
-            path: n.path,
-            url: n.url,
-            duration: n.duration,
-          );
-        }
+    for (final row in index.rows) {
+      final n = row.node;
+      final parentSelected =
+          row.parentIndex != null && selectedParents[row.parentIndex!];
+      selectedParents[row.index] =
+          parentSelected || (n.isDir && _selection.paths.contains(n.path));
+      if (_isAudio(n) &&
+          (parentSelected ||
+              (_selection.paths.contains(n.path) &&
+                  n.url != null &&
+                  n.url!.isNotEmpty))) {
+        byPath[n.path] = PlaylistTrack(
+          title: n.title,
+          path: n.path,
+          url: n.url,
+          duration: n.duration,
+        );
       }
     }
-
-    void walk(Iterable<MediaNode> nodes) {
-      for (final n in nodes) {
-        if (_selection.paths.contains(n.path)) {
-          if (n.isDir) {
-            collect(n.children);
-          } else if (_isAudio(n) && n.url != null && n.url!.isNotEmpty) {
-            byPath[n.path] = PlaylistTrack(
-              title: n.title,
-              path: n.path,
-              url: n.url,
-              duration: n.duration,
-            );
-          }
-        }
-        if (n.isDir) walk(n.children);
-      }
-    }
-
-    walk(tree);
     return byPath.values.toList();
   }
 
@@ -1078,24 +1101,15 @@ class _WorkPageState extends State<WorkPage> {
     return Icons.insert_drive_file_outlined;
   }
 
-  Widget _treeView(List<MediaNode> nodes, int depth) {
-    return Column(
-      children: [
-        for (var i = 0; i < nodes.length; i++)
-          _nodeRow(nodes[i], depth, nodes, isLast: i == nodes.length - 1),
-      ],
-    );
-  }
-
   bool _hasDownloadedContent(MediaNode node) {
-    if (downloadItem == null) return true;
+    final item = downloadItem;
+    if (item == null) return true;
+    final index = _visibleIndex ?? _indexForTree();
+    final row = index.byPath[node.path];
+    if (row == null) return false;
     final manager = DownloadManager.instance;
-    for (final child in node.children) {
-      if (child.isDir) {
-        if (_hasDownloadedContent(child)) return true;
-      } else if (manager.isDownloaded(downloadItem!, child)) {
-        return true;
-      }
+    for (var i = row.fileStart; i < row.fileEnd; i++) {
+      if (manager.isDownloaded(item, index.files[i])) return true;
     }
     return false;
   }
@@ -1124,94 +1138,83 @@ class _WorkPageState extends State<WorkPage> {
           : TextDecoration.lineThrough,
       decorationColor: p.dim,
     );
-    return Column(
-      children: [
-        InkWell(
-          onLongPress: () async {
-            await Clipboard.setData(ClipboardData(text: n.title));
-            if (mounted) _toast('已复制文件名：${n.title}');
-          },
-          onTap: () {
-            if (n.isDir) {
-              setState(() {
-                open ? _expanded.remove(n.path) : _expanded.add(n.path);
-              });
-            } else {
-              if (_isAudio(n)) {
-                _playFiles(siblings, selected: n);
-              } else {
-                _openFile(n);
-              }
-            }
-          },
-          child: Container(
-            padding: EdgeInsets.only(
-              left: 6 + depth * 16,
-              right: 4,
-              top: 9,
-              bottom: 9,
-            ),
-            decoration: hasVisibleChildren || !isLast
-                ? BoxDecoration(
-                    border: Border(bottom: BorderSide(color: p.line)),
-                  )
-                : null,
-            child: Row(
-              children: [
-                Icon(
-                  _mediaIcon(n, open),
-                  size: 17,
-                  color: n.isDir ? p.accent : p.dim,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        n.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: fileStyle,
-                      ),
-                      if (translatedName != null && translatedName != n.title)
-                        Text(
-                          translatedName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 10.5,
-                            color: p.accent,
-                            decoration: hasDownloadedContent
-                                ? TextDecoration.none
-                                : TextDecoration.lineThrough,
-                            decorationColor: p.dim,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                Checkbox(
-                  tristate: n.isDir,
-                  value: checked,
-                  activeColor: p.accent,
-                  visualDensity: VisualDensity.compact,
-                  onChanged: (_) =>
-                      setState(() => _selection.toggle(n, _tree ?? const [])),
-                ),
-              ],
-            ),
-          ),
+    return InkWell(
+      onLongPress: () async {
+        await Clipboard.setData(ClipboardData(text: n.title));
+        if (mounted) _toast('已复制文件名：${n.title}');
+      },
+      onTap: () {
+        if (n.isDir) {
+          setState(() {
+            open ? _expanded.remove(n.path) : _expanded.add(n.path);
+            _rowsDirty = true;
+          });
+        } else {
+          if (_isAudio(n)) {
+            _playFiles(siblings, selected: n);
+          } else {
+            _openFile(n);
+          }
+        }
+      },
+      child: Container(
+        padding: EdgeInsets.only(
+          left: 6 + (depth * 16).clamp(0, 96).toDouble(),
+          right: 4,
+          top: 9,
+          bottom: 9,
         ),
-        if (hasVisibleChildren)
-          for (var i = 0; i < n.children.length; i++)
-            _nodeRow(
-              n.children[i],
-              depth + 1,
-              n.children,
-              isLast: isLast && i == n.children.length - 1,
+        decoration: hasVisibleChildren || !isLast
+            ? BoxDecoration(
+                border: Border(bottom: BorderSide(color: p.line)),
+              )
+            : null,
+        child: Row(
+          children: [
+            Icon(
+              _mediaIcon(n, open),
+              size: 17,
+              color: n.isDir ? p.accent : p.dim,
             ),
-      ],
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    n.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: fileStyle,
+                  ),
+                  if (translatedName != null && translatedName != n.title)
+                    Text(
+                      translatedName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        color: p.accent,
+                        decoration: hasDownloadedContent
+                            ? TextDecoration.none
+                            : TextDecoration.lineThrough,
+                        decorationColor: p.dim,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Checkbox(
+              tristate: n.isDir,
+              value: checked,
+              activeColor: p.accent,
+              visualDensity: VisualDensity.compact,
+              onChanged: (_) =>
+                  setState(() => _selection.toggle(n, _tree ?? const [])),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1224,11 +1227,7 @@ class _WorkPageState extends State<WorkPage> {
     final splitWorkMetadata =
         MediaQuery.orientationOf(context) == Orientation.portrait &&
         _languageEditions.isNotEmpty;
-    final visibleTree = _tree == null
-        ? null
-        : app.mediaFilesOnly
-        ? _mediaOnlyTree(_tree!)
-        : _tree!;
+    final visibleTree = _tree == null ? null : _indexForVisibleTree().roots;
     return Scaffold(
       appBar: AppBar(
         title: const Text('作品详情'),
@@ -1288,357 +1287,293 @@ class _WorkPageState extends State<WorkPage> {
       ),
       body: Stack(
         children: [
-          ListView(
-            padding: EdgeInsets.fromLTRB(16, 4, 16, miniVisible ? 100 : 40),
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  GestureDetector(
-                    onTap: _showCover,
-                    child: SizedBox(
-                      width: 110,
-                      height: 110,
-                      child: CoverArt(
-                        work: work,
-                        radius: 18,
-                        showBadges: false,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
+          CustomScrollView(
+            slivers: [
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                sliver: SliverList.list(
+                  children: [
+                    Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          work.title,
-                          style: const TextStyle(
-                            fontSize: 16.5,
-                            fontWeight: FontWeight.w800,
-                            height: 1.35,
-                          ),
-                        ),
-                        if (zhTitle != null && zhTitle != work.title)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 2),
-                            child: Text(
-                              zhTitle,
-                              style: TextStyle(
-                                fontSize: 12.5,
-                                color: p.accent,
-                                fontWeight: FontWeight.w600,
-                              ),
+                        GestureDetector(
+                          onTap: _showCover,
+                          child: SizedBox(
+                            width: 110,
+                            height: 110,
+                            child: CoverArt(
+                              work: work,
+                              radius: 18,
+                              showBadges: false,
                             ),
                           ),
-                        const SizedBox(height: 7),
-                        if (splitWorkMetadata)
-                          Column(
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  _rjChip(),
-                                  const SizedBox(width: 8),
-                                  AgeBadge(age: work.age),
-                                ],
-                              ),
-                              const SizedBox(height: 6),
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (work.releaseDate.isNotEmpty) ...[
-                                    _releaseDateChip(work.releaseDate),
-                                    const SizedBox(width: 6),
-                                  ],
-                                  _languageEditionsButton(),
-                                ],
-                              ),
-                            ],
-                          )
-                        else
-                          Row(
-                            children: [
-                              _rjChip(),
-                              const SizedBox(width: 8),
-                              AgeBadge(age: work.age),
-                              if (work.releaseDate.isNotEmpty) ...[
-                                const SizedBox(width: 6),
-                                _releaseDateChip(work.releaseDate),
-                              ],
-                              if (_languageEditions.isNotEmpty) ...[
-                                const SizedBox(width: 6),
-                                _languageEditionsButton(),
-                              ],
-                            ],
-                          ),
-                        const SizedBox(height: 8),
-                        LayoutBuilder(
-                          builder: (context, constraints) => Wrap(
-                            spacing: 8,
-                            runSpacing: 4,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            children: [
-                              _linkChip(
-                                Icons.storefront_outlined,
-                                work.circle,
-                                () => _searchAndBack(work.circle),
-                                maxWidth: constraints.maxWidth,
-                              ),
-                              if (work.va.replaceFirst('CV. ', '').isNotEmpty)
-                                _linkChip(
-                                  Icons.person_outline,
-                                  work.va.replaceFirst('CV. ', ''),
-                                  _selectVoiceActor,
-                                  maxWidth: constraints.maxWidth,
+                              Text(
+                                work.title,
+                                style: const TextStyle(
+                                  fontSize: 16.5,
+                                  fontWeight: FontWeight.w800,
+                                  height: 1.35,
                                 ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          '时长 ${work.dur}',
-                          style: TextStyle(fontSize: 11.5, color: p.muted),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () async {
-                        try {
-                          await ApiService.toggleFavorite(app, work);
-                          if (mounted) {
-                            setState(() {});
-                          }
-                        } catch (e) {
-                          if (mounted) _toast('收藏操作失败：$e');
-                        }
-                      },
-                      icon: Icon(
-                        fav ? Icons.favorite : Icons.favorite_border,
-                        size: 17,
-                      ),
-                      label: Text(
-                        fav ? '已收藏' : '收藏',
-                        style: const TextStyle(fontSize: 13),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: p.text,
-                        side: BorderSide(color: p.line),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 9),
-                  Expanded(
-                    child: GestureDetector(
-                      onLongPress: _pickEngine,
-                      child: OutlinedButton.icon(
-                        onPressed: _translating ? null : _translateTitles,
-                        icon: _translating
-                            ? const SizedBox(
-                                width: 17,
-                                height: 17,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.translate, size: 17),
-                        label: Text(
-                          _translating
-                              ? '翻译中'
-                              : app.translated.containsKey(work.rj)
-                              ? '取消翻译'
-                              : '翻译',
-                          style: const TextStyle(fontSize: 13),
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: p.text,
-                          side: BorderSide(color: p.line),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 9),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _addToPlaylist,
-                      icon: const Icon(Icons.playlist_add, size: 17),
-                      label: const Text(
-                        '添加至歌单',
-                        style: TextStyle(fontSize: 13),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: p.text,
-                        side: BorderSide(color: p.line),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 9),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _downloadSelected,
-                      icon: const Icon(Icons.download_outlined, size: 17),
-                      label: const Text(
-                        '下载选中项目',
-                        style: TextStyle(fontSize: 13),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: p.text,
-                        side: BorderSide(color: p.line),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Wrap(
-                spacing: 7,
-                runSpacing: 7,
-                children: [
-                  ...work.tags.map(
-                    (t) => _tagChip(
-                      t,
-                      gray: work.grayTags.contains(t),
-                      onTap: () => _searchAndBack(t),
-                      onLongPress: () => _blacklistTag(t),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 18),
-              Text(
-                _tree == null ? '曲目列表' : '曲目列表（文件夹结构）',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: p.muted,
-                ),
-              ),
-              const SizedBox(height: 6),
-              if (visibleTree != null && visibleTree.isNotEmpty)
-                Container(
-                  decoration: BoxDecoration(
-                    color: p.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: p.line),
-                  ),
-                  child: Column(
-                    children: [
-                      // 智能路径自动进入目录后，顶部提供「查看全部文件」占位
-                      if (_smartTarget != null)
-                        InkWell(
-                          onTap: _showAllFiles,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 10,
-                            ),
-                            decoration: BoxDecoration(
-                              border: Border(bottom: BorderSide(color: p.line)),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.arrow_upward,
-                                  size: 16,
-                                  color: p.accent,
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
+                              ),
+                              if (zhTitle != null && zhTitle != work.title)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2),
                                   child: Text(
-                                    '查看全部文件',
+                                    zhTitle,
                                     style: TextStyle(
                                       fontSize: 12.5,
-                                      fontWeight: FontWeight.w600,
                                       color: p.accent,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
                                 ),
-                                Icon(
-                                  Icons.chevron_right,
-                                  size: 16,
-                                  color: p.dim,
+                              const SizedBox(height: 7),
+                              if (splitWorkMetadata)
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 6,
+                                      crossAxisAlignment:
+                                          WrapCrossAlignment.center,
+                                      children: [
+                                        _rjChip(),
+                                        AgeBadge(age: work.age),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Wrap(
+                                      spacing: 6,
+                                      runSpacing: 6,
+                                      crossAxisAlignment:
+                                          WrapCrossAlignment.center,
+                                      children: [
+                                        if (work.releaseDate.isNotEmpty)
+                                          _releaseDateChip(work.releaseDate),
+                                        _languageEditionsButton(),
+                                      ],
+                                    ),
+                                  ],
+                                )
+                              else
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 6,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    _rjChip(),
+                                    AgeBadge(age: work.age),
+                                    if (work.releaseDate.isNotEmpty)
+                                      _releaseDateChip(work.releaseDate),
+                                    if (_languageEditions.isNotEmpty)
+                                      _languageEditionsButton(),
+                                  ],
                                 ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      _treeView(visibleTree, 0),
-                    ],
-                  ),
-                )
-              else if (_tree == null && !_tracksFailed)
-                Pulse(
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: p.surface,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: p.line),
-                    ),
-                    child: Column(
-                      children: List.generate(6, (i) {
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          child: Row(
-                            children: [
-                              SkeletonBox(width: 20, height: 20, radius: 6),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: SkeletonBox(height: 12, radius: 6),
+                              const SizedBox(height: 8),
+                              LayoutBuilder(
+                                builder: (context, constraints) => Wrap(
+                                  spacing: 8,
+                                  runSpacing: 4,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    _linkChip(
+                                      Icons.storefront_outlined,
+                                      work.circle,
+                                      () => _searchAndBack(work.circle),
+                                      maxWidth: constraints.maxWidth,
+                                    ),
+                                    if (work.va
+                                        .replaceFirst('CV. ', '')
+                                        .isNotEmpty)
+                                      _linkChip(
+                                        Icons.person_outline,
+                                        work.va.replaceFirst('CV. ', ''),
+                                        _selectVoiceActor,
+                                        maxWidth: constraints.maxWidth,
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                '时长 ${work.dur}',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: p.muted,
+                                ),
                               ),
                             ],
                           ),
-                        );
-                      }),
+                        ),
+                      ],
                     ),
-                  ),
-                )
-              else
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: p.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: p.line),
-                  ),
-                  child: Center(
-                    child: Text(
-                      _tracksFailed
-                          ? '无网络连接，无法获取曲目列表'
-                          : app.mediaFilesOnly
-                          ? '该作品没有音频或视频文件'
-                          : '该作品暂无曲目',
-                      style: TextStyle(fontSize: 12.5, color: p.dim),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () async {
+                              try {
+                                await ApiService.toggleFavorite(app, work);
+                                if (mounted) {
+                                  setState(() {});
+                                }
+                              } catch (e) {
+                                if (mounted) _toast('收藏操作失败：$e');
+                              }
+                            },
+                            icon: Icon(
+                              fav ? Icons.favorite : Icons.favorite_border,
+                              size: 17,
+                            ),
+                            label: Text(
+                              fav ? '已收藏' : '收藏',
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: p.text,
+                              side: BorderSide(color: p.line),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 9),
+                        Expanded(
+                          child: GestureDetector(
+                            onLongPress: _pickEngine,
+                            child: OutlinedButton.icon(
+                              onPressed: _translating ? null : _translateTitles,
+                              icon: _translating
+                                  ? const SizedBox(
+                                      width: 17,
+                                      height: 17,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.translate, size: 17),
+                              label: Text(
+                                _translating
+                                    ? '翻译中'
+                                    : app.translated.containsKey(work.rj)
+                                    ? '取消翻译'
+                                    : '翻译',
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: p.text,
+                                side: BorderSide(color: p.line),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
+                    const SizedBox(height: 9),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _addToPlaylist,
+                            icon: const Icon(Icons.playlist_add, size: 17),
+                            label: const Text(
+                              '添加至歌单',
+                              style: TextStyle(fontSize: 13),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: p.text,
+                              side: BorderSide(color: p.line),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 9),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _downloadSelected,
+                            icon: const Icon(Icons.download_outlined, size: 17),
+                            label: const Text(
+                              '下载选中项目',
+                              style: TextStyle(fontSize: 13),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: p.text,
+                              side: BorderSide(color: p.line),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Wrap(
+                      spacing: 7,
+                      runSpacing: 7,
+                      children: [
+                        ...work.tags.map(
+                          (t) => _tagChip(
+                            t,
+                            gray: work.grayTags.contains(t),
+                            onTap: () => _searchAndBack(t),
+                            onLongPress: () => _blacklistTag(t),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    Text(
+                      _tree == null ? '曲目列表' : '曲目列表（文件夹结构）',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: p.muted,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                  ],
                 ),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                sliver: visibleTree != null && visibleTree.isNotEmpty
+                    ? MediaTreeSliver(
+                        rows: _visibleRows,
+                        header: _smartTarget == null ? null : _allFilesRow(),
+                        decoration: BoxDecoration(
+                          color: p.surface,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: p.line),
+                        ),
+                        rowBuilder: (context, row) => _nodeRow(
+                          row.node,
+                          row.depth,
+                          row.siblings,
+                          isLast: identical(row, _visibleRows.last),
+                        ),
+                      )
+                    : SliverToBoxAdapter(child: _treePlaceholder()),
+              ),
+              SliverToBoxAdapter(
+                child: SizedBox(height: miniVisible ? 100 : 40),
+              ),
             ],
-          ),
-          // 迷你播放器浮窗（与首页一致），底部预留空白避免遮挡内容
+          ), // 迷你播放器浮窗（与首页一致），底部预留空白避免遮挡内容
           if (miniVisible)
             Positioned(
               left: 10,
@@ -1647,6 +1582,81 @@ class _WorkPageState extends State<WorkPage> {
               child: MiniPlayer(app: app),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _allFilesRow() => InkWell(
+    onTap: _showAllFiles,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: p.line)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.arrow_upward, size: 16, color: p.accent),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '查看全部文件',
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: p.accent,
+              ),
+            ),
+          ),
+          Icon(Icons.chevron_right, size: 16, color: p.dim),
+        ],
+      ),
+    ),
+  );
+
+  Widget _treePlaceholder() {
+    if (_tree == null && !_tracksFailed) {
+      return Pulse(
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: p.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: p.line),
+          ),
+          child: Column(
+            children: List.generate(
+              6,
+              (i) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Row(
+                  children: [
+                    SkeletonBox(width: 20, height: 20, radius: 6),
+                    const SizedBox(width: 10),
+                    Expanded(child: SkeletonBox(height: 12, radius: 6)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: p.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: p.line),
+      ),
+      child: Center(
+        child: Text(
+          _tracksFailed
+              ? '无网络连接，无法获取曲目列表'
+              : app.mediaFilesOnly
+              ? '该作品没有音频或视频文件'
+              : '该作品暂无曲目',
+          style: TextStyle(fontSize: 12.5, color: p.dim),
+        ),
       ),
     );
   }

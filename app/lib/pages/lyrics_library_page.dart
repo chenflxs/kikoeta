@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -7,7 +9,9 @@ import '../theme.dart';
 import '../widgets.dart';
 
 class LyricsLibraryPage extends StatefulWidget {
-  const LyricsLibraryPage({super.key});
+  const LyricsLibraryPage({super.key, this.service});
+
+  final LyricsLibraryService? service;
 
   @override
   State<LyricsLibraryPage> createState() => _LyricsLibraryPageState();
@@ -15,8 +19,10 @@ class LyricsLibraryPage extends StatefulWidget {
 
 class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
   static const _batchSize = 50;
-  final _service = LyricsLibraryService.instance;
+  late final _service = widget.service ?? LyricsLibraryService.instance;
   List<String> _workIds = [];
+  List<String> _filteredWorkIds = [];
+  Timer? _searchTimer;
   Map<String, int> _directoryCounts = {};
   Set<String> _aiWorkIds = {};
   Set<String> _onlineWorkIds = {};
@@ -31,7 +37,9 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
   final TextEditingController _search = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
   final Map<String, int> _fileCounts = {};
+  final Set<String> _countFailures = {};
   int _countLoadToken = 0;
+  int _fileListRequest = 0;
   int _visibleCount = _batchSize;
   bool _loadingMore = false;
   int _refreshGeneration = 0;
@@ -44,6 +52,9 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
 
   @override
   void dispose() {
+    ++_refreshGeneration;
+    ++_countLoadToken;
+    _searchTimer?.cancel();
     _search.dispose();
     _searchFocus.dispose();
     super.dispose();
@@ -144,13 +155,11 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
   }
 
   void _applyRecords(List<LyricsLibraryRecord> records) {
-    final localRecords = records.where((record) => !record.online).toList();
-    final remoteRecords = records.where((record) => record.online).toList();
-    final sourceRecords = _source == 'remote' ? remoteRecords : localRecords;
     final directoryCounts = <String, int>{};
     final aiWorkIds = <String>{};
     final onlineWorkIds = <String>{};
-    for (final record in sourceRecords) {
+    for (final record in records) {
+      if (record.online != (_source == 'remote')) continue;
       final firstForWork = !directoryCounts.containsKey(record.workId);
       directoryCounts.update(
         record.workId,
@@ -163,16 +172,59 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
       if (record.online) onlineWorkIds.add(record.workId);
     }
     final ids = directoryCounts.keys.toList()..sort();
+    _searchTimer?.cancel();
+    final filtered = _filterWorkIds(ids);
+    ++_countLoadToken;
     setState(() {
       _workIds = ids;
+      _filteredWorkIds = filtered;
       _directoryCounts = directoryCounts;
       _aiWorkIds = aiWorkIds;
       _onlineWorkIds = onlineWorkIds;
       _files = {};
       _fileCounts.clear();
+      _countFailures.clear();
       _visibleCount = _batchSize;
+      _loadingMore = false;
     });
-    _loadCounts(ids.take(_batchSize).toList());
+    _loadCounts(filtered.take(_batchSize).toList());
+  }
+
+  List<String> _filterWorkIds(List<String> ids) {
+    final query = _search.text.trim().toUpperCase();
+    if (query.isEmpty) return ids;
+    return ids.where((id) => id.contains(query)).toList();
+  }
+
+  void _onSearchChanged() {
+    _searchTimer?.cancel();
+    if (_search.text.trim().isEmpty) {
+      _updateSearchResults();
+    } else {
+      // Keep typing responsive without filtering the full index every keypress.
+      setState(() {});
+      _searchTimer = Timer(
+        const Duration(milliseconds: 180),
+        _updateSearchResults,
+      );
+    }
+  }
+
+  void _updateSearchResults() {
+    if (!mounted) return;
+    final filtered = _filterWorkIds(_workIds);
+    ++_countLoadToken;
+    setState(() {
+      _filteredWorkIds = filtered;
+      _visibleCount = _batchSize;
+      _loadingMore = false;
+    });
+    _loadCounts(
+      filtered
+          .take(_batchSize)
+          .where((id) => !_fileCounts.containsKey(id))
+          .toList(),
+    );
   }
 
   Future<void> _changeSource(String source) async {
@@ -234,22 +286,39 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
   }
 
   Future<void> _loadCounts(List<String> ids) async {
-    final token = ++_countLoadToken;
-    final result = await _service.countFilesForWorks(ids);
-    if (!mounted || token != _countLoadToken) return;
-    setState(() => _fileCounts.addAll(result));
+    if (ids.isEmpty) return;
+    final token = _countLoadToken;
+    try {
+      final result = await _service.countFilesForWorks(ids);
+      if (!mounted || token != _countLoadToken) return;
+      setState(() {
+        _fileCounts.addAll(result);
+        _countFailures.removeAll(result.keys);
+      });
+    } catch (_) {
+      if (!mounted || token != _countLoadToken) return;
+      setState(() {
+        _countFailures.addAll(ids.where((id) => !_fileCounts.containsKey(id)));
+      });
+    }
   }
 
   Future<void> _loadNextBatch(List<String> ids) async {
     if (_loadingMore || _visibleCount >= ids.length) return;
+    final token = _countLoadToken;
     final start = _visibleCount;
     final end = (start + _batchSize).clamp(0, ids.length);
     setState(() {
       _loadingMore = true;
       _visibleCount = end;
     });
-    await _loadCounts(ids.sublist(start, end));
-    if (mounted) setState(() => _loadingMore = false);
+    try {
+      await _loadCounts(ids.sublist(start, end));
+    } finally {
+      if (mounted && token == _countLoadToken) {
+        setState(() => _loadingMore = false);
+      }
+    }
   }
 
   Future<void> _import() async {
@@ -421,45 +490,57 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
   }
 
   Future<void> _showFiles(String workId) async {
-    final cached = _files[workId];
-    final files =
-        cached ??
-        (_onlineWorkIds.contains(workId)
-            ? (await _service.remoteFilesForWork(workId))
-                  .map(
-                    (file) => LyricsLibraryFile(
-                      workId: workId,
-                      relativePath: file.relativePath,
-                      name: file.name,
-                      extension: file.extension,
-                      absolutePath: '',
+    final token = _countLoadToken;
+    final request = ++_fileListRequest;
+    bool isCurrent() => token == _countLoadToken && request == _fileListRequest;
+    try {
+      final cached = _files[workId];
+      final files =
+          cached ??
+          (_onlineWorkIds.contains(workId)
+              ? (await _service.remoteFilesForWork(workId))
+                    .map(
+                      (file) => LyricsLibraryFile(
+                        workId: workId,
+                        relativePath: file.relativePath,
+                        name: file.name,
+                        extension: file.extension,
+                        absolutePath: '',
+                      ),
+                    )
+                    .toList()
+              : await _service.listFiles(workId: workId));
+      if (!mounted || !isCurrent()) return;
+      setState(() {
+        _files[workId] = files;
+        _fileCounts[workId] = files.length;
+        _countFailures.remove(workId);
+      });
+      await showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        builder: (ctx) => SafeArea(
+          child: SizedBox(
+            height: 420,
+            child: files.isEmpty
+                ? const Center(child: Text('没有可用的歌词或字幕文件'))
+                : ListView.builder(
+                    itemCount: files.length,
+                    itemBuilder: (_, i) => ListTile(
+                      leading: const Icon(Icons.lyrics_outlined),
+                      title: Text(files[i].name),
+                      subtitle: Text(files[i].relativePath),
                     ),
-                  )
-                  .toList()
-            : await _service.listFiles(workId: workId));
-    if (cached == null && mounted) {
-      setState(() => _files[workId] = files);
-    }
-    if (!mounted) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: SizedBox(
-          height: 420,
-          child: files.isEmpty
-              ? const Center(child: Text('没有可用的歌词或字幕文件'))
-              : ListView.builder(
-                  itemCount: files.length,
-                  itemBuilder: (_, i) => ListTile(
-                    leading: const Icon(Icons.lyrics_outlined),
-                    title: Text(files[i].name),
-                    subtitle: Text(files[i].relativePath),
                   ),
-                ),
+          ),
         ),
-      ),
-    );
+      );
+    } catch (_) {
+      if (!mounted || !isCurrent()) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('加载歌词文件失败，请重试')));
+    }
   }
 
   Future<void> _confirmDeleteWork(String workId) async {
@@ -511,11 +592,8 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
     final p = Theme.of(context).brightness == Brightness.dark
         ? AppColors.dark
         : AppColors.light;
-    final query = _search.text.trim().toLowerCase();
-    final ids = _workIds
-        .where((id) => query.isEmpty || id.toLowerCase().contains(query))
-        .toList();
-    final visibleIds = ids.take(_visibleCount).toList();
+    final ids = _filteredWorkIds;
+    final visibleCount = _visibleCount.clamp(0, ids.length);
     return Scaffold(
       appBar: AppBar(
         leadingWidth: 112,
@@ -573,11 +651,11 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
             IconButton(
               tooltip: '关闭搜索',
               icon: const Icon(Icons.close),
-              onPressed: () => setState(() {
-                _searching = false;
+              onPressed: () {
+                setState(() => _searching = false);
                 _search.clear();
-                _visibleCount = _batchSize;
-              }),
+                _onSearchChanged();
+              },
             )
           else
             IconButton(
@@ -626,10 +704,8 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
             hint: _source == 'remote' ? '同步所有已导入远程库的作品索引' : '长按执行深度刷新',
             child: InkResponse(
               onTap: _loading || _importing || _deleting ? null : _refresh,
-              onLongPress: _source == 'remote' ||
-                      _loading ||
-                      _importing ||
-                      _deleting
+              onLongPress:
+                  _source == 'remote' || _loading || _importing || _deleting
                   ? null
                   : _deepRefresh,
               radius: 24,
@@ -702,9 +778,9 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
                                 mainAxisSpacing: 13,
                                 childAspectRatio: 3.15,
                               ),
-                          itemCount: visibleIds.length,
+                          itemCount: visibleCount,
                           itemBuilder: (_, i) {
-                            final id = visibleIds[i];
+                            final id = ids[i];
                             final fileCount = _fileCounts[id];
                             final directoryCount = _directoryCounts[id] ?? 0;
                             final isAi = _aiWorkIds.contains(id);
@@ -772,7 +848,11 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
                                               const SizedBox(height: 3),
                                               Text(
                                                 fileCount == null
-                                                    ? '正在统计歌词文件'
+                                                    ? (_countFailures.contains(
+                                                            id,
+                                                          )
+                                                          ? '暂时无法统计歌词文件'
+                                                          : '正在统计歌词文件')
                                                     : '$fileCount 个歌词/字幕文件 · ${isOnline ? '远程' : '$directoryCount 个目录'}',
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
@@ -877,18 +957,14 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
                 border: InputBorder.none,
                 isDense: true,
               ),
-              onChanged: (_) => setState(() {
-                _visibleCount = _batchSize;
-              }),
+              onChanged: (_) => _onSearchChanged(),
             ),
           ),
           if (_search.text.isNotEmpty)
             GestureDetector(
               onTap: () {
                 _search.clear();
-                setState(() {
-                  _visibleCount = _batchSize;
-                });
+                _onSearchChanged();
               },
               child: Container(
                 width: 22,
@@ -1079,10 +1155,7 @@ class _LyricsLibraryImportDialogState
 
   Widget _remoteSourceList() {
     if (_remoteUrls.isEmpty) {
-      return const SizedBox(
-        height: 84,
-        child: Center(child: Text('尚未导入远程库')),
-      );
+      return const SizedBox(height: 84, child: Center(child: Text('尚未导入远程库')));
     }
     return SizedBox(
       height: 180,
@@ -1131,19 +1204,17 @@ class _LyricsLibraryImportDialogState
   Widget build(BuildContext context) {
     final isPortrait =
         MediaQuery.orientationOf(context) == Orientation.portrait;
-    final contentHeight = (MediaQuery.sizeOf(context).height -
-            MediaQuery.viewInsetsOf(context).bottom -
-            160)
-        .clamp(240.0, 420.0)
-        .toDouble();
+    final contentHeight =
+        (MediaQuery.sizeOf(context).height -
+                MediaQuery.viewInsetsOf(context).bottom -
+                160)
+            .clamp(240.0, 420.0)
+            .toDouble();
     final sectionContent = _section == 'local'
         ? Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(
-                '选择要导入的歌词文件或压缩包。',
-                style: TextStyle(fontSize: 13),
-              ),
+              const Text('选择要导入的歌词文件或压缩包。', style: TextStyle(fontSize: 13)),
               const SizedBox(height: 18),
               FilledButton.tonalIcon(
                 onPressed: () => Navigator.pop(context, 'folder'),
@@ -1162,10 +1233,7 @@ class _LyricsLibraryImportDialogState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
-                  '输入开启了歌词库广播的设备地址。',
-                  style: TextStyle(fontSize: 13),
-                ),
+                const Text('输入开启了歌词库广播的设备地址。', style: TextStyle(fontSize: 13)),
                 const SizedBox(height: 10),
                 TextField(
                   controller: _url,
@@ -1261,11 +1329,7 @@ class _LyricsLibraryImportDialogState
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        _navItem(
-                          'local',
-                          '本地文件',
-                          Icons.folder_open_outlined,
-                        ),
+                        _navItem('local', '本地文件', Icons.folder_open_outlined),
                         _navItem('remote', '远程库', Icons.cloud_outlined),
                       ],
                     ),

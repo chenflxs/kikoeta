@@ -18,15 +18,7 @@ fn translation_prompt(target_language: &str) -> String {
 }
 
 fn http_client() -> Result<reqwest::Client, String> {
-    let mut builder = reqwest::Client::builder()
-        .user_agent("Kikoeta/0.1 (translate)")
-        .timeout(Duration::from_secs(30));
-    if let Some(p) = crate::api::simple::http_proxy_config() {
-        if let Ok(proxy) = reqwest::Proxy::all(&p) {
-            builder = builder.proxy(proxy);
-        }
-    }
-    builder.build().map_err(|e| format!("创建 HTTP 客户端失败: {e}"))
+    crate::api::http_client::translation_client()
 }
 
 fn normalize_base(base: &str) -> String {
@@ -627,6 +619,15 @@ pub async fn api_translate_test(
         return Err("请先填写 API 地址".to_string());
     }
     let client = http_client()?;
+    test_connection_with_client(&client, &base, &model, &api_key).await
+}
+
+async fn test_connection_with_client(
+    client: &reqwest::Client,
+    base: &str,
+    model: &str,
+    api_key: &str,
+) -> Result<String, String> {
     let mut req = client.get(format!("{base}/models"));
     let key = api_key.trim();
     if !key.is_empty() {
@@ -846,5 +847,33 @@ mod tests {
     fn rejects_invalid_bing_page_authorization_values() {
         assert!(parse_bing_auth("params_AbusePreventionHelper = []").is_err());
         assert!(parse_bing_ig("window._G={IG:\"not-a-session\"}").is_err());
+    }
+
+    #[test]
+    fn shared_translation_connections_do_not_retain_api_keys() {
+        let server = crate::api::http_client::test_support::TestServer::new(|_| {
+            r#"{"data":[]}"#.to_string()
+        });
+        let pool = crate::api::http_client::ClientPool::for_testing(
+            "Kikoeta/0.1 (translate)",
+            Duration::from_secs(30),
+        );
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            for key in ["first", "changed", ""] {
+                let client = pool.client_for_proxy(None).unwrap();
+                test_connection_with_client(&client, &server.base, "", key)
+                    .await
+                    .unwrap();
+            }
+        });
+        assert_eq!(server.connections(), 1);
+        let requests = server.records();
+        assert_eq!(
+            requests.iter().map(|r| r.authorization.clone()).collect::<Vec<_>>(),
+            vec![Some("Bearer first".to_string()), Some("Bearer changed".to_string()), None],
+        );
+        assert!(requests.iter()
+            .all(|r| r.user_agent.as_deref() == Some("Kikoeta/0.1 (translate)")));
     }
 }

@@ -66,7 +66,10 @@ class ApiService {
     final raw = decoded is List
         ? decoded
         : decoded is Map
-        ? (decoded['data'] ?? decoded['items'] ?? decoded['results'] ?? const [])
+        ? (decoded['data'] ??
+              decoded['items'] ??
+              decoded['results'] ??
+              const [])
         : const [];
     if (raw is! List) throw const FormatException('高级筛选数据格式无效');
 
@@ -120,9 +123,7 @@ class ApiService {
         order: orderParam(app),
         sort: app.orderAsc ? 'asc' : 'desc',
         nsfw: customNsfw(app.ageFilters),
-        lyric: app.subtitleFilter == SubtitleFilter.online
-            ? 'ai_local'
-            : null,
+        lyric: app.subtitleFilter == SubtitleFilter.online ? 'ai_local' : null,
         seed: app.category == 'rec' ? app.randomSeed?.toString() : null,
       );
       return parseWorks(json, base: base, perPage: perPage);
@@ -1079,11 +1080,33 @@ class ApiService {
     String base,
   ) {
     if (list is! List) return const [];
-    final nodes = list.map((e) {
-      final m = e as Map<String, dynamic>;
+    final stack = [_ParseMediaFrame(list, parentPath)];
+    while (stack.isNotEmpty) {
+      final frame = stack.last;
+      if (frame.cursor == frame.raw.length) {
+        frame.nodes.sort(_compareMediaNodes);
+        stack.removeLast();
+        if (stack.isEmpty) return frame.nodes;
+        final parent = frame.parent!;
+        stack.last.nodes.add(
+          MediaNode(
+            title: parent.title,
+            type: parent.type,
+            path: parent.path,
+            url: parent.url,
+            downloadUrl: parent.downloadUrl,
+            duration: parent.duration,
+            children: frame.nodes,
+          ),
+        );
+        continue;
+      }
+      final m = frame.raw[frame.cursor++] as Map<String, dynamic>;
       final title = m['title'] as String? ?? '';
       final type = m['type'] as String? ?? 'folder';
-      final path = parentPath.isEmpty ? title : '$parentPath/$title';
+      final path = frame.parentPath.isEmpty
+          ? title
+          : '${frame.parentPath}/$title';
       final raw = m['children'];
       final hash = m['hash']?.toString();
       final rawDownloadUrl =
@@ -1106,36 +1129,50 @@ class ApiService {
       final downloadUrl = rawDownloadUrl == null
           ? null
           : _resolveMediaUrl(base, rawDownloadUrl);
-      return MediaNode(
+      final node = MediaNode(
         title: title,
         type: type,
         path: path,
         url: url,
         downloadUrl: downloadUrl,
         duration: (m['duration'] as num?)?.toInt() ?? 0,
-        children: _parseNodes(raw is List ? raw : null, path, base),
       );
-    }).toList();
-    nodes.sort(_compareMediaNodes);
-    return nodes;
+      if (raw is List) {
+        stack.add(_ParseMediaFrame(raw, path, parent: node));
+      } else {
+        frame.nodes.add(node);
+      }
+    }
+    return const [];
   }
 
   /// 为已保存的媒体树补上与在线曲目相同的同级排序，不修改下载记录。
   static List<MediaNode> sortedMediaNodes(List<MediaNode> nodes) {
-    return (nodes
-          .map(
-            (node) => MediaNode(
-              title: node.title,
-              type: node.type,
-              path: node.path,
-              url: node.url,
-              downloadUrl: node.downloadUrl,
-              duration: node.duration,
-              children: sortedMediaNodes(node.children),
-            ),
-          )
-          .toList())
-      ..sort(_compareMediaNodes);
+    final stack = [_SortMediaFrame(nodes)];
+    while (stack.isNotEmpty) {
+      final frame = stack.last;
+      if (frame.cursor == frame.original.length) {
+        frame.sorted.sort(_compareMediaNodes);
+        stack.removeLast();
+        if (stack.isEmpty) return frame.sorted;
+        final parent = frame.parent!;
+        stack.last.sorted.add(
+          MediaNode(
+            title: parent.title,
+            type: parent.type,
+            path: parent.path,
+            url: parent.url,
+            downloadUrl: parent.downloadUrl,
+            duration: parent.duration,
+            children: frame.sorted,
+          ),
+        );
+        continue;
+      }
+      final node = frame.original[frame.cursor++];
+      stack.add(_SortMediaFrame(node.children, parent: node));
+    }
+    return const [];
   }
 
   static int _compareMediaNodes(MediaNode a, MediaNode b) {
@@ -1352,6 +1389,23 @@ class ApiService {
     }
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
+}
+
+class _ParseMediaFrame {
+  final List<dynamic> raw;
+  final String parentPath;
+  final MediaNode? parent;
+  final List<MediaNode> nodes = [];
+  int cursor = 0;
+  _ParseMediaFrame(this.raw, this.parentPath, {this.parent});
+}
+
+class _SortMediaFrame {
+  final List<MediaNode> original;
+  final MediaNode? parent;
+  final List<MediaNode> sorted = [];
+  int cursor = 0;
+  _SortMediaFrame(this.original, {this.parent});
 }
 
 class _LyricCandidate {

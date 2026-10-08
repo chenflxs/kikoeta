@@ -4,3 +4,5 @@ pub mod proxy;
 pub mod textcodec;
 pub mod textconv;
 pub mod translate;
+
+mod http_client;

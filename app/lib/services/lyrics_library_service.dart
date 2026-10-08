@@ -1,4 +1,7 @@
+import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
+import 'dart:isolate';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -144,7 +147,30 @@ class _ZipCentralDirectory {
 
 /// 本地歌词库。文件系统负责内容，SettingsStore 只保存作品目录索引。
 class LyricsLibraryService {
-  LyricsLibraryService._();
+  LyricsLibraryService._({
+    this._rootPath,
+    String? Function(String)? readSetting,
+    void Function(String, String)? writeSetting,
+    this._onFileScan,
+    this._onIndexEncoding,
+    this._zipNameDecoder,
+  }) : _readSetting = readSetting ?? SettingsStore.get,
+       _writeSetting = writeSetting ?? SettingsStore.set;
+
+  @visibleForTesting
+  factory LyricsLibraryService.forTesting({
+    required String rootPath,
+    required String? Function(String) readSetting,
+    required void Function(String, String) writeSetting,
+    void Function(String)? onFileScan,
+    void Function()? onIndexEncoding,
+  }) => LyricsLibraryService._(
+    rootPath: rootPath,
+    readSetting: readSetting,
+    writeSetting: writeSetting,
+    onFileScan: onFileScan,
+    onIndexEncoding: onIndexEncoding,
+  );
   static final instance = LyricsLibraryService._();
   static const _key = 'lyrics_library_entries';
   static const _remoteSourcesKey = 'lyrics_library_remote_sources';
@@ -170,6 +196,60 @@ class LyricsLibraryService {
   List<LyricsLibraryRecord> _records = [];
   List<String> _remoteUrls = [];
   bool _loaded = false;
+  int _indexEpoch = 0;
+  Future<void>? _loading;
+  final String? _rootPath;
+  final String? Function(String) _readSetting;
+  final void Function(String, String) _writeSetting;
+  final void Function(String)? _onFileScan;
+  final void Function()? _onIndexEncoding;
+  final Future<List<String?>> Function(List<_ZipEntryName>)? _zipNameDecoder;
+  Future<String>? _rootFuture;
+  Future<void> _saveTail = Future.value();
+  final Map<String, List<LyricsLibraryRecord>> _recordsByWorkId = {};
+  List<LyricsLibraryRecord>? _orderedRecords;
+  static const fileCacheWorkLimit = 128;
+  static const fileCacheEntryLimit = 8192;
+  final Map<String, List<LyricsLibraryFile>> _fileCache = {};
+  final Map<String, Future<List<LyricsLibraryFile>>> _pendingFileScans = {};
+  final Map<String, Future<bool>> _pendingOnlineDownloads = {};
+  int _cachedFileCount = 0;
+
+  void _rebuildRecordIndex() {
+    _recordsByWorkId.clear();
+    for (final record in _records) {
+      (_recordsByWorkId[record.workId] ??= []).add(record);
+    }
+    _orderedRecords = null;
+  }
+
+  List<LyricsLibraryRecord> _workRecords(String id) =>
+      _recordsByWorkId[id] ?? const [];
+
+  void _invalidateFiles([Set<String>? workIds]) {
+    if (workIds == null) {
+      _fileCache.clear();
+      _pendingFileScans.clear();
+      _cachedFileCount = 0;
+      return;
+    }
+    for (final id in workIds) {
+      _cachedFileCount -= _fileCache.remove(id)?.length ?? 0;
+      _pendingFileScans.remove(id);
+    }
+  }
+
+  void _cacheFiles(String id, List<LyricsLibraryFile> files) {
+    if (files.length > fileCacheEntryLimit) return;
+    _cachedFileCount -= _fileCache.remove(id)?.length ?? 0;
+    _fileCache[id] = files;
+    _cachedFileCount += files.length;
+    while (_fileCache.length > fileCacheWorkLimit ||
+        _cachedFileCount > fileCacheEntryLimit) {
+      _cachedFileCount -= _fileCache.remove(_fileCache.keys.first)!.length;
+    }
+  }
+
   final ValueNotifier<int> _revision = ValueNotifier(0);
   Future<void> _indexRequestTail = Future.value();
   final Map<String, Future<List<RemoteLibraryWork>>> _pendingIndexRequests = {};
@@ -182,13 +262,23 @@ class LyricsLibraryService {
 
   /// Drop the in-memory copy after the application settings database is reset.
   void resetIndexCache() {
+    _indexEpoch++;
     _records = [];
     _remoteUrls = [];
     _loaded = false;
+    _loading = null;
+    _rebuildRecordIndex();
+    _invalidateFiles();
     _notifyChanged();
   }
 
-  Future<String> get root async {
+  Future<String> get root => _rootFuture ??= _resolveRoot();
+
+  Future<String> _resolveRoot() async {
+    if (_rootPath != null) {
+      await Directory(_rootPath).create(recursive: true);
+      return _rootPath;
+    }
     // Windows 便携版的歌词库与 kikoeta.exe 同级，避免落到 kikoeta_data。
     final parent = Platform.isWindows
         ? File(Platform.resolvedExecutable).parent.path
@@ -200,32 +290,44 @@ class LyricsLibraryService {
 
   Future<void> _load() async {
     if (_loaded) return;
-    _loaded = true;
-    final raw = SettingsStore.get(_key);
+    if (_loading != null) return _loading;
+    final epoch = _indexEpoch;
+    final loading = _loadIndex(epoch);
+    _loading = loading;
+    try {
+      await loading;
+      if (epoch == _indexEpoch && identical(_loading, loading)) {
+        _loaded = true;
+      }
+    } finally {
+      if (identical(_loading, loading)) _loading = null;
+    }
+  }
+
+  Future<void> _loadIndex(int epoch) async {
+    var records = <LyricsLibraryRecord>[];
+    final raw = _readSetting(_key);
     if (raw != null && raw.isNotEmpty) {
       try {
-        _records = (jsonDecode(raw) as List)
-            .whereType<Map>()
-            .map(
-              (e) => LyricsLibraryRecord.fromJson(Map<String, dynamic>.from(e)),
-            )
-            .where((e) => e.workId.isNotEmpty && e.relativePath.isNotEmpty)
-            .toList();
-      } catch (_) {
-        _records = [];
-      }
+        records = await _decodeLibraryRecordsInBackground(raw);
+      } catch (_) {}
     }
+    if (epoch != _indexEpoch) return;
+    _records = records;
+    _rebuildRecordIndex();
 
     // Older installations only stored the URL on each online record and the
     // last connected URL. Keep that order when creating the source list.
     void addRemoteUrl(String value) {
       try {
-        final url = LyricsLibraryRemoteClient.normalizeBaseUrl(value).toString();
+        final url = LyricsLibraryRemoteClient.normalizeBaseUrl(
+          value,
+        ).toString();
         if (!_remoteUrls.contains(url)) _remoteUrls.add(url);
       } catch (_) {}
     }
 
-    final storedSources = SettingsStore.get(_remoteSourcesKey);
+    final storedSources = _readSetting(_remoteSourcesKey);
     if (storedSources != null && storedSources.isNotEmpty) {
       try {
         for (final value
@@ -241,20 +343,30 @@ class LyricsLibraryService {
     for (final url in indexedUrls) {
       addRemoteUrl(url);
     }
-    final lastUrl = SettingsStore.get('lyrics_library_remote_last_url');
+    final lastUrl = _readSetting('lyrics_library_remote_last_url');
     if (lastUrl != null && lastUrl.isNotEmpty) addRemoteUrl(lastUrl);
     if (storedSources == null && _remoteUrls.isNotEmpty) _saveRemoteUrls();
   }
 
-  Future<void> _save() async {
-    SettingsStore.set(
-      _key,
-      jsonEncode(_records.map((e) => e.toJson()).toList()),
-    );
+  Future<void> _save({Set<String>? changedWorkIds}) {
+    _rebuildRecordIndex();
+    _invalidateFiles(changedWorkIds);
+    final epoch = _indexEpoch;
+    final snapshot = List<LyricsLibraryRecord>.of(_records);
+    final save = _saveTail.then((_) async {
+      if (epoch != _indexEpoch) return;
+      final encoding = _encodeLibraryRecordsInBackground(snapshot);
+      _onIndexEncoding?.call();
+      final encoded = await encoding;
+      if (epoch != _indexEpoch) return;
+      _writeSetting(_key, encoded);
+    });
+    _saveTail = save.then<void>((_) {}, onError: (_) {});
+    return save;
   }
 
   void _saveRemoteUrls() =>
-      SettingsStore.set(_remoteSourcesKey, jsonEncode(_remoteUrls));
+      _writeSetting(_remoteSourcesKey, jsonEncode(_remoteUrls));
 
   List<LyricsLibraryRecord> _orderedOnlineRecords(
     Iterable<LyricsLibraryRecord> records,
@@ -276,7 +388,7 @@ class LyricsLibraryService {
 
   Future<List<LyricsLibraryRecord>> records() async {
     await _load();
-    return List.unmodifiable([
+    return _orderedRecords ??= List.unmodifiable([
       ..._records.where((record) => !record.online),
       ..._orderedOnlineRecords(_records),
     ]);
@@ -295,6 +407,7 @@ class LyricsLibraryService {
       throw ArgumentError('远程库列表已变化，请重新打开导入窗口');
     }
     _remoteUrls = List.of(urls);
+    _orderedRecords = null;
     _saveRemoteUrls();
     _notifyChanged();
   }
@@ -306,7 +419,7 @@ class LyricsLibraryService {
     _records.removeWhere((record) => record.online && record.remoteUrl == url);
     _saveRemoteUrls();
     if (await lastRemoteUrl == url) {
-      SettingsStore.set(
+      _writeSetting(
         'lyrics_library_remote_last_url',
         _remoteUrls.isEmpty ? '' : _remoteUrls.first,
       );
@@ -316,7 +429,7 @@ class LyricsLibraryService {
   }
 
   Future<String> get lastRemoteUrl async =>
-      SettingsStore.get('lyrics_library_remote_last_url') ?? '';
+      _readSetting('lyrics_library_remote_last_url') ?? '';
 
   /// Serializes index requests, coalesces overlapping requests to the same
   /// source, and spaces repeat requests without skipping an explicit refresh.
@@ -389,7 +502,7 @@ class LyricsLibraryService {
         _remoteUrls.add(url);
         _saveRemoteUrls();
       }
-      SettingsStore.set('lyrics_library_remote_last_url', url);
+      _writeSetting('lyrics_library_remote_last_url', url);
     }
     await _save();
     _notifyChanged();
@@ -448,9 +561,7 @@ class LyricsLibraryService {
   Future<List<RemoteLibraryFileInfo>> remoteFilesForWork(String workId) async {
     await _load();
     final id = workId.toUpperCase();
-    final remoteRecords = _orderedOnlineRecords(
-      _records.where((record) => record.workId == id),
-    );
+    final remoteRecords = _orderedOnlineRecords(_workRecords(id));
     for (final record in remoteRecords) {
       if (record.remoteUrl.isEmpty) continue;
       try {
@@ -464,12 +575,31 @@ class LyricsLibraryService {
     return const [];
   }
 
-  Future<bool> _downloadOnlineWork(String workId) async {
+  Future<bool> _downloadOnlineWork(String workId) {
+    final id = workId.toUpperCase();
+    final pending = _pendingOnlineDownloads[id];
+    if (pending != null) return pending;
+    final download = _downloadOnlineWorkNow(id);
+    _pendingOnlineDownloads[id] = download;
+    download.then(
+      (_) {
+        if (identical(_pendingOnlineDownloads[id], download)) {
+          _pendingOnlineDownloads.remove(id);
+        }
+      },
+      onError: (Object _) {
+        if (identical(_pendingOnlineDownloads[id], download)) {
+          _pendingOnlineDownloads.remove(id);
+        }
+      },
+    );
+    return download;
+  }
+
+  Future<bool> _downloadOnlineWorkNow(String workId) async {
     await _load();
     final id = workId.toUpperCase();
-    final remoteRecords = _orderedOnlineRecords(
-      _records.where((record) => record.workId == id),
-    );
+    final remoteRecords = _orderedOnlineRecords(_workRecords(id));
     for (final record in remoteRecords) {
       if (record.remoteUrl.isEmpty) continue;
       try {
@@ -523,7 +653,7 @@ class LyricsLibraryService {
       final target = Directory(_join(base, id));
       if (await target.exists()) {
         if (await _containsSupportedFile(target)) {
-          await refresh();
+          await _updateImportedWorks({id});
           return;
         }
         await target.delete(recursive: true);
@@ -532,7 +662,7 @@ class LyricsLibraryService {
       _records
         ..removeWhere((record) => record.workId == id)
         ..add(LyricsLibraryRecord(workId: id, relativePath: id, isAi: hasAi));
-      await _save();
+      await _save(changedWorkIds: {id});
       _notifyChanged();
     } finally {
       if (await stage.exists()) {
@@ -550,13 +680,15 @@ class LyricsLibraryService {
     var fileCount = 0;
     var totalBytes = 0;
     for (final path in paths) {
-      final type = FileSystemEntity.typeSync(path);
+      final type = await FileSystemEntity.type(path);
       if (type == FileSystemEntityType.file) {
         final size = await File(path).length();
         fileCount++;
         totalBytes += size;
-        if (totalBytes >= largeImportBytes || fileCount >= largeImportFileCount)
+        if (totalBytes >= largeImportBytes ||
+            fileCount >= largeImportFileCount) {
           return true;
+        }
         continue;
       }
       if (type != FileSystemEntityType.directory) continue;
@@ -567,8 +699,10 @@ class LyricsLibraryService {
         if (!_isLyricFile(entity.path)) continue;
         fileCount++;
         totalBytes += await entity.length();
-        if (totalBytes >= largeImportBytes || fileCount >= largeImportFileCount)
+        if (totalBytes >= largeImportBytes ||
+            fileCount >= largeImportFileCount) {
           return true;
+        }
       }
     }
     return false;
@@ -710,9 +844,7 @@ class LyricsLibraryService {
           bytes.where((byte) => byte >= 0x80).length < 2) {
         continue;
       }
-      (namesByWorkRoot[workRoot] ??= []).add(
-        _ZipEntryName(bytes, false),
-      );
+      (namesByWorkRoot[workRoot] ??= []).add(_ZipEntryName(bytes, false));
     }
     final encodings = {
       for (final entry in namesByWorkRoot.entries)
@@ -751,32 +883,62 @@ class LyricsLibraryService {
   /// 同时重复创建歌词库目录并分别读取相同的作品目录记录。
   Future<Map<String, int>> countFilesForWorks(Iterable<String> workIds) async {
     await _load();
-    final ids = workIds.map((id) => id.toUpperCase()).toSet();
+    final ids = workIds.map((id) => id.toUpperCase()).toSet().toList();
     if (ids.isEmpty) return {};
-    final onlineCounts = <String, int>{};
-    for (final record in _orderedOnlineRecords(_records)) {
-      if (ids.contains(record.workId)) {
-        onlineCounts.putIfAbsent(record.workId, () => record.fileCount);
-      }
-    }
     final base = await root;
-    final localById = <String, List<LyricsLibraryRecord>>{};
-    for (final record in _records) {
-      if (!record.online && ids.contains(record.workId)) {
-        (localById[record.workId] ??= []).add(record);
-      }
-    }
     final result = <String, int>{};
-    for (final id in ids) {
-      final localCount = await _countFiles(base, localById[id] ?? const []);
-      result[id] = localCount > 0 ? localCount : (onlineCounts[id] ?? 0);
+    // Keep directory enumeration bounded when a page contains many works.
+    for (var start = 0; start < ids.length; start += 4) {
+      final end = math.min(start + 4, ids.length);
+      await Future.wait(
+        ids.sublist(start, end).map((id) async {
+          final records = _workRecords(id);
+          final hasLocal = records.any((record) => !record.online);
+          final localCount = hasLocal ? (await _listFiles(base, id)).length : 0;
+          final online = _orderedOnlineRecords(records);
+          result[id] = localCount > 0
+              ? localCount
+              : (online.isEmpty ? 0 : online.first.fileCount);
+        }),
+      );
     }
     return result;
   }
 
-  Future<List<LyricsLibraryFile>> _listFiles(String base, String id) async {
+  Future<List<LyricsLibraryFile>> _listFiles(String base, String id) {
+    final cached = _fileCache.remove(id);
+    if (cached != null) {
+      _fileCache[id] = cached;
+      return Future.value(cached);
+    }
+    final pending = _pendingFileScans[id];
+    if (pending != null) return pending;
+    final scan = _scanFiles(base, id, List.of(_workRecords(id)));
+    _pendingFileScans[id] = scan;
+    scan.then(
+      (files) {
+        if (identical(_pendingFileScans[id], scan)) {
+          _pendingFileScans.remove(id);
+          _cacheFiles(id, files);
+        }
+      },
+      onError: (Object _) {
+        if (identical(_pendingFileScans[id], scan)) {
+          _pendingFileScans.remove(id);
+        }
+      },
+    );
+    return scan;
+  }
+
+  Future<List<LyricsLibraryFile>> _scanFiles(
+    String base,
+    String id,
+    List<LyricsLibraryRecord> records,
+  ) async {
+    _onFileScan?.call(id);
     final out = <LyricsLibraryFile>[];
-    for (final record in _records.where((r) => r.workId == id && !r.online)) {
+    for (final record in records.where((r) => !r.online)) {
       final dir = Directory(_join(base, record.relativePath));
       if (!await dir.exists()) continue;
       await for (final entity in dir.list(
@@ -800,28 +962,7 @@ class LyricsLibraryService {
         );
       }
     }
-    return out;
-  }
-
-  Future<int> _countFiles(
-    String base,
-    List<LyricsLibraryRecord> records,
-  ) async {
-    var count = 0;
-    for (final record in records) {
-      final dir = Directory(_join(base, record.relativePath));
-      if (!await dir.exists()) continue;
-      await for (final entity in dir.list(
-        recursive: true,
-        followLinks: false,
-      )) {
-        if (entity is File &&
-            supportedExtensions.contains(_extension(entity.path))) {
-          count++;
-        }
-      }
-    }
-    return count;
+    return List.unmodifiable(out);
   }
 
   Future<List<LyricsLibraryEntry>> listEntries({required String workId}) =>
@@ -832,17 +973,14 @@ class LyricsLibraryService {
   Future<LyricsLibraryStatus> statusForWork(String workId) async {
     await _load();
     final id = workId.toUpperCase();
-    final localRecords = _records.where(
-      (record) => record.workId == id && !record.online,
-    );
+    final records = _workRecords(id);
+    final localRecords = records.where((record) => !record.online);
     if (localRecords.isNotEmpty) {
       return localRecords.any((record) => record.isAi)
           ? LyricsLibraryStatus.ai
           : LyricsLibraryStatus.local;
     }
-    final onlineRecords = _orderedOnlineRecords(
-      _records.where((record) => record.workId == id),
-    );
+    final onlineRecords = _orderedOnlineRecords(_workRecords(id));
     if (onlineRecords.isEmpty) return LyricsLibraryStatus.none;
     return onlineRecords.first.isAi
         ? LyricsLibraryStatus.ai
@@ -856,9 +994,7 @@ class LyricsLibraryService {
   }) async {
     var files = await listFiles(workId: workId);
     if (files.isEmpty &&
-        _records.any(
-          (record) => record.workId == workId.toUpperCase() && record.online,
-        )) {
+        _workRecords(workId.toUpperCase()).any((record) => record.online)) {
       await _downloadOnlineWork(workId);
       files = await listFiles(workId: workId);
     }
@@ -889,9 +1025,9 @@ class LyricsLibraryService {
     final clean = _cleanRelative(relativePath);
     final file = File(_join(base, clean));
     await _load();
-    final allowed = _records
-        .where((r) => r.workId == workId.toUpperCase())
-        .map((r) => _join(base, r.relativePath));
+    final allowed = _workRecords(
+      workId.toUpperCase(),
+    ).map((r) => _join(base, r.relativePath));
     if (!allowed.any((dir) => _isWithin(file.path, dir))) return null;
     if (!await file.exists()) return null;
     final sourceText = await file.readAsString();
@@ -914,10 +1050,9 @@ class LyricsLibraryService {
     final clean = _cleanRelative(relativePath);
     final target = File(_join(base, clean));
     await _load();
-    final workDirs = _records
-        .where((r) => r.workId == id && !r.online)
-        .map((r) => _join(base, r.relativePath))
-        .toList();
+    final workDirs = _workRecords(
+      id,
+    ).where((r) => !r.online).map((r) => _join(base, r.relativePath)).toList();
     if (workDirs.isEmpty) workDirs.add(_join(base, id));
     if (!workDirs.any((dir) => _isWithin(target.path, dir))) {
       throw ArgumentError('目标文件必须位于作品目录内');
@@ -946,7 +1081,7 @@ class LyricsLibraryService {
       _records.add(record);
     }
     _records.removeWhere((r) => r.online && r.workId == id);
-    await _save();
+    await _save(changedWorkIds: {id});
     _notifyChanged();
     return record;
   }
@@ -956,30 +1091,81 @@ class LyricsLibraryService {
     LyricsImportConflict conflict = LyricsImportConflict.skip,
     void Function(LyricsImportProgress progress)? onProgress,
   }) async {
+    await _load();
+    final result = await _importDirectory(source, conflict, onProgress);
+    await _updateImportedWorks(result.workIds);
+  }
+
+  Future<_LyricsImportResult> _importDirectory(
+    String source,
+    LyricsImportConflict conflict,
+    void Function(LyricsImportProgress progress)? onProgress,
+  ) async {
     final sourceDir = Directory(source);
-    if (!await sourceDir.exists()) return;
+    if (!await sourceDir.exists()) return _LyricsImportResult({});
     final base = await root;
     final sourceName = sourceDir.path
         .split(Platform.pathSeparator)
         .where((e) => e.isNotEmpty)
         .last;
     final sourceWorkId = _workIdFromName(sourceName);
-    if (sourceWorkId != null) {
-      await _copyTree(
-        sourceDir,
-        Directory(_join(base, sourceWorkId)),
-        conflict,
-        onProgress: onProgress,
-      );
-    } else {
-      await _copyWorkRoots(
-        sourceDir,
-        Directory(base),
-        conflict,
-        onProgress: onProgress,
+    final touched = <String>{};
+    try {
+      if (sourceWorkId != null) {
+        await _copyTree(
+          sourceDir,
+          Directory(_join(base, sourceWorkId)),
+          conflict,
+          onProgress: onProgress,
+          touchedWorkIds: touched,
+          workId: sourceWorkId,
+        );
+      } else {
+        await _copyWorkRoots(
+          sourceDir,
+          Directory(base),
+          conflict,
+          onProgress: onProgress,
+          touchedWorkIds: touched,
+        );
+      }
+      return _LyricsImportResult(touched);
+    } on _LyricsImportCancelled {
+      return _LyricsImportResult(touched, cancelled: true);
+    } catch (_) {
+      await _updateImportedWorks(touched);
+      rethrow;
+    }
+  }
+
+  Future<void> _updateImportedWorks(Set<String> workIds) async {
+    if (workIds.isEmpty) return;
+    final base = await root;
+    final replacements = <LyricsLibraryRecord>[];
+    for (final id in workIds) {
+      final dir = Directory(_join(base, id));
+      if (!await dir.exists() || !await _containsSupportedFile(dir)) continue;
+      final previous = _workRecords(id);
+      replacements.add(
+        LyricsLibraryRecord(
+          workId: id,
+          relativePath: id,
+          isAi: previous.any(
+            (record) =>
+                !record.online && record.relativePath == id && record.isAi,
+          ),
+        ),
       );
     }
-    await refresh();
+    final rootIds = replacements.map((record) => record.workId).toSet();
+    _records.removeWhere(
+      (record) =>
+          rootIds.contains(record.workId) &&
+          (record.online || record.relativePath == record.workId),
+    );
+    _records.addAll(replacements);
+    await _save(changedWorkIds: workIds);
+    _notifyChanged();
   }
 
   Future<void> _copyWorkRoots(
@@ -987,6 +1173,7 @@ class LyricsLibraryService {
     Directory target,
     LyricsImportConflict conflict, {
     void Function(LyricsImportProgress progress)? onProgress,
+    required Set<String> touchedWorkIds,
   }) async {
     await for (final entity in source.list(followLinks: false)) {
       if (entity is! Directory) continue;
@@ -998,9 +1185,17 @@ class LyricsLibraryService {
           Directory(_join(target.path, workId)),
           conflict,
           onProgress: onProgress,
+          touchedWorkIds: touchedWorkIds,
+          workId: workId,
         );
       } else {
-        await _copyWorkRoots(entity, target, conflict, onProgress: onProgress);
+        await _copyWorkRoots(
+          entity,
+          target,
+          conflict,
+          onProgress: onProgress,
+          touchedWorkIds: touchedWorkIds,
+        );
       }
     }
   }
@@ -1012,20 +1207,31 @@ class LyricsLibraryService {
     LyricsImportConflict conflict = LyricsImportConflict.skip,
     void Function(LyricsImportProgress progress)? onProgress,
   }) async {
-    for (final path in paths) {
-      final ext = _extension(path);
-      if (ext == '.zip') {
-        await importZip(
-          path,
-          sourceName: sourceNames[path],
-          conflict: conflict,
-          onProgress: onProgress,
-        );
-      } else if (Directory(path).existsSync()) {
-        await importDirectory(path, conflict: conflict, onProgress: onProgress);
+    await _load();
+    final touched = <String>{};
+    try {
+      for (final path in paths) {
+        _LyricsImportResult result;
+        if (_extension(path) == '.zip') {
+          result = await _runArchiveWorker(
+            path,
+            sourceNames[path] ?? path,
+            conflict,
+            false,
+            onProgress,
+          );
+        } else if (await Directory(path).exists()) {
+          result = await _importDirectory(path, conflict, onProgress);
+        } else {
+          continue;
+        }
+        touched.addAll(result.workIds);
+        if (result.cancelled) break;
       }
+    } finally {
+      // Files written before a later failure must still become visible.
+      await _updateImportedWorks(touched);
     }
-    await refresh();
   }
 
   /// 返回即将写入且已存在的目标文件路径。仅用于导入前询问冲突策略，
@@ -1038,35 +1244,23 @@ class LyricsLibraryService {
     final base = await root;
     final conflicts = <String>[];
     for (final source in paths) {
-      final entity = FileSystemEntity.typeSync(source);
+      final entity = await FileSystemEntity.type(source);
       if (entity == FileSystemEntityType.directory) {
         final sourceDir = Directory(source);
         await _collectDirectoryConflicts(sourceDir, base, conflicts);
       } else if (entity == FileSystemEntityType.file &&
           _extension(source) == '.zip') {
         try {
-          final input = InputFileStream(source);
-          try {
-            final archive = ZipDecoder().decodeStream(input);
-            await _repairZipEntryNamesFromFile(archive, source);
-            final workIds = _archiveWorkIdsWithFallback(
-              archive,
-              sourceNames[source] ?? source,
-            );
-            await _collectArchiveConflicts(
-              archive,
-              base,
-              conflicts,
-              0,
-              workIds: workIds,
-              budget: _ArchiveBudget(),
-              onProgress: onProgress,
-            );
-          } finally {
-            input.closeSync();
-          }
+          final result = await _runArchiveWorker(
+            source,
+            sourceNames[source] ?? source,
+            LyricsImportConflict.skip,
+            true,
+            onProgress,
+          );
+          conflicts.addAll(result.conflicts);
         } catch (_) {
-          // 实际导入时会再次报告无效压缩包，不把预检失败当成冲突。
+          // Actual import reports invalid archives; preflight only finds conflicts.
         }
       }
     }
@@ -1094,7 +1288,12 @@ class LyricsLibraryService {
             .substring(source.path.length)
             .replaceAll('\\', '/')
             .replaceFirst(RegExp(r'^/'), '');
-        final target = File(_join(base, '$workId/$relative'));
+        final parts = relative.split('/');
+        final outputPath = [
+          for (var i = 0; i < parts.length; i++)
+            _directoryImportPathPart(parts[i], directory: i < parts.length - 1),
+        ].join('/');
+        final target = File(_join(base, '$workId/$outputPath'));
         if (await target.exists()) conflicts.add(_relative(base, target.path));
       }
       return;
@@ -1137,7 +1336,7 @@ class LyricsLibraryService {
       if (clean == null || clean.isEmpty || _ignored(clean)) continue;
       if (_extension(clean) == '.zip' && entry.isFile) {
         try {
-          final nested = _decodeZipBytes(entry.content as List<int>);
+          final nested = await _decodeZipBytes(entry.content as List<int>);
           final nestedWorkIds = _nestedArchiveWorkIds(nested, clean, workIds);
           await _collectArchiveConflicts(
             nested,
@@ -1167,28 +1366,83 @@ class LyricsLibraryService {
     LyricsImportConflict conflict = LyricsImportConflict.skip,
     void Function(LyricsImportProgress progress)? onProgress,
   }) async {
+    await _load();
+    final result = await _runArchiveWorker(
+      source,
+      sourceName ?? source,
+      conflict,
+      false,
+      onProgress,
+    );
+    await _updateImportedWorks(result.workIds);
+  }
+
+  Future<_LyricsImportResult> _runArchiveWorker(
+    String source,
+    String sourceName,
+    LyricsImportConflict conflict,
+    bool conflictsOnly,
+    void Function(LyricsImportProgress progress)? onProgress,
+  ) async {
     final base = await root;
-    final input = InputFileStream(source);
+    final messages = ReceivePort();
+    final done = Completer<_LyricsImportResult>();
+    final subscription = messages.listen((dynamic message) async {
+      if (message is! Map) {
+        if (!done.isCompleted) {
+          done.completeError(StateError('歌词导入进程异常: $message'));
+        }
+        return;
+      }
+      try {
+        switch (message['type']) {
+          case 'decode':
+            final reply = message['reply'] as SendPort;
+            final names = List<_ZipEntryName>.from(message['names'] as List);
+            reply.send(await _decodeZipNames(names));
+          case 'progress':
+            onProgress?.call(message['progress'] as LyricsImportProgress);
+          case 'done':
+            if (!done.isCompleted) {
+              done.complete(message['result'] as _LyricsImportResult);
+            }
+          case 'error':
+            final touched = Set<String>.from(message['workIds'] as Set);
+            if (!conflictsOnly && touched.isNotEmpty) {
+              await _updateImportedWorks(touched);
+            }
+            if (!done.isCompleted) {
+              done.completeError(
+                FileSystemException(message['error'] as String, source),
+                StackTrace.fromString(message['stack'] as String),
+              );
+            }
+        }
+      } catch (error, stack) {
+        if (!done.isCompleted) done.completeError(error, stack);
+      }
+    });
+    Isolate? worker;
     try {
-      final archive = ZipDecoder().decodeStream(input);
-      await _repairZipEntryNamesFromFile(archive, source);
-      final workIds = _archiveWorkIdsWithFallback(
-        archive,
-        sourceName ?? source,
+      worker = await Isolate.spawn(
+        _lyricsArchiveWorker,
+        <Object?>[
+          messages.sendPort,
+          source,
+          sourceName,
+          base,
+          conflict,
+          conflictsOnly,
+        ],
+        onError: messages.sendPort,
+        errorsAreFatal: true,
       );
-      await _extractArchive(
-        archive,
-        base,
-        conflict,
-        0,
-        workIds: workIds,
-        budget: _ArchiveBudget(),
-        onProgress: onProgress,
-      );
+      return await done.future;
     } finally {
-      input.closeSync();
+      worker?.kill(priority: Isolate.immediate);
+      await subscription.cancel();
+      messages.close();
     }
-    await refresh();
   }
 
   Future<void> _extractArchive(
@@ -1197,6 +1451,7 @@ class LyricsLibraryService {
     LyricsImportConflict conflict,
     int depth, {
     Set<String> workIds = const {},
+    required Set<String> touchedWorkIds,
     _ArchiveBudget? budget,
     void Function(LyricsImportProgress progress)? onProgress,
   }) async {
@@ -1222,7 +1477,9 @@ class LyricsLibraryService {
         final nested = _extension(clean) == '.zip';
         if (nested) {
           try {
-            final nestedArchive = _decodeZipBytes(entry.content as List<int>);
+            final nestedArchive = await _decodeZipBytes(
+              entry.content as List<int>,
+            );
             final nestedWorkIds = _nestedArchiveWorkIds(
               nestedArchive,
               clean,
@@ -1238,17 +1495,26 @@ class LyricsLibraryService {
               budget: activeBudget,
               onProgress: onProgress,
               workIds: nestedWorkIds,
+              touchedWorkIds: touchedWorkIds,
             );
+          } on _LyricsImportCancelled {
+            rethrow;
           } catch (_) {}
+          entry.clear();
           continue;
         }
         final output = _archiveOutputPath(clean, workIds, isFile: true);
         if (output == null) continue;
         final target = File(_join(base, output));
-        if (await target.exists() && conflict == LyricsImportConflict.skip)
+        touchedWorkIds.add(output.split('/').first);
+        final exists = await target.exists();
+        if (exists && conflict == LyricsImportConflict.skip) {
+          entry.clear();
           continue;
-        if (await target.exists() && conflict == LyricsImportConflict.cancel)
-          return;
+        }
+        if (exists && conflict == LyricsImportConflict.cancel) {
+          throw const _LyricsImportCancelled();
+        }
         await target.parent.create(recursive: true);
         await target.writeAsBytes(entry.content as List<int>, flush: true);
         entry.clear();
@@ -1261,15 +1527,18 @@ class LyricsLibraryService {
     Directory target,
     LyricsImportConflict conflict, {
     void Function(LyricsImportProgress progress)? onProgress,
+    required Set<String> touchedWorkIds,
+    required String workId,
   }) async {
     await for (final entity in source.list(
       recursive: false,
       followLinks: false,
     )) {
-      final name = _shortenPathPart(
-        _normalizedFolderName(entity.path.split(Platform.pathSeparator).last),
+      final name = _directoryImportPathPart(
+        entity.path.split(Platform.pathSeparator).last,
+        directory: entity is Directory,
       );
-      final dst = FileSystemEntity.isDirectorySync(entity.path)
+      final dst = entity is Directory
           ? Directory(_join(target.path, name))
           : File(_join(target.path, name));
       if (entity is Directory) {
@@ -1278,13 +1547,19 @@ class LyricsLibraryService {
           dst as Directory,
           conflict,
           onProgress: onProgress,
+          touchedWorkIds: touchedWorkIds,
+          workId: workId,
         );
       } else if (entity is File) {
         if (!_isLyricFile(entity.path)) continue;
-        if (await dst.exists() && conflict == LyricsImportConflict.skip)
+        touchedWorkIds.add(workId);
+        final exists = await dst.exists();
+        if (exists && conflict == LyricsImportConflict.skip) {
           continue;
-        if (await dst.exists() && conflict == LyricsImportConflict.cancel)
-          return;
+        }
+        if (exists && conflict == LyricsImportConflict.cancel) {
+          throw const _LyricsImportCancelled();
+        }
         await dst.parent.create(recursive: true);
         await entity.copy(dst.path);
         onProgress?.call(
@@ -1301,8 +1576,9 @@ class LyricsLibraryService {
 
   Future<bool> _containsSupportedFile(Directory dir) async {
     await for (final e in dir.list(recursive: true, followLinks: false)) {
-      if (e is File && supportedExtensions.contains(_extension(e.path)))
+      if (e is File && supportedExtensions.contains(_extension(e.path))) {
         return true;
+      }
     }
     return false;
   }
@@ -1312,8 +1588,10 @@ class LyricsLibraryService {
     var score = _formatPriority(file.name) * 10;
     if (title != null) score += ApiService.lyricMatchScore(title, file.name);
     if (path != null &&
-        _parent(file.relativePath).toLowerCase() == _parent(path).toLowerCase())
+        _parent(file.relativePath).toLowerCase() ==
+            _parent(path).toLowerCase()) {
       score += 100;
+    }
     return score;
   }
 
@@ -1352,6 +1630,13 @@ class LyricsLibraryService {
   static String _normalizedFolderName(String name) {
     return _workIdFromName(name) ?? name;
   }
+
+  // Preflight and copying must map to the same destination. Only directory
+  // names fold to work IDs; lyric filenames keep their titles and extensions.
+  static String _directoryImportPathPart(
+    String name, {
+    required bool directory,
+  }) => _shortenPathPart(directory ? _normalizedFolderName(name) : name);
 
   /// 将超长的目录或文件名缩短为“前缀-哈希.扩展名”。
   ///
@@ -1396,57 +1681,70 @@ class LyricsLibraryService {
   /// archive 包目前会把未标记为 UTF-8 的 ZIP 文件名按单字节字符直接
   /// 转成 String。这里从中央目录取回原始字节，交给已有的编码探测器
   /// 解码，再将修复后的名称写回条目。文件内容仍完全由 archive 包解压。
-  static Future<void> _repairZipEntryNamesFromFile(
+  Future<void> _repairZipEntryNamesFromFile(
     Archive archive,
     String source,
   ) async {
     final names = await _readZipEntryNamesFromFile(source);
-    _repairZipEntryNames(archive, names);
+    await _repairZipEntryNames(archive, names);
   }
 
-  static Archive _decodeZipBytes(List<int> bytes) {
+  Future<Archive> _decodeZipBytes(List<int> bytes) async {
     final archive = ZipDecoder().decodeBytes(bytes);
-    _repairZipEntryNames(archive, _readZipEntryNames(bytes));
+    await _repairZipEntryNames(archive, _readZipEntryNames(bytes));
     return archive;
   }
 
-  static void _repairZipEntryNames(
+  Future<void> _repairZipEntryNames(
     Archive archive,
     List<_ZipEntryName> rawNames,
-  ) {
-    if (rawNames.isEmpty || archive.isEmpty) return;
-
-    // 单个短曲名常被编码探测器误判（例如 Shift_JIS 被猜成 GBK）。同一
-    // ZIP 通常使用统一代码页，因此先以整包文件名样本做一次判定。
-    final archiveEncoding = _detectZipEntryEncoding(rawNames);
-
-    // archive 包会将无效 UTF-8 回退成 String.fromCharCodes；以同样规则
-    // 建索引，避免目录中混有 UTF-8 与本地编码条目时错配名称。
-    final pending = <String, List<_ZipEntryName>>{};
-    for (final raw in rawNames) {
-      (pending[_archivePackageName(raw.bytes)] ??= []).add(raw);
+  ) async {
+    if (rawNames.isEmpty ||
+        archive.isEmpty ||
+        !rawNames.any(
+          (raw) => !raw.isUtf8 && raw.bytes.any((byte) => byte >= 0x80),
+        )) {
+      return;
     }
-    for (var index = 0; index < archive.length; index++) {
-      final entry = archive[index];
+    final decoded = await (_zipNameDecoder ?? _decodeZipNames)(rawNames);
+    final pending = <String, Queue<String?>>{};
+    for (var index = 0; index < rawNames.length; index++) {
+      (pending[_archivePackageName(rawNames[index].bytes)] ??= Queue()).add(
+        decoded[index],
+      );
+    }
+    for (final entry in archive) {
       final candidates = pending[entry.name];
       if (candidates == null || candidates.isEmpty) continue;
-      final raw = candidates.removeAt(0);
-      if (raw.isUtf8) continue;
-      try {
-        final name = apiDecodeText(
-          bytes: raw.bytes,
-          encoding: archiveEncoding ?? '',
-        ).text;
-        if (name.isEmpty || name == entry.name || name.contains('\u0000')) {
-          continue;
-        }
-        // 后续只会顺序遍历 Archive；直接改名可避免 archive 对同名条目的
-        // 去重索引干扰原始中央目录与条目的对应关系。
+      final name = candidates.removeFirst();
+      if (name != null && name.isNotEmpty && !name.contains('\u0000')) {
         entry.name = name;
-      } catch (_) {
-        // 个别异常编码保留 archive 的兼容性回退结果，不能中断整个导入。
       }
     }
+  }
+
+  static Future<List<String?>> _decodeZipNames(
+    List<_ZipEntryName> rawNames,
+  ) async {
+    final archiveEncoding = _detectZipEntryEncoding(rawNames);
+    final names = <String?>[];
+    for (var index = 0; index < rawNames.length; index++) {
+      final raw = rawNames[index];
+      String? name;
+      if (!raw.isUtf8 && raw.bytes.any((byte) => byte >= 0x80)) {
+        try {
+          name = apiDecodeText(
+            bytes: raw.bytes,
+            encoding: archiveEncoding ?? '',
+          ).text;
+        } catch (_) {}
+      }
+      names.add(name);
+      // Rust's synchronous decoder stays on its initialized isolate; yield
+      // between small batches so large legacy ZIPs do not monopolize UI frames.
+      if (index % 64 == 63) await Future<void>.delayed(Duration.zero);
+    }
+    return names;
   }
 
   static String _archivePackageName(List<int> bytes) {
@@ -1480,9 +1778,8 @@ class LyricsLibraryService {
     }
   }
 
-  static bool _containsEastAsianText(String value) => RegExp(
-    r'[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]',
-  ).hasMatch(value);
+  static bool _containsEastAsianText(String value) =>
+      RegExp(r'[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]').hasMatch(value);
 
   static String? _detectZipEntryEncoding(List<_ZipEntryName> rawNames) {
     const maxSampleBytes = 256 * 1024;
@@ -1601,7 +1898,9 @@ class LyricsLibraryService {
       if (end > bytes.length) return const [];
       names.add(
         _ZipEntryName(
-          List<int>.from(bytes.sublist(offset + 46, offset + 46 + filenameLength)),
+          List<int>.from(
+            bytes.sublist(offset + 46, offset + 46 + filenameLength),
+          ),
           (flags & 0x800) != 0,
         ),
       );
@@ -1631,10 +1930,7 @@ class LyricsLibraryService {
       if (isFile && index == parts.length - 1) {
         return '$workId/${parts.last}';
       }
-      return [
-        workId,
-        ...parts.skip(index + 1),
-      ].join('/');
+      return [workId, ...parts.skip(index + 1)].join('/');
     }
     if (isFile && _isLyricFile(clean) && workIds.length == 1) {
       return '${workIds.first}/$clean';
@@ -1711,8 +2007,9 @@ class LyricsLibraryService {
       .any((p) => p == '__MACOSX' || p == '.DS_Store' || p == 'Thumbs.db');
   static String? _safeArchivePath(String raw) {
     final p = _cleanRelative(raw);
-    if (p.isEmpty || p.startsWith('/') || RegExp(r'^[A-Za-z]:').hasMatch(p))
+    if (p.isEmpty || p.startsWith('/') || RegExp(r'^[A-Za-z]:').hasMatch(p)) {
       return null;
+    }
     final parts = p.split('/');
     if (parts.any((part) => part == '..' || part.isEmpty)) return null;
     return parts
@@ -1732,4 +2029,135 @@ class LyricsLibraryService {
     final b = Directory(parent).absolute.path.toLowerCase();
     return a == b || a.startsWith('$b${Platform.pathSeparator}');
   }
+}
+
+// Construct isolate closures in a scope that contains only the transferable
+// argument; closures inside service methods can capture its unsendable futures.
+Future<List<LyricsLibraryRecord>> _decodeLibraryRecordsInBackground(
+  String raw,
+) => Isolate.run(() => _decodeLibraryRecords(raw));
+
+Future<String> _encodeLibraryRecordsInBackground(
+  List<LyricsLibraryRecord> records,
+) => Isolate.run(() => _encodeLibraryRecords(records));
+
+List<LyricsLibraryRecord> _decodeLibraryRecords(String raw) =>
+    (jsonDecode(raw) as List)
+        .whereType<Map>()
+        .map((e) => LyricsLibraryRecord.fromJson(Map<String, dynamic>.from(e)))
+        .where((e) => e.workId.isNotEmpty && e.relativePath.isNotEmpty)
+        .toList();
+
+String _encodeLibraryRecords(List<LyricsLibraryRecord> records) =>
+    jsonEncode(records.map((record) => record.toJson()).toList());
+
+class _LyricsImportResult {
+  final Set<String> workIds;
+  final List<String> conflicts;
+  final bool cancelled;
+  const _LyricsImportResult(
+    this.workIds, {
+    this.conflicts = const [],
+    this.cancelled = false,
+  });
+}
+
+class _LyricsImportCancelled implements Exception {
+  const _LyricsImportCancelled();
+}
+
+Future<void> _lyricsArchiveWorker(List<Object?> args) async {
+  final output = args[0] as SendPort;
+  final source = args[1] as String;
+  final sourceName = args[2] as String;
+  final base = args[3] as String;
+  final conflict = args[4] as LyricsImportConflict;
+  final conflictsOnly = args[5] as bool;
+  final service = LyricsLibraryService._(
+    zipNameDecoder: (names) async {
+      final reply = ReceivePort();
+      try {
+        output.send({
+          'type': 'decode',
+          'names': names,
+          'reply': reply.sendPort,
+        });
+        return List<String?>.from(await reply.first as List);
+      } finally {
+        reply.close();
+      }
+    },
+  );
+  DateTime? lastProgress;
+  String? lastPhase;
+  void progress(LyricsImportProgress value) {
+    final now = DateTime.now();
+    if (value.phase != lastPhase ||
+        lastProgress == null ||
+        now.difference(lastProgress!) >= const Duration(milliseconds: 100) ||
+        value.current >= value.total) {
+      lastProgress = now;
+      lastPhase = value.phase;
+      output.send({'type': 'progress', 'progress': value});
+    }
+  }
+
+  InputFileStream? input;
+  final touched = <String>{};
+  final conflicts = <String>[];
+  late Map<String, Object?> response;
+  try {
+    input = InputFileStream(source);
+    final archive = ZipDecoder().decodeStream(input);
+    await service._repairZipEntryNamesFromFile(archive, source);
+    final ids = LyricsLibraryService._archiveWorkIdsWithFallback(
+      archive,
+      sourceName,
+    );
+    var cancelled = false;
+    if (conflictsOnly) {
+      await service._collectArchiveConflicts(
+        archive,
+        base,
+        conflicts,
+        0,
+        workIds: ids,
+        budget: _ArchiveBudget(),
+        onProgress: progress,
+      );
+    } else {
+      try {
+        await service._extractArchive(
+          archive,
+          base,
+          conflict,
+          0,
+          workIds: ids,
+          budget: _ArchiveBudget(),
+          onProgress: progress,
+          touchedWorkIds: touched,
+        );
+      } on _LyricsImportCancelled {
+        cancelled = true;
+      }
+    }
+    response = {
+      'type': 'done',
+      'result': _LyricsImportResult(
+        touched,
+        conflicts: conflicts,
+        cancelled: cancelled,
+      ),
+    };
+  } catch (error, stack) {
+    response = {
+      'type': 'error',
+      'workIds': touched,
+      'error': error.toString(),
+      'stack': stack.toString(),
+    };
+  } finally {
+    input?.closeSync();
+  }
+  output.send(response);
 }
