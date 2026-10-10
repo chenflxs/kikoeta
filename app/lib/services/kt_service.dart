@@ -139,7 +139,7 @@ class KtService {
     List<String> cacheTrackPaths = const [],
   }) => _postJson('/api/v1/jobs', {
     'files': files.map((file) => file.toJson()).toList(),
-    'flags': {'enable_correct': false, 'enable_translate': true},
+    'flags': {'enable_correct': true, 'enable_translate': true},
     'settings': {
       'output': {
         'preset': 'target_lrc',
