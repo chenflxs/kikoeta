@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'data.dart';
+import 'services/api_service.dart';
 import 'services/audio_effects.dart';
 import 'services/player_service.dart';
 import 'smooth_scroll.dart';
@@ -71,6 +72,7 @@ class _ServerSheet extends StatefulWidget {
 class _ServerSheetState extends State<_ServerSheet> {
   late bool _custom;
   late int _idx;
+  bool _applying = false;
 
   AppState get app => widget.app;
   Palette get p => Theme.of(context).brightness == Brightness.dark
@@ -84,8 +86,42 @@ class _ServerSheetState extends State<_ServerSheet> {
     _idx = app.customServerIdx;
   }
 
+  Future<void> _applyServer() async {
+    if (_applying) return;
+    final custom = _custom;
+    final idx = _idx;
+    if (custom && app.customSites.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.l10n.sheetsBuildText5)));
+      return;
+    }
+    final route = ModalRoute.of(context);
+    setState(() => _applying = true);
+    try {
+      if (custom && idx >= 0 && idx < app.customSites.length) {
+        final site = app.customSites[idx];
+        if (site.user.isNotEmpty && site.pass.isNotEmpty) {
+          try {
+            await ApiService.login(app, site.url, site.user, site.pass);
+          } catch (_) {}
+        }
+      }
+      if (!mounted || route?.isCurrent != true) return;
+      app.applyServer(custom, idx);
+      Navigator.pop(context);
+    } finally {
+      if (mounted && route?.isCurrent == true) {
+        setState(() => _applying = false);
+      }
+    }
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AbsorbPointer(absorbing: _applying, child: _buildContent(context));
+
+  Widget _buildContent(BuildContext context) {
     return _sheetScaffold(
       context: context,
       title: context.l10n.sheetsBuildTitle,
@@ -224,16 +260,7 @@ class _ServerSheetState extends State<_ServerSheet> {
           const SizedBox(height: 6),
         ],
         ElevatedButton(
-          onPressed: () {
-            if (_custom && app.customSites.isEmpty) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(context.l10n.sheetsBuildText5)),
-              );
-              return;
-            }
-            app.applyServer(_custom, _idx);
-            Navigator.pop(context);
-          },
+          onPressed: _applying ? null : _applyServer,
           style: ElevatedButton.styleFrom(
             backgroundColor: p.accent,
             foregroundColor: Colors.white,
@@ -310,9 +337,9 @@ Future<void> showSiteSheet(
             obscure: true,
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               final alias = aliasCtrl.text.trim();
-              final url = urlCtrl.text.trim();
+              final url = urlCtrl.text.trim().replaceFirst(RegExp(r'/+$'), '');
               final user = userCtrl.text.trim();
               final pass = passCtrl.text;
               if (alias.isEmpty ||
@@ -326,6 +353,16 @@ Future<void> showSiteSheet(
                 );
                 return;
               }
+              final isCurrentActiveSite =
+                  isEdit &&
+                  app.customServer &&
+                  editIndex == app.customServerIdx;
+              if (isCurrentActiveSite && user.isNotEmpty && pass.isNotEmpty) {
+                try {
+                  await ApiService.login(app, url, user, pass);
+                } catch (_) {}
+              }
+              if (!ctx.mounted) return;
               if (isEdit) {
                 app.saveSite(
                   CustomSite(
