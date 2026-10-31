@@ -9,6 +9,126 @@ class AppLocalizationsZh extends AppLocalizations {
   AppLocalizationsZh([String locale = 'zh']) : super(locale);
 
   @override
+  String get dataExport => '导出本地数据';
+
+  @override
+  String get dataImport => '导入本地数据';
+
+  @override
+  String get dataScope => '收藏、歌单、黑名单、历史与偏好；不含下载、歌词库、账号密码和密钥。';
+
+  @override
+  String get dataImportConfirm => '将覆盖备份范围内的本地数据。导入前会保留一份本地副本，当前播放不受影响。';
+
+  @override
+  String get dataExportDone => '数据已导出';
+
+  @override
+  String get dataImportDone => '数据已导入';
+
+  @override
+  String get dataOperationFailed => '操作失败，请重试';
+
+  @override
+  String get backupInvalid => '备份格式无效、版本不兼容或文件已损坏';
+
+  @override
+  String get backupTooLarge => '备份超过 16 MB 上限';
+
+  @override
+  String get webdavTitle => 'WebDAV 云同步';
+
+  @override
+  String get webdavUrl => '服务器地址';
+
+  @override
+  String get webdavUsername => '账号';
+
+  @override
+  String get webdavPassword => '应用密码';
+
+  @override
+  String get webdavFolder => '同步文件夹';
+
+  @override
+  String get webdavAuto => '每小时自动同步';
+
+  @override
+  String get webdavAutoHint => '应用运行期间每小时检查；回到前台时补查。无变化不上传。';
+
+  @override
+  String get webdavTest => '测试连接';
+
+  @override
+  String get webdavTestDone => '连接正常，测试文件已删除';
+
+  @override
+  String get webdavSyncNow => '立即同步';
+
+  @override
+  String get webdavUploadOverwrite => '上传本地数据覆盖云端';
+
+  @override
+  String get webdavDownloadOverwrite => '使用云端数据覆盖本地';
+
+  @override
+  String get webdavMergeData => '合并本地与云端数据';
+
+  @override
+  String get webdavMergeHint => '收藏、黑名单、歌单和历史去重合并，设置冲突保留本地。';
+
+  @override
+  String get webdavSyncDone => '同步完成';
+
+  @override
+  String get webdavNever => '尚未同步';
+
+  @override
+  String get webdavSyncing => '正在同步…';
+
+  @override
+  String get webdavConflict => '本地和云端都有更改，请选择保留的版本';
+
+  @override
+  String get webdavUseLocal => '保留本地';
+
+  @override
+  String get webdavUseCloud => '使用云端';
+
+  @override
+  String get webdavConflictConfirm => '所选版本将覆盖另一端的数据。使用云端前会保留本地副本。';
+
+  @override
+  String get webdavInvalidConfig => '请填写 HTTPS 地址、账号、应用密码及单层文件夹名称';
+
+  @override
+  String get webdavAuthError => '认证失败，请检查账号和应用密码';
+
+  @override
+  String get webdavTimeout => '连接超时，请稍后重试';
+
+  @override
+  String get webdavNetworkError => '网络连接失败，请检查网络及服务器地址';
+
+  @override
+  String get webdavRateLimited => '服务器请求限流，请稍后重试';
+
+  @override
+  String get webdavRequestFailed => '同步失败，请检查服务器配置后重试';
+
+  @override
+  String get webdavNoEtag => '服务器未提供可用的 ETag，无法安全覆盖云端文件';
+
+  @override
+  String get webdavNoBackup => '云端暂无备份';
+
+  @override
+  String get webdavCleanupFailed => '测试文件清理失败，请重试测试以检查连接';
+
+  @override
+  String get webdavBusy => '正在处理数据，请稍候';
+
+  @override
   String get appName => 'Kikoeta';
 
   @override
@@ -1311,7 +1431,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsPageOnVersionTapText => '好吧';
 
   @override
-  String get settingsPageSectionsSection2 => '其他';
+  String get settingsPageSectionsSection2 => '数据与网络';
 
   @override
   String get settingsPageSectionsSection3 => '外观';
@@ -2696,6 +2816,126 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   AppLocalizationsZhHant() : super('zh_Hant');
 
   @override
+  String get dataExport => '匯出本機資料';
+
+  @override
+  String get dataImport => '匯入本機資料';
+
+  @override
+  String get dataScope => '收藏、歌單、黑名單、歷史與偏好；不含下載、歌詞庫、帳號密碼和金鑰。';
+
+  @override
+  String get dataImportConfirm => '將覆蓋備份範圍內的本機資料。匯入前會保留一份本機副本，目前播放不受影響。';
+
+  @override
+  String get dataExportDone => '資料已匯出';
+
+  @override
+  String get dataImportDone => '資料已匯入';
+
+  @override
+  String get dataOperationFailed => '操作失敗，請重試';
+
+  @override
+  String get backupInvalid => '備份格式無效、版本不相容或檔案已損壞';
+
+  @override
+  String get backupTooLarge => '備份超過 16 MB 上限';
+
+  @override
+  String get webdavTitle => 'WebDAV 雲端同步';
+
+  @override
+  String get webdavUrl => '伺服器位址';
+
+  @override
+  String get webdavUsername => '帳號';
+
+  @override
+  String get webdavPassword => '應用程式密碼';
+
+  @override
+  String get webdavFolder => '同步資料夾';
+
+  @override
+  String get webdavAuto => '每小時自動同步';
+
+  @override
+  String get webdavAutoHint => '應用程式執行期間每小時檢查；回到前景時補查。無變化不會上傳。';
+
+  @override
+  String get webdavTest => '測試連線';
+
+  @override
+  String get webdavTestDone => '連線正常，測試檔案已刪除';
+
+  @override
+  String get webdavSyncNow => '立即同步';
+
+  @override
+  String get webdavUploadOverwrite => '上傳本機資料覆蓋雲端';
+
+  @override
+  String get webdavDownloadOverwrite => '使用雲端資料覆蓋本機';
+
+  @override
+  String get webdavMergeData => '合併本機與雲端資料';
+
+  @override
+  String get webdavMergeHint => '收藏、黑名單、歌單和歷史去重合併，設定衝突保留本機。';
+
+  @override
+  String get webdavSyncDone => '同步完成';
+
+  @override
+  String get webdavNever => '尚未同步';
+
+  @override
+  String get webdavSyncing => '正在同步…';
+
+  @override
+  String get webdavConflict => '本機和雲端都有變更，請選擇保留的版本';
+
+  @override
+  String get webdavUseLocal => '保留本機';
+
+  @override
+  String get webdavUseCloud => '使用雲端';
+
+  @override
+  String get webdavConflictConfirm => '所選版本將覆蓋另一端的資料。使用雲端前會保留本機副本。';
+
+  @override
+  String get webdavInvalidConfig => '請填寫 HTTPS 位址、帳號、應用程式密碼及單層資料夾名稱';
+
+  @override
+  String get webdavAuthError => '驗證失敗，請檢查帳號和應用程式密碼';
+
+  @override
+  String get webdavTimeout => '連線逾時，請稍後重試';
+
+  @override
+  String get webdavNetworkError => '網路連線失敗，請檢查網路及伺服器位址';
+
+  @override
+  String get webdavRateLimited => '伺服器請求受限，請稍後重試';
+
+  @override
+  String get webdavRequestFailed => '同步失敗，請檢查伺服器設定後重試';
+
+  @override
+  String get webdavNoEtag => '伺服器未提供可用的 ETag，無法安全覆蓋雲端檔案';
+
+  @override
+  String get webdavNoBackup => '雲端尚無備份';
+
+  @override
+  String get webdavCleanupFailed => '測試檔案清理失敗，請檢查伺服器連線';
+
+  @override
+  String get webdavBusy => '正在處理資料，請稍候';
+
+  @override
   String get appName => 'Kikoeta';
 
   @override
@@ -3998,7 +4238,7 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String get settingsPageOnVersionTapText => '好吧';
 
   @override
-  String get settingsPageSectionsSection2 => '其他';
+  String get settingsPageSectionsSection2 => '資料與網路';
 
   @override
   String get settingsPageSectionsSection3 => '外觀';

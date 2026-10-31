@@ -2,6 +2,8 @@
 
 use std::time::Duration;
 
+mod microsoft;
+
 fn translation_prompt(target_language: &str) -> String {
     let language = match target_language.trim() {
         "zh-TW" => "繁体中文",
@@ -486,143 +488,11 @@ pub async fn api_translate_microsoft(
     src: String,
     dst: String,
 ) -> Result<String, String> {
-    if text.trim().is_empty() {
-        return Ok(String::new());
-    }
-    let client = http_client()?;
-    let bing = fetch_bing_translation_config(&client).await?;
-    let resp = client
-        .post(bing.endpoint)
-        .header("user-agent", browser_user_agent())
-        .header("origin", bing.origin)
-        .header("referer", bing.referer)
-        .form(&[
-            ("text", text.as_str()),
-            ("fromLang", microsoft_lang(&src).as_str()),
-            ("to", microsoft_lang(&dst).as_str()),
-            ("token", bing.token.as_str()),
-            ("key", bing.key.as_str()),
-        ])
-        .send()
-        .await
-        .map_err(|e| format!("微软翻译请求失败: {e}"))?;
-    let status = resp.status();
-    let body = resp
-        .text()
-        .await
-        .map_err(|e| format!("读取响应失败: {e}"))?;
-    if !status.is_success() {
-        return Err(format!("微软翻译 HTTP {}: {}", status.as_u16(), preview(&body)));
-    }
-    let v: serde_json::Value =
-        serde_json::from_str(&body).map_err(|e| format!("微软响应解析失败: {e}"))?;
-    let out = v[0]["translations"][0]["text"]
-        .as_str()
-        // Bing page API uses this compact shape, while the former Azure-style
-        // endpoint returned translations[0].text.
-        .or_else(|| v[0]["text"].as_str())
-        .ok_or_else(|| "微软响应中未找到翻译结果".to_string())?;
-    Ok(out.trim().to_string())
-}
-
-const BING_TRANSLATOR_URL: &str = "https://www.bing.com/translator";
-
-struct BingTranslationConfig {
-    endpoint: String,
-    origin: String,
-    referer: String,
-    key: String,
-    token: String,
+    microsoft::translate(&http_client()?, &text, &src, &dst).await
 }
 
 fn browser_user_agent() -> &'static str {
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36 Edg/126.0"
-}
-
-async fn fetch_bing_translation_config(
-    client: &reqwest::Client,
-) -> Result<BingTranslationConfig, String> {
-    let resp = client
-        .get(BING_TRANSLATOR_URL)
-        .header("user-agent", browser_user_agent())
-        .header("accept-language", "zh-CN,zh;q=0.9,en;q=0.8")
-        .send()
-        .await
-        .map_err(|e| format!("微软翻译页面请求失败: {e}"))?;
-    let status = resp.status();
-    let page_url = resp.url().clone();
-    let body = resp
-        .text()
-        .await
-        .map_err(|e| format!("读取微软翻译页面失败: {e}"))?;
-    if !status.is_success() {
-        return Err(format!(
-            "微软翻译页面请求失败（HTTP {}）：请检查网络或代理设置",
-            status.as_u16()
-        ));
-    }
-    let (key, token) = parse_bing_auth(&body)?;
-    let ig = parse_bing_ig(&body)?;
-    let origin = page_url.origin().ascii_serialization();
-    if origin == "null" {
-        return Err("微软翻译页面地址异常".to_string());
-    }
-    Ok(BingTranslationConfig {
-        endpoint: format!("{origin}/ttranslatev3?isVertical=1&IG={ig}&IID=translator.5028.1"),
-        origin,
-        referer: page_url.to_string(),
-        key,
-        token,
-    })
-}
-
-fn parse_bing_auth(page: &str) -> Result<(String, String), String> {
-    let marker = "params_AbusePreventionHelper";
-    let start = page
-        .find(marker)
-        .and_then(|position| page[position..].find('[').map(|offset| position + offset + 1))
-        .ok_or_else(|| "微软翻译页面缺少授权参数".to_string())?;
-    let end = page[start..]
-        .find(']')
-        .map(|offset| start + offset)
-        .ok_or_else(|| "微软翻译授权参数格式异常".to_string())?;
-    let fields = page[start..end].split(',').map(str::trim).collect::<Vec<_>>();
-    let key = fields
-        .first()
-        .filter(|value| value.chars().all(|c| c.is_ascii_digit()))
-        .ok_or_else(|| "微软翻译授权密钥异常".to_string())?;
-    let token = fields
-        .get(1)
-        .and_then(|value| value.strip_prefix('"'))
-        .and_then(|value| value.strip_suffix('"'))
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| "微软翻译授权令牌异常".to_string())?;
-    Ok(((*key).to_string(), token.to_string()))
-}
-
-fn parse_bing_ig(page: &str) -> Result<String, String> {
-    let marker = "IG:\"";
-    let start = page
-        .find(marker)
-        .map(|position| position + marker.len())
-        .ok_or_else(|| "微软翻译页面缺少会话标识".to_string())?;
-    let end = page[start..]
-        .find('"')
-        .map(|offset| start + offset)
-        .ok_or_else(|| "微软翻译会话标识格式异常".to_string())?;
-    let ig = &page[start..end];
-    if ig.is_empty() || !ig.chars().all(|c| c.is_ascii_hexdigit()) {
-        return Err("微软翻译会话标识异常".to_string());
-    }
-    Ok(ig.to_string())
-}
-
-fn microsoft_lang(code: &str) -> String {
-    match code.trim().to_ascii_lowercase().as_str() {
-        "zh-cn" | "zh" => "zh-Hans".to_string(),
-        "zh-tw" | "zh-hant" => "zh-Hant".to_string(),
-        other => other.to_string(),
-    }
 }
 
 /// 测试连接：GET {base}/models，校验 key 是否有效。
@@ -835,32 +705,6 @@ mod tests {
         assert_eq!(deepl_lang("zh-CN"), "ZH");
         assert_eq!(deepl_lang("zh-TW"), "ZH-HANT");
         assert_eq!(deepl_lang("ja"), "JA");
-    }
-
-    #[test]
-    fn microsoft_lang_map() {
-        assert_eq!(microsoft_lang("zh-CN"), "zh-Hans");
-        assert_eq!(microsoft_lang("zh-TW"), "zh-Hant");
-        assert_eq!(microsoft_lang("ja"), "ja");
-    }
-
-    #[test]
-    fn parses_current_bing_page_authorization_values() {
-        let page = r#"
-            window._G={IG:"A1B2C3D4"};
-            var params_AbusePreventionHelper = [1787866985732,"token-value",3600000];
-        "#;
-        assert_eq!(
-            parse_bing_auth(page).unwrap(),
-            ("1787866985732".to_string(), "token-value".to_string())
-        );
-        assert_eq!(parse_bing_ig(page).unwrap(), "A1B2C3D4");
-    }
-
-    #[test]
-    fn rejects_invalid_bing_page_authorization_values() {
-        assert!(parse_bing_auth("params_AbusePreventionHelper = []").is_err());
-        assert!(parse_bing_ig("window._G={IG:\"not-a-session\"}").is_err());
     }
 
     #[test]

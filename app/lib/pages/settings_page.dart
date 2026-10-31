@@ -22,6 +22,7 @@ import '../sheets.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import '../widgets/playback_seek_seconds_control.dart';
+import '../widgets/data_sync_settings.dart';
 import '../l10n/strings.dart';
 import '../l10n/app_language.dart';
 
@@ -920,13 +921,20 @@ class _SettingsPageState extends State<SettingsPage> {
                 ]),
                 rootVisible: false,
                 rootCardRadius: BorderRadius.zero,
-                // 下一张卡（其他）是圆角收尾卡，它自己的上边框负责这条线
+                // 下一张卡（数据与网络）是圆角收尾卡，它自己的上边框负责这条线
                 bottomDivider: false,
               ),
               _section(
                 'other',
                 context.l10n.settingsPageSectionsSection2,
-                _group([_proxySettings()]),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    DataSyncSettings(rowBuilder: _row, groupBuilder: _group),
+                    const SizedBox(height: 10),
+                    _group([_proxySettings()]),
+                  ],
+                ),
                 rootVisible: false,
                 rootEntry: true,
                 rootCardRadius: const BorderRadius.vertical(

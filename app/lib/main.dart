@@ -22,6 +22,7 @@ import 'pages/settings_page.dart';
 import 'pages/work_page.dart';
 import 'services/player_service.dart';
 import 'services/settings_store.dart';
+import 'services/app_data_service.dart';
 import 'services/shortcut_service.dart';
 import 'services/sleep_timer.dart';
 import 'services/clipboard_watcher.dart';
@@ -104,6 +105,7 @@ Future<void> main() async {
   AppPlayer.instance.completed.listen((_) => _advanceAfterCompletion());
   // 定时关闭：全局计时（播放器页关闭时也生效）
   SleepTimer.start(appState);
+  initializeDataSync(appState);
   runApp(const KikoetaApp());
   UpdateService.startAutoCheck(appState, appNavigatorKey);
   // 剪贴板 RJ 检测（每 3 秒轮询）

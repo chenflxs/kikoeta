@@ -9,6 +9,138 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
+  String get dataExport => 'Export local data';
+
+  @override
+  String get dataImport => 'Import local data';
+
+  @override
+  String get dataScope =>
+      'Favorites, playlists, blacklist, history and preferences. Excludes downloads, lyrics libraries, passwords and keys.';
+
+  @override
+  String get dataImportConfirm =>
+      'Replace local data within the backup scope? A local recovery copy is saved first. Playback continues.';
+
+  @override
+  String get dataExportDone => 'Data exported';
+
+  @override
+  String get dataImportDone => 'Data imported';
+
+  @override
+  String get dataOperationFailed => 'Operation failed. Please retry.';
+
+  @override
+  String get backupInvalid => 'Invalid, incompatible or damaged backup';
+
+  @override
+  String get backupTooLarge => 'Backup exceeds the 16 MB limit';
+
+  @override
+  String get webdavTitle => 'WebDAV cloud sync';
+
+  @override
+  String get webdavUrl => 'Server URL';
+
+  @override
+  String get webdavUsername => 'Account';
+
+  @override
+  String get webdavPassword => 'App password';
+
+  @override
+  String get webdavFolder => 'Sync folder';
+
+  @override
+  String get webdavAuto => 'Sync automatically every hour';
+
+  @override
+  String get webdavAutoHint =>
+      'Checks hourly while the app runs, and checks when due on resume. Uploads only changes.';
+
+  @override
+  String get webdavTest => 'Test connection';
+
+  @override
+  String get webdavTestDone => 'Connected. Test file deleted.';
+
+  @override
+  String get webdavSyncNow => 'Sync now';
+
+  @override
+  String get webdavUploadOverwrite => 'Upload local data and overwrite cloud';
+
+  @override
+  String get webdavDownloadOverwrite => 'Overwrite local data with cloud data';
+
+  @override
+  String get webdavMergeData => 'Merge local and cloud data';
+
+  @override
+  String get webdavMergeHint => 'Combines favorites, blacklist, playlists and history. Keeps local preferences on conflicts.';
+
+  @override
+  String get webdavSyncDone => 'Sync complete';
+
+  @override
+  String get webdavNever => 'Not synced yet';
+
+  @override
+  String get webdavSyncing => 'Syncing…';
+
+  @override
+  String get webdavConflict =>
+      'Both local and cloud data changed. Choose which version to keep.';
+
+  @override
+  String get webdavUseLocal => 'Keep local';
+
+  @override
+  String get webdavUseCloud => 'Use cloud';
+
+  @override
+  String get webdavConflictConfirm =>
+      'The selected version replaces the other copy. A local recovery copy is saved before applying cloud data.';
+
+  @override
+  String get webdavInvalidConfig =>
+      'Enter an HTTPS URL, account, app password and a single folder name.';
+
+  @override
+  String get webdavAuthError =>
+      'Authentication failed. Check the account and app password.';
+
+  @override
+  String get webdavTimeout => 'Connection timed out. Please retry later.';
+
+  @override
+  String get webdavNetworkError =>
+      'Network connection failed. Check the network and server URL.';
+
+  @override
+  String get webdavRateLimited =>
+      'Server rate limit reached. Please retry later.';
+
+  @override
+  String get webdavRequestFailed =>
+      'Sync failed. Check the server configuration and retry.';
+
+  @override
+  String get webdavNoEtag =>
+      'The server has no usable ETag for safely replacing cloud data.';
+
+  @override
+  String get webdavNoBackup => 'No cloud backup exists';
+
+  @override
+  String get webdavCleanupFailed =>
+      'Test file cleanup failed. Check the server connection.';
+
+  @override
+  String get webdavBusy => 'A data operation is in progress. Please wait.';
+
+  @override
   String get appName => 'Kikoeta';
 
   @override
@@ -1374,7 +1506,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsPageOnVersionTapText => 'OK';
 
   @override
-  String get settingsPageSectionsSection2 => 'Other';
+  String get settingsPageSectionsSection2 => 'Data & Network';
 
   @override
   String get settingsPageSectionsSection3 => 'Appearance';

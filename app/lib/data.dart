@@ -967,7 +967,7 @@ class AppState extends ChangeNotifier {
       (translated[rj]?['tracks'] as Map<String, dynamic>?)?[path] as String?;
 
   // ---------- Rust 设置持久化 ----------
-  Future<void> loadFromRust() async {
+  Future<void> loadFromRust({bool restorePlayback = true}) async {
     final theme = SettingsStore.get('theme');
     if (theme == 'light') {
       themeMode = ThemeMode.light;
@@ -1084,8 +1084,8 @@ class AppState extends ChangeNotifier {
       } catch (_) {}
     }
     final sfw = SettingsStore.get('sfw');
-    if (sfw == '1') {
-      sfwMode = true;
+    sfwMode = sfw == '1';
+    if (sfwMode) {
       ageFilters
         ..clear()
         ..add(0);
@@ -1268,7 +1268,7 @@ class AppState extends ChangeNotifier {
       category = hc;
     }
     final haf = SettingsStore.get('home_age_filter');
-    if (haf != null && haf.isNotEmpty) {
+    if (haf != null) {
       // 兼容旧版保存的单值（0/1/2），新版使用逗号分隔的集合。
       ageFilters
         ..clear()
@@ -1299,10 +1299,12 @@ class AppState extends ChangeNotifier {
       doNotRememberPlaybackProgress = doNotRememberProgress == '1';
     }
     // 恢复上次播放状态（作品/队列/位置，默认暂停，不自动播放）
-    restorePlayState(
-      SettingsStore.get('play_state'),
-      checkpoint: SettingsStore.get('play_state_position'),
-    );
+    if (restorePlayback) {
+      restorePlayState(
+        SettingsStore.get('play_state'),
+        checkpoint: SettingsStore.get('play_state_position'),
+      );
+    }
   }
 
   void setThemeMode(ThemeMode m) {

@@ -100,6 +100,234 @@ abstract class AppLocalizations {
     Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hant'),
   ];
 
+  /// No description provided for @dataExport.
+  ///
+  /// In zh, this message translates to:
+  /// **'导出本地数据'**
+  String get dataExport;
+
+  /// No description provided for @dataImport.
+  ///
+  /// In zh, this message translates to:
+  /// **'导入本地数据'**
+  String get dataImport;
+
+  /// No description provided for @dataScope.
+  ///
+  /// In zh, this message translates to:
+  /// **'收藏、歌单、黑名单、历史与偏好；不含下载、歌词库、账号密码和密钥。'**
+  String get dataScope;
+
+  /// No description provided for @dataImportConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'将覆盖备份范围内的本地数据。导入前会保留一份本地副本，当前播放不受影响。'**
+  String get dataImportConfirm;
+
+  /// No description provided for @dataExportDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'数据已导出'**
+  String get dataExportDone;
+
+  /// No description provided for @dataImportDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'数据已导入'**
+  String get dataImportDone;
+
+  /// No description provided for @dataOperationFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'操作失败，请重试'**
+  String get dataOperationFailed;
+
+  /// No description provided for @backupInvalid.
+  ///
+  /// In zh, this message translates to:
+  /// **'备份格式无效、版本不兼容或文件已损坏'**
+  String get backupInvalid;
+
+  /// No description provided for @backupTooLarge.
+  ///
+  /// In zh, this message translates to:
+  /// **'备份超过 16 MB 上限'**
+  String get backupTooLarge;
+
+  /// No description provided for @webdavTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'WebDAV 云同步'**
+  String get webdavTitle;
+
+  /// No description provided for @webdavUrl.
+  ///
+  /// In zh, this message translates to:
+  /// **'服务器地址'**
+  String get webdavUrl;
+
+  /// No description provided for @webdavUsername.
+  ///
+  /// In zh, this message translates to:
+  /// **'账号'**
+  String get webdavUsername;
+
+  /// No description provided for @webdavPassword.
+  ///
+  /// In zh, this message translates to:
+  /// **'应用密码'**
+  String get webdavPassword;
+
+  /// No description provided for @webdavFolder.
+  ///
+  /// In zh, this message translates to:
+  /// **'同步文件夹'**
+  String get webdavFolder;
+
+  /// No description provided for @webdavAuto.
+  ///
+  /// In zh, this message translates to:
+  /// **'每小时自动同步'**
+  String get webdavAuto;
+
+  /// No description provided for @webdavAutoHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'应用运行期间每小时检查；回到前台时补查。无变化不上传。'**
+  String get webdavAutoHint;
+
+  /// No description provided for @webdavTest.
+  ///
+  /// In zh, this message translates to:
+  /// **'测试连接'**
+  String get webdavTest;
+
+  /// No description provided for @webdavTestDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接正常，测试文件已删除'**
+  String get webdavTestDone;
+
+  /// No description provided for @webdavSyncNow.
+  ///
+  /// In zh, this message translates to:
+  /// **'立即同步'**
+  String get webdavSyncNow;
+
+  /// 上传本地数据覆盖云端
+  String get webdavUploadOverwrite;
+
+  /// 使用云端数据覆盖本地
+  String get webdavDownloadOverwrite;
+
+  /// 合并本地与云端数据
+  String get webdavMergeData;
+
+  /// 收藏、黑名单、歌单和历史去重合并，设置冲突保留本地。
+  String get webdavMergeHint;
+
+  /// No description provided for @webdavSyncDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'同步完成'**
+  String get webdavSyncDone;
+
+  /// No description provided for @webdavNever.
+  ///
+  /// In zh, this message translates to:
+  /// **'尚未同步'**
+  String get webdavNever;
+
+  /// No description provided for @webdavSyncing.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在同步…'**
+  String get webdavSyncing;
+
+  /// No description provided for @webdavConflict.
+  ///
+  /// In zh, this message translates to:
+  /// **'本地和云端都有更改，请选择保留的版本'**
+  String get webdavConflict;
+
+  /// No description provided for @webdavUseLocal.
+  ///
+  /// In zh, this message translates to:
+  /// **'保留本地'**
+  String get webdavUseLocal;
+
+  /// No description provided for @webdavUseCloud.
+  ///
+  /// In zh, this message translates to:
+  /// **'使用云端'**
+  String get webdavUseCloud;
+
+  /// No description provided for @webdavConflictConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'所选版本将覆盖另一端的数据。使用云端前会保留本地副本。'**
+  String get webdavConflictConfirm;
+
+  /// No description provided for @webdavInvalidConfig.
+  ///
+  /// In zh, this message translates to:
+  /// **'请填写 HTTPS 地址、账号、应用密码及单层文件夹名称'**
+  String get webdavInvalidConfig;
+
+  /// No description provided for @webdavAuthError.
+  ///
+  /// In zh, this message translates to:
+  /// **'认证失败，请检查账号和应用密码'**
+  String get webdavAuthError;
+
+  /// No description provided for @webdavTimeout.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接超时，请稍后重试'**
+  String get webdavTimeout;
+
+  /// No description provided for @webdavNetworkError.
+  ///
+  /// In zh, this message translates to:
+  /// **'网络连接失败，请检查网络及服务器地址'**
+  String get webdavNetworkError;
+
+  /// No description provided for @webdavRateLimited.
+  ///
+  /// In zh, this message translates to:
+  /// **'服务器请求限流，请稍后重试'**
+  String get webdavRateLimited;
+
+  /// No description provided for @webdavRequestFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'同步失败，请检查服务器配置后重试'**
+  String get webdavRequestFailed;
+
+  /// No description provided for @webdavNoEtag.
+  ///
+  /// In zh, this message translates to:
+  /// **'服务器未提供可用的 ETag，无法安全覆盖云端文件'**
+  String get webdavNoEtag;
+
+  /// No description provided for @webdavNoBackup.
+  ///
+  /// In zh, this message translates to:
+  /// **'云端暂无备份'**
+  String get webdavNoBackup;
+
+  /// No description provided for @webdavCleanupFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'测试文件清理失败，请重试测试以检查连接'**
+  String get webdavCleanupFailed;
+
+  /// No description provided for @webdavBusy.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在处理数据，请稍候'**
+  String get webdavBusy;
+
   /// 应用名称，保留品牌原文。
   ///
   /// In zh, this message translates to:
@@ -2415,7 +2643,7 @@ abstract class AppLocalizations {
   /// pages/settings_page.dart: sections
   ///
   /// In zh, this message translates to:
-  /// **'其他'**
+  /// **'数据与网络'**
   String get settingsPageSectionsSection2;
 
   /// pages/settings_page.dart: sections
