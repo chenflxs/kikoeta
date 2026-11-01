@@ -1,5 +1,7 @@
 # Kikoeta
 
+[简体中文](README.md) | [繁體中文](README.zh-Hant.md) | [English](README.en.md) | [日本語](README.ja.md) | [Русский](README.ru.md)
+
 > 面向 ASMR 音声的本地收听客户端。支持 asmr.one 与基于 kikoeru-express 的自建站点，在 Windows 和 Android 上提供浏览、播放、歌词与本地资料管理体验。
 
 [![GitHub release](https://img.shields.io/github/v/release/chenflxs/kikoeta?display_name=tag&label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC)](https://github.com/chenflxs/kikoeta/releases) [![License](https://img.shields.io/github/license/chenflxs/kikoeta)](LICENSE) [![Flutter](https://img.shields.io/badge/Flutter-Material%203-02569B?logo=flutter)](https://flutter.dev/) [![Rust](https://img.shields.io/badge/Rust-Core-000000?logo=rust)](https://www.rust-lang.org/)
@@ -177,7 +179,7 @@ kikoeta/
 │   ├── android/            Android 原生媒体控制与悬浮歌词
 │   └── windows/            Windows 桌面壳
 ├── docs/                   文档与界面截图
-└── README.md               项目说明
+└── README*.md              各语言版本的项目说明
 ```
 
 详细源码定位请见 [文件功能索引](docs/文件功能索引.md)。

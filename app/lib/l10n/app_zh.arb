@@ -3760,5 +3760,39 @@
   "widgetsInputRowHintText": "搜索 RJ 号、作品名、声优…",
   "@widgetsInputRowHintText": {
     "description": "widgets.dart: _inputRow"
+  },
+  "batchTranslation": "批量翻译",
+  "batchTranslationPreparing": "正在匹配音轨和已有歌词…",
+  "batchTranslationFailed": "准备失败：{error}",
+  "batchTranslationSummary": "已加入 {added} 条音轨，跳过 {skipped} 条，{failed} 个作品失败",
+  "@batchTranslationFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "@batchTranslationSummary": {
+    "placeholders": {
+      "added": {
+        "type": "String"
+      },
+      "skipped": {
+        "type": "String"
+      },
+      "failed": {
+        "type": "String"
+      }
+    }
+  },
+  "batchTranslationExistingLyrics": "检测到 {count} 条音轨已有歌词，如何处理？",
+  "batchTranslationSkipExisting": "跳过已有歌词",
+  "batchTranslationRetranslate": "重新翻译",
+  "@batchTranslationExistingLyrics": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
   }
 }

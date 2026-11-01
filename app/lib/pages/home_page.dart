@@ -71,7 +71,7 @@ class _HomePageState extends State<HomePage> {
     if (app.takePendingClear()) {
       _clearSearchState();
       if (mounted) setState(() {});
-      return;
+      // 同一次通知也可能包含「再次点击首页」的刷新请求，继续处理。
     }
     final pending = app.peekPendingSearch();
     if (pending != null) {

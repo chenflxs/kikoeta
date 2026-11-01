@@ -834,5 +834,12 @@
   "audioChannelsOriginal": "Original",
   "audioChannelsSwap": "Swap left/right",
   "audioChannelsMerge": "Merge channels",
-  "widgetsInputRowHintText": "Search RJ ID, title, voice actor…"
+  "widgetsInputRowHintText": "Search RJ ID, title, voice actor…",
+  "batchTranslation": "Batch translation",
+  "batchTranslationPreparing": "Matching tracks and existing lyrics…",
+  "batchTranslationFailed": "Preparation failed: {error}",
+  "batchTranslationSummary": "Queued {added} tracks, skipped {skipped}; {failed} works failed",
+  "batchTranslationExistingLyrics": "{count} tracks already have lyrics. How would you like to proceed?",
+  "batchTranslationSkipExisting": "Skip existing lyrics",
+  "batchTranslationRetranslate": "Translate again"
 }

@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'data.dart';
 import 'pages/advanced_filter_page.dart';
@@ -977,18 +978,106 @@ List<AdvancedSearchParameter> advancedSearchParameterSuggestions(
       .toList(growable: false);
 }
 
-/// 搜索框中的高级参数联想列表：首页和下载页共用。
-class AdvancedSearchSuggestions extends StatelessWidget {
+/// 保留内联面板，沿用 RawAutocomplete 的快捷键与高亮通知机制。
+class AdvancedSearchAutocomplete extends StatefulWidget {
   final TextEditingController controller;
+  final FocusNode focusNode;
+  final bool enabled;
   final ValueChanged<String>? onChanged;
+  final Widget Function(
+    BuildContext context,
+    List<AdvancedSearchParameter> suggestions,
+    ValueChanged<AdvancedSearchParameter> onSelected,
+  )
+  builder;
 
-  const AdvancedSearchSuggestions({
+  const AdvancedSearchAutocomplete({
     super.key,
     required this.controller,
+    required this.focusNode,
+    required this.builder,
+    this.enabled = true,
     this.onChanged,
   });
 
+  @override
+  State<AdvancedSearchAutocomplete> createState() =>
+      _AdvancedSearchAutocompleteState();
+}
+
+class _AdvancedSearchAutocompleteState
+    extends State<AdvancedSearchAutocomplete> {
+  final _highlightedIndex = ValueNotifier<int>(0);
+  bool _dismissed = false;
+
+  List<AdvancedSearchParameter> get _suggestions {
+    final value = widget.controller.value;
+    if (!widget.enabled ||
+        !widget.focusNode.hasFocus ||
+        _dismissed ||
+        (value.selection.isValid && !value.selection.isCollapsed) ||
+        (value.composing.isValid && !value.composing.isCollapsed)) {
+      return const [];
+    }
+    return advancedSearchParameterSuggestions(
+      value.text,
+      cursor: value.selection.isValid ? value.selection.baseOffset : null,
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_reset);
+    widget.focusNode.addListener(_reset);
+  }
+
+  @override
+  void didUpdateWidget(AdvancedSearchAutocomplete oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_reset);
+      widget.controller.addListener(_reset);
+      _reset();
+    }
+    if (oldWidget.focusNode != widget.focusNode) {
+      oldWidget.focusNode.removeListener(_reset);
+      widget.focusNode.addListener(_reset);
+      _reset();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_reset);
+    widget.focusNode.removeListener(_reset);
+    _highlightedIndex.dispose();
+    super.dispose();
+  }
+
+  void _reset() {
+    setState(() => _dismissed = false);
+    _highlightedIndex.value = 0;
+  }
+
+  void _move(int delta) {
+    final suggestions = _suggestions;
+    if (suggestions.isEmpty) return;
+    _highlightedIndex.value = (_highlightedIndex.value + delta).clamp(
+      0,
+      suggestions.length - 1,
+    );
+  }
+
+  void _accept() {
+    final suggestions = _suggestions;
+    if (suggestions.isNotEmpty) {
+      _insert(suggestions[_highlightedIndex.value]);
+    }
+  }
+
   void _insert(AdvancedSearchParameter item) {
+    final controller = widget.controller;
     final value = controller.value;
     final text = value.text;
     final rawCursor = value.selection.isValid
@@ -1006,7 +1095,86 @@ class AdvancedSearchSuggestions extends StatelessWidget {
       selection: TextSelection.collapsed(offset: nextCursor),
       composing: TextRange.empty,
     );
-    onChanged?.call(nextText);
+    setState(() => _dismissed = true);
+    widget.focusNode.requestFocus();
+    widget.onChanged?.call(nextText);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final suggestions = _suggestions;
+    return TextFieldTapRegion(
+      child: CallbackShortcuts(
+        bindings: suggestions.isEmpty
+            ? const {}
+            : {
+                const SingleActivator(LogicalKeyboardKey.arrowUp): () =>
+                    _move(-1),
+                const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
+                    _move(1),
+                const SingleActivator(LogicalKeyboardKey.enter): _accept,
+                const SingleActivator(LogicalKeyboardKey.numpadEnter): _accept,
+                const SingleActivator(LogicalKeyboardKey.escape): () =>
+                    setState(() => _dismissed = true),
+              },
+        child: AutocompleteHighlightedOption(
+          highlightIndexNotifier: _highlightedIndex,
+          child: Builder(
+            builder: (context) => widget.builder(context, suggestions, _insert),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 搜索框中的高级参数联想列表：首页和下载页共用。
+class AdvancedSearchSuggestions extends StatefulWidget {
+  final List<AdvancedSearchParameter> suggestions;
+  final ValueChanged<AdvancedSearchParameter> onSelected;
+
+  const AdvancedSearchSuggestions({
+    super.key,
+    required this.suggestions,
+    required this.onSelected,
+  });
+
+  @override
+  State<AdvancedSearchSuggestions> createState() =>
+      _AdvancedSearchSuggestionsState();
+}
+
+class _AdvancedSearchSuggestionsState extends State<AdvancedSearchSuggestions> {
+  final _scrollController = ScrollController();
+  final _itemKeys = <String, GlobalKey>{};
+  int? _lastHighlightedIndex;
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _ensureVisible(int index) {
+    final token = widget.suggestions[index].token;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          !_scrollController.hasClients ||
+          index != _lastHighlightedIndex ||
+          index >= widget.suggestions.length ||
+          widget.suggestions[index].token != token) {
+        return;
+      }
+      final itemContext = _itemKeys[token]?.currentContext;
+      if (itemContext != null) {
+        Scrollable.ensureVisible(itemContext, alignment: 0.5);
+      } else {
+        // 与 Material Autocomplete 一致：未构建的边界项先滚到列表端点。
+        _scrollController.jumpTo(
+          index == 0 ? 0 : _scrollController.position.maxScrollExtent,
+        );
+      }
+    });
   }
 
   @override
@@ -1014,14 +1182,13 @@ class AdvancedSearchSuggestions extends StatelessWidget {
     final p = Theme.of(context).brightness == Brightness.dark
         ? AppColors.dark
         : AppColors.light;
-    final rawCursor = controller.selection.isValid
-        ? controller.selection.baseOffset
-        : controller.text.length;
-    final suggestions = advancedSearchParameterSuggestions(
-      controller.text,
-      cursor: rawCursor,
-    );
+    final suggestions = widget.suggestions;
     if (suggestions.isEmpty) return const SizedBox.shrink();
+    final highlightedIndex = AutocompleteHighlightedOption.of(context);
+    if (_lastHighlightedIndex != highlightedIndex) {
+      _lastHighlightedIndex = highlightedIndex;
+      _ensureVisible(highlightedIndex);
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1039,39 +1206,53 @@ class AdvancedSearchSuggestions extends StatelessWidget {
         ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 320),
           child: SmoothListView.separated(
+            controller: _scrollController,
             shrinkWrap: true,
             itemCount: suggestions.length,
             separatorBuilder: (_, _) => Divider(height: 1, color: p.line),
             itemBuilder: (_, index) {
               final item = suggestions[index];
-              return InkWell(
-                onTap: () => _insert(item),
-                borderRadius: BorderRadius.circular(9),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 4,
-                    vertical: 7,
-                  ),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 108,
-                        child: Text(
-                          item.token,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: p.accent,
-                            fontWeight: FontWeight.w700,
+              return Semantics(
+                selected: index == highlightedIndex,
+                // 将背景和水波纹画在条目内，避免被搜索栏的不透明背景遮住。
+                child: Material(
+                  color: index == highlightedIndex
+                      ? p.accent.withValues(alpha: .16)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(9),
+                  animationDuration: Duration.zero,
+                  child: InkWell(
+                    key: _itemKeys.putIfAbsent(item.token, () => GlobalKey()),
+                    canRequestFocus: false,
+                    onTap: () => widget.onSelected(item),
+                    borderRadius: BorderRadius.circular(9),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 7,
+                      ),
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 108,
+                            child: Text(
+                              item.token,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: p.accent,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                           ),
-                        ),
+                          Expanded(
+                            child: Text(
+                              item.description,
+                              style: TextStyle(fontSize: 12, color: p.muted),
+                            ),
+                          ),
+                        ],
                       ),
-                      Expanded(
-                        child: Text(
-                          item.description,
-                          style: TextStyle(fontSize: 12, color: p.muted),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               );
@@ -1205,6 +1386,7 @@ class _HomeSearchBarState extends State<HomeSearchBar> {
   final TextEditingController _ctrl = TextEditingController();
   final FocusNode _focus = FocusNode();
   late String _historySig;
+  late String _lastSearchQuery;
 
   AppState get app => widget.app;
   Palette get p => Theme.of(context).brightness == Brightness.dark
@@ -1218,6 +1400,7 @@ class _HomeSearchBarState extends State<HomeSearchBar> {
         ? app.searchQuery
         : (app.peekPendingSearch() ?? '');
     _historySig = _currentHistorySig;
+    _lastSearchQuery = app.searchQuery;
     // 搜索框获得焦点即自动展开
     _focus.addListener(_onFocusChanged);
     app.addListener(_onAppChanged);
@@ -1233,12 +1416,18 @@ class _HomeSearchBarState extends State<HomeSearchBar> {
   }
 
   void _onAppChanged() {
+    final queryChanged = _lastSearchQuery != app.searchQuery;
+    _lastSearchQuery = app.searchQuery;
     final pending = app.takePendingSearch();
     if (pending != null) {
       _ctrl.text = pending;
       _focus.unfocus();
       app.setSearchExpanded(false);
       return;
+    }
+    if (queryChanged) {
+      _ctrl.text = app.searchQuery;
+      if (mounted) setState(() {});
     }
     if (!app.searchExpanded && _focus.hasFocus) {
       _focus.unfocus();
@@ -1300,38 +1489,44 @@ class _HomeSearchBarState extends State<HomeSearchBar> {
 
   Widget _searchBar(double panelMax) {
     final expanded = app.searchExpanded;
-    return AnimatedSize(
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
-      alignment: Alignment.topCenter,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        decoration: BoxDecoration(
-          color: p.surface,
-          border: Border.all(color: expanded ? p.accent : p.line),
-          borderRadius: BorderRadius.circular(expanded ? 16 : 15),
-          boxShadow: expanded
-              ? [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: .24),
-                    blurRadius: 32,
-                    offset: const Offset(0, 14),
-                  ),
-                ]
-              : null,
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _inputRow(),
-            if (expanded)
-              AnimatedOpacity(
-                duration: const Duration(milliseconds: 160),
-                opacity: 1,
-                child: _historyPanel(panelMax),
-              ),
-          ],
+    return AdvancedSearchAutocomplete(
+      controller: _ctrl,
+      focusNode: _focus,
+      enabled: expanded,
+      onChanged: (_) => setState(() {}),
+      builder: (context, suggestions, onSelected) => AnimatedSize(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        alignment: Alignment.topCenter,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          decoration: BoxDecoration(
+            color: p.surface,
+            border: Border.all(color: expanded ? p.accent : p.line),
+            borderRadius: BorderRadius.circular(expanded ? 16 : 15),
+            boxShadow: expanded
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: .24),
+                      blurRadius: 32,
+                      offset: const Offset(0, 14),
+                    ),
+                  ]
+                : null,
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _inputRow(),
+              if (expanded)
+                AnimatedOpacity(
+                  duration: const Duration(milliseconds: 160),
+                  opacity: 1,
+                  child: _historyPanel(panelMax, suggestions, onSelected),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -1435,21 +1630,19 @@ class _HomeSearchBarState extends State<HomeSearchBar> {
     );
   }
 
-  Widget _historyPanel(double maxH) {
-    final showAdvancedSuggestions = advancedSearchParameterSuggestions(
-      _ctrl.text,
-      cursor: _ctrl.selection.isValid
-          ? _ctrl.selection.baseOffset
-          : _ctrl.text.length,
-    ).isNotEmpty;
+  Widget _historyPanel(
+    double maxH,
+    List<AdvancedSearchParameter> suggestions,
+    ValueChanged<AdvancedSearchParameter> onSelected,
+  ) {
     return ConstrainedBox(
       constraints: BoxConstraints(maxHeight: maxH),
       child: SmoothSingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(13, 10, 13, 14),
-        child: showAdvancedSuggestions
+        child: suggestions.isNotEmpty
             ? AdvancedSearchSuggestions(
-                controller: _ctrl,
-                onChanged: (_) => setState(() {}),
+                suggestions: suggestions,
+                onSelected: onSelected,
               )
             : Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

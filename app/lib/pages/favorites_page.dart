@@ -6,10 +6,15 @@ import 'package:flutter/services.dart';
 import '../data.dart';
 import '../routes.dart';
 import '../services/api_service.dart';
+import '../services/dictation_batch_importer.dart';
+import '../services/dictation_queue.dart';
+import '../services/lyrics_library_service.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import '../widgets/playlist_picker.dart';
+import '../widgets/dictation_batch_import_dialog.dart';
 import '../l10n/strings.dart';
+import 'dictation_translation_page.dart';
 
 /// 静默比对用的作品指纹：覆盖卡片显示与收藏判定会用到的字段。
 String favoritesWorkSignature(Work w) => [
@@ -84,6 +89,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
   late bool _seenSfwMode;
   bool _selecting = false;
   final Set<String> _selected = {};
+  bool _batchOpening = false;
 
   AppState get app => widget.app;
   Palette get p => Theme.of(context).brightness == Brightness.dark
@@ -345,6 +351,91 @@ class _FavoritesPageState extends State<FavoritesPage> {
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _openBatchTranslation() async {
+    if (_batchOpening ||
+        !app.customServer ||
+        app.customSites.isEmpty ||
+        app.sfwMode) {
+      return;
+    }
+    final l10n = context.l10n;
+    final epoch = app.serverEpoch;
+    final base = ApiService.resolveBase(app);
+    final playlistId = _reviewsMode ? null : _playlist?.id;
+    final order = _reviewSort;
+    final sort = _reviewOrderAsc ? 'asc' : 'desc';
+    final filter = _reviewFilter;
+    final token = ApiService.tokenFor(app, base);
+    bool sourceChanged() =>
+        !mounted ||
+        app.serverEpoch != epoch ||
+        app.sfwMode ||
+        !app.customServer ||
+        ApiService.resolveBase(app) != base;
+    setState(() => _batchOpening = true);
+    try {
+      final result = await showDictationBatchImportDialog(
+        context,
+        sourceChanged: sourceChanged,
+        importer: DictationBatchImporter(
+          fetchPage: (page) => playlistId == null
+              ? ApiService.fetchMyReviews(
+                  app,
+                  page: page,
+                  order: order,
+                  sort: sort,
+                  filter: filter,
+                )
+              : ApiService.fetchPlaylistWorks(app, playlistId, page: page),
+          fetchTracks: (work) {
+            final id = work.apiId;
+            if (id == null) throw StateError('Missing work ID: ${work.rj}');
+            return ApiService.fetchTracks(app, id, forceRefresh: true);
+          },
+          fetchLocalLyrics: (work) async => [
+            for (final file in await LyricsLibraryService.instance.listFiles(
+              workId: work.rj,
+            ))
+              MediaNode(
+                title: file.name,
+                type: 'file',
+                path: file.relativePath,
+              ),
+          ],
+        ),
+      );
+      if (!mounted || sourceChanged() || result == null) return;
+      final queue = DictationQueue.forApp(app);
+      var addedTracks = 0;
+      var duplicateTracks = 0;
+      for (final batch in result.batches) {
+        final entry = queue.enqueue(
+          work: batch.work,
+          tracks: batch.tracks,
+          automaticallyMatched: true,
+          sourceHeaders: token == null || token.isEmpty
+              ? const {}
+              : {'Authorization': 'Bearer $token'},
+        );
+        addedTracks += entry?.tracks.length ?? 0;
+        duplicateTracks += batch.tracks.length - (entry?.tracks.length ?? 0);
+      }
+      _toast(
+        l10n.batchTranslationSummary(
+          addedTracks.toString(),
+          (result.skippedTracks + duplicateTracks).toString(),
+          result.failedWorks.length.toString(),
+        ),
+      );
+      if (queue.entries.isEmpty) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => DictationTranslationPage(app: app)),
+      );
+    } finally {
+      if (mounted) setState(() => _batchOpening = false);
+    }
   }
 
   /// 歌单模式下的标题栏操作；「收藏」模式保持原有控件不变。
@@ -630,6 +721,20 @@ class _FavoritesPageState extends State<FavoritesPage> {
                 ),
                 if (!_reviewsMode && _playlist != null)
                   ..._playlistHeaderActions(),
+                if (app.customServer &&
+                    app.customSites.isNotEmpty &&
+                    !app.sfwMode)
+                  IconButton(
+                    onPressed: _batchOpening || _works.isEmpty
+                        ? null
+                        : _openBatchTranslation,
+                    tooltip: context.l10n.batchTranslation,
+                    icon: Icon(
+                      Icons.translate,
+                      size: 22,
+                      color: _batchOpening || _works.isEmpty ? p.dim : p.accent,
+                    ),
+                  ),
                 IconButton(
                   onPressed: _openPlaylistPicker,
                   tooltip: context.l10n.favoritesPageBuildTooltip,

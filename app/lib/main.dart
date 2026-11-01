@@ -1174,11 +1174,13 @@ class _ShellState extends State<Shell> {
               ),
             ),
             // 首页搜索栏浮在遮罩之上，保持可交互
-            if (app.tab == 0)
-              Positioned(
-                top: 0,
-                left: wide ? 80 + 1 + 16 : 16,
-                right: 16,
+            Positioned(
+              top: 0,
+              left: wide ? 80 + 1 + 16 : 16,
+              right: 16,
+              child: Visibility(
+                visible: app.tab == 0,
+                maintainState: true,
                 child: SafeArea(
                   // 避让状态栏后，66 = 6 顶部内边距 + 48 标题栏 + 12 间距
                   top: true,
@@ -1192,6 +1194,7 @@ class _ShellState extends State<Shell> {
                   ),
                 ),
               ),
+            ),
           ],
         );
       },

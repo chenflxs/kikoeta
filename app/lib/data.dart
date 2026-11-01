@@ -469,8 +469,8 @@ class AppState extends ChangeNotifier {
   void selectTab(int value) {
     final reselected = tab == value;
     tab = value;
-    // 返回/重新点击首页时退出搜索结果，避免搜索框已消失但首页仍停留在搜索态。
-    if (value == 0 && searchQuery.isNotEmpty) {
+    // 仅再次点击当前首页时退出搜索；从其他页返回时保留搜索与列表位置。
+    if (reselected && value == 0 && searchQuery.isNotEmpty) {
       searchQuery = '';
       _pendingSearch = null;
       pendingClear = true;

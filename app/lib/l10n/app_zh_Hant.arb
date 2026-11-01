@@ -834,5 +834,12 @@
   "audioChannelsOriginal": "原始聲道",
   "audioChannelsSwap": "左右反轉",
   "audioChannelsMerge": "聲道合併",
-  "widgetsInputRowHintText": "搜尋 RJ 號、作品名、聲優…"
+  "widgetsInputRowHintText": "搜尋 RJ 號、作品名、聲優…",
+  "batchTranslation": "批次翻譯",
+  "batchTranslationPreparing": "正在比對音軌與已有歌詞…",
+  "batchTranslationFailed": "準備失敗：{error}",
+  "batchTranslationSummary": "已加入 {added} 條音軌，略過 {skipped} 條，{failed} 個作品失敗",
+  "batchTranslationExistingLyrics": "偵測到 {count} 條音軌已有歌詞，要如何處理？",
+  "batchTranslationSkipExisting": "略過已有歌詞",
+  "batchTranslationRetranslate": "重新翻譯"
 }

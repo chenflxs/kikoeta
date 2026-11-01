@@ -895,6 +895,26 @@ class ApiService {
     return int.tryParse(segments.last);
   }
 
+  /// Metadata-only check using the same track matching rules as playback.
+  /// Build candidates once per work; never download audio or lyric contents.
+  static Set<String> tracksWithLyrics(
+    List<MediaNode> nodes,
+    List<MediaNode> tracks,
+  ) {
+    final candidates = _findLyricCandidates(
+      nodes,
+    ).where((candidate) => !_isPlainTextLyric(candidate.title)).toList();
+    return {
+      for (final track in tracks)
+        if (_trackMatchedLyrics(
+          candidates,
+          trackTitle: track.title,
+          trackPath: track.path,
+        ).isNotEmpty)
+          track.path,
+    };
+  }
+
   /// 歌词候选：收集歌词/字幕文件并按中文优先打分
   static List<_LyricCandidate> _findLyricCandidates(
     List<MediaNode> nodes, [

@@ -36,8 +36,6 @@ class DictationTranslationPage extends StatefulWidget {
       _DictationTranslationPageState();
 }
 
-final Expando<DictationQueue> _dictationSessions = Expando();
-
 class _DictationTranslationPageState extends State<DictationTranslationPage> {
   static const _localEndpoint = '127.0.0.1:2370';
   late final TextEditingController _networkController;
@@ -57,7 +55,7 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
   @override
   void initState() {
     super.initState();
-    _session = _dictationSessions[widget.app] ??= DictationQueue();
+    _session = DictationQueue.forApp(widget.app);
     if (widget.work != null && widget.tracks.isNotEmpty) {
       final token = ApiService.tokenFor(app, ApiService.resolveBase(app));
       _session.enqueue(

@@ -2007,7 +2007,7 @@ class _SettingsPageState extends State<SettingsPage> {
       'system': context.l10n.followSystem,
       'zh-CN': context.l10n.simplifiedChinese,
       'zh-TW': context.l10n.traditionalChinese,
-      'ja': '日本語',
+      'ja': '日本語 (beta)',
       'en': 'English (beta)',
       'ru': 'Русский',
     };

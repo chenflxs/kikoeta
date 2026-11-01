@@ -9,6 +9,19 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
+  String get webdavUploadOverwrite => 'Upload local data and overwrite cloud';
+
+  @override
+  String get webdavDownloadOverwrite => 'Overwrite local data with cloud data';
+
+  @override
+  String get webdavMergeData => 'Merge local and cloud data';
+
+  @override
+  String get webdavMergeHint =>
+      'Combines favorites, blacklist, playlists and history. Keeps local preferences on conflicts.';
+
+  @override
   String get dataExport => 'Export local data';
 
   @override
@@ -67,18 +80,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get webdavSyncNow => 'Sync now';
-
-  @override
-  String get webdavUploadOverwrite => 'Upload local data and overwrite cloud';
-
-  @override
-  String get webdavDownloadOverwrite => 'Overwrite local data with cloud data';
-
-  @override
-  String get webdavMergeData => 'Merge local and cloud data';
-
-  @override
-  String get webdavMergeHint => 'Combines favorites, blacklist, playlists and history. Keeps local preferences on conflicts.';
 
   @override
   String get webdavSyncDone => 'Sync complete';
@@ -2981,4 +2982,32 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get widgetsInputRowHintText => 'Search RJ ID, title, voice actor…';
+
+  @override
+  String get batchTranslation => 'Batch translation';
+
+  @override
+  String get batchTranslationPreparing =>
+      'Matching tracks and existing lyrics…';
+
+  @override
+  String batchTranslationFailed(String error) {
+    return 'Preparation failed: $error';
+  }
+
+  @override
+  String batchTranslationSummary(String added, String skipped, String failed) {
+    return 'Queued $added tracks, skipped $skipped; $failed works failed';
+  }
+
+  @override
+  String batchTranslationExistingLyrics(String count) {
+    return '$count tracks already have lyrics. How would you like to proceed?';
+  }
+
+  @override
+  String get batchTranslationSkipExisting => 'Skip existing lyrics';
+
+  @override
+  String get batchTranslationRetranslate => 'Translate again';
 }

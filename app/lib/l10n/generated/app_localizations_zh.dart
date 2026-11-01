@@ -9,6 +9,18 @@ class AppLocalizationsZh extends AppLocalizations {
   AppLocalizationsZh([String locale = 'zh']) : super(locale);
 
   @override
+  String get webdavUploadOverwrite => '上传本地数据覆盖云端';
+
+  @override
+  String get webdavDownloadOverwrite => '使用云端数据覆盖本地';
+
+  @override
+  String get webdavMergeData => '合并本地与云端数据';
+
+  @override
+  String get webdavMergeHint => '收藏、黑名单、歌单和历史去重合并，设置冲突保留本地。';
+
+  @override
   String get dataExport => '导出本地数据';
 
   @override
@@ -64,18 +76,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get webdavSyncNow => '立即同步';
-
-  @override
-  String get webdavUploadOverwrite => '上传本地数据覆盖云端';
-
-  @override
-  String get webdavDownloadOverwrite => '使用云端数据覆盖本地';
-
-  @override
-  String get webdavMergeData => '合并本地与云端数据';
-
-  @override
-  String get webdavMergeHint => '收藏、黑名单、歌单和历史去重合并，设置冲突保留本地。';
 
   @override
   String get webdavSyncDone => '同步完成';
@@ -2804,6 +2804,33 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get widgetsInputRowHintText => '搜索 RJ 号、作品名、声优…';
+
+  @override
+  String get batchTranslation => '批量翻译';
+
+  @override
+  String get batchTranslationPreparing => '正在匹配音轨和已有歌词…';
+
+  @override
+  String batchTranslationFailed(String error) {
+    return '准备失败：$error';
+  }
+
+  @override
+  String batchTranslationSummary(String added, String skipped, String failed) {
+    return '已加入 $added 条音轨，跳过 $skipped 条，$failed 个作品失败';
+  }
+
+  @override
+  String batchTranslationExistingLyrics(String count) {
+    return '检测到 $count 条音轨已有歌词，如何处理？';
+  }
+
+  @override
+  String get batchTranslationSkipExisting => '跳过已有歌词';
+
+  @override
+  String get batchTranslationRetranslate => '重新翻译';
 }
 
 /// The translations for Chinese, as used in China (`zh_CN`).
@@ -2814,6 +2841,18 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
 /// The translations for Chinese, using the Han script (`zh_Hant`).
 class AppLocalizationsZhHant extends AppLocalizationsZh {
   AppLocalizationsZhHant() : super('zh_Hant');
+
+  @override
+  String get webdavUploadOverwrite => '上傳本機資料覆蓋雲端';
+
+  @override
+  String get webdavDownloadOverwrite => '使用雲端資料覆蓋本機';
+
+  @override
+  String get webdavMergeData => '合併本機與雲端資料';
+
+  @override
+  String get webdavMergeHint => '收藏、黑名單、歌單和歷史去重合併，設定衝突保留本機。';
 
   @override
   String get dataExport => '匯出本機資料';
@@ -2871,18 +2910,6 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get webdavSyncNow => '立即同步';
-
-  @override
-  String get webdavUploadOverwrite => '上傳本機資料覆蓋雲端';
-
-  @override
-  String get webdavDownloadOverwrite => '使用雲端資料覆蓋本機';
-
-  @override
-  String get webdavMergeData => '合併本機與雲端資料';
-
-  @override
-  String get webdavMergeHint => '收藏、黑名單、歌單和歷史去重合併，設定衝突保留本機。';
 
   @override
   String get webdavSyncDone => '同步完成';
@@ -5612,4 +5639,31 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get widgetsInputRowHintText => '搜尋 RJ 號、作品名、聲優…';
+
+  @override
+  String get batchTranslation => '批次翻譯';
+
+  @override
+  String get batchTranslationPreparing => '正在比對音軌與已有歌詞…';
+
+  @override
+  String batchTranslationFailed(String error) {
+    return '準備失敗：$error';
+  }
+
+  @override
+  String batchTranslationSummary(String added, String skipped, String failed) {
+    return '已加入 $added 條音軌，略過 $skipped 條，$failed 個作品失敗';
+  }
+
+  @override
+  String batchTranslationExistingLyrics(String count) {
+    return '偵測到 $count 條音軌已有歌詞，要如何處理？';
+  }
+
+  @override
+  String get batchTranslationSkipExisting => '略過已有歌詞';
+
+  @override
+  String get batchTranslationRetranslate => '重新翻譯';
 }

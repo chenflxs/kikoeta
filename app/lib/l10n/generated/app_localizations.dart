@@ -6,6 +6,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/intl.dart' as intl;
 
 import 'app_localizations_en.dart';
+import 'app_localizations_ja.dart';
 import 'app_localizations_zh.dart';
 
 // ignore_for_file: type=lint
@@ -96,9 +97,34 @@ abstract class AppLocalizations {
   static const List<Locale> supportedLocales = <Locale>[
     Locale('en'),
     Locale('zh', 'CN'),
+    Locale('ja'),
     Locale('zh'),
     Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hant'),
   ];
+
+  /// No description provided for @webdavUploadOverwrite.
+  ///
+  /// In zh, this message translates to:
+  /// **'上传本地数据覆盖云端'**
+  String get webdavUploadOverwrite;
+
+  /// No description provided for @webdavDownloadOverwrite.
+  ///
+  /// In zh, this message translates to:
+  /// **'使用云端数据覆盖本地'**
+  String get webdavDownloadOverwrite;
+
+  /// No description provided for @webdavMergeData.
+  ///
+  /// In zh, this message translates to:
+  /// **'合并本地与云端数据'**
+  String get webdavMergeData;
+
+  /// No description provided for @webdavMergeHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'收藏、黑名单、歌单和历史去重合并，设置冲突保留本地。'**
+  String get webdavMergeHint;
 
   /// No description provided for @dataExport.
   ///
@@ -213,18 +239,6 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'立即同步'**
   String get webdavSyncNow;
-
-  /// 上传本地数据覆盖云端
-  String get webdavUploadOverwrite;
-
-  /// 使用云端数据覆盖本地
-  String get webdavDownloadOverwrite;
-
-  /// 合并本地与云端数据
-  String get webdavMergeData;
-
-  /// 收藏、黑名单、歌单和历史去重合并，设置冲突保留本地。
-  String get webdavMergeHint;
 
   /// No description provided for @webdavSyncDone.
   ///
@@ -5120,6 +5134,48 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'搜索 RJ 号、作品名、声优…'**
   String get widgetsInputRowHintText;
+
+  /// No description provided for @batchTranslation.
+  ///
+  /// In zh, this message translates to:
+  /// **'批量翻译'**
+  String get batchTranslation;
+
+  /// No description provided for @batchTranslationPreparing.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在匹配音轨和已有歌词…'**
+  String get batchTranslationPreparing;
+
+  /// No description provided for @batchTranslationFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'准备失败：{error}'**
+  String batchTranslationFailed(String error);
+
+  /// No description provided for @batchTranslationSummary.
+  ///
+  /// In zh, this message translates to:
+  /// **'已加入 {added} 条音轨，跳过 {skipped} 条，{failed} 个作品失败'**
+  String batchTranslationSummary(String added, String skipped, String failed);
+
+  /// No description provided for @batchTranslationExistingLyrics.
+  ///
+  /// In zh, this message translates to:
+  /// **'检测到 {count} 条音轨已有歌词，如何处理？'**
+  String batchTranslationExistingLyrics(String count);
+
+  /// No description provided for @batchTranslationSkipExisting.
+  ///
+  /// In zh, this message translates to:
+  /// **'跳过已有歌词'**
+  String get batchTranslationSkipExisting;
+
+  /// No description provided for @batchTranslationRetranslate.
+  ///
+  /// In zh, this message translates to:
+  /// **'重新翻译'**
+  String get batchTranslationRetranslate;
 }
 
 class _AppLocalizationsDelegate
@@ -5133,7 +5189,7 @@ class _AppLocalizationsDelegate
 
   @override
   bool isSupported(Locale locale) =>
-      <String>['en', 'zh'].contains(locale.languageCode);
+      <String>['en', 'ja', 'zh'].contains(locale.languageCode);
 
   @override
   bool shouldReload(_AppLocalizationsDelegate old) => false;
@@ -5168,6 +5224,8 @@ AppLocalizations lookupAppLocalizations(Locale locale) {
   switch (locale.languageCode) {
     case 'en':
       return AppLocalizationsEn();
+    case 'ja':
+      return AppLocalizationsJa();
     case 'zh':
       return AppLocalizationsZh();
   }

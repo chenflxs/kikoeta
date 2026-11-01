@@ -32,6 +32,11 @@ class DictationQueueEntry {
 /// Display order is newest first; execution takes the last pending entry.
 /// Owned by the app session so navigating away does not stop the queue.
 class DictationQueue extends ChangeNotifier {
+  static final Expando<DictationQueue> _sessions = Expando();
+
+  static DictationQueue forApp(AppState app) =>
+      _sessions[app] ??= DictationQueue();
+
   final List<DictationQueueEntry> _entries = [];
   final Map<String, int> _nextBatch = {};
   int pendingRevision = 0;
