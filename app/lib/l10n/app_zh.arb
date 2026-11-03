@@ -2490,10 +2490,11 @@
   "@settingsPageSectionsInput5": {
     "description": "pages/settings_page.dart: sections"
   },
-  "settingsPageSectionsSub11": "日语 → {translationTargetLabel}",
+  "settingsPageSectionsSub11": "{translationSourceLabel} → {translationTargetLabel}",
   "@settingsPageSectionsSub11": {
     "description": "pages/settings_page.dart: sections",
     "placeholders": {
+      "translationSourceLabel": {"type": "String"},
       "translationTargetLabel": {
         "type": "String"
       }
@@ -3794,5 +3795,15 @@
         "type": "String"
       }
     }
-  }
+  },
+  "translationSourceLanguage": "翻译源语言",
+  "@translationSourceLanguage": {"description": "翻译源语言选择"},
+  "translationSourceAuto": "自动",
+  "@translationSourceAuto": {"description": "翻译源语言选择"},
+  "translationSourceJapanese": "日",
+  "@translationSourceJapanese": {"description": "翻译源语言选择"},
+  "translationSourceChinese": "中",
+  "@translationSourceChinese": {"description": "翻译源语言选择"},
+  "translationSourceEnglish": "英",
+  "@translationSourceEnglish": {"description": "翻译源语言选择"}
 }

@@ -19,6 +19,7 @@ class PortableBackup {
     'ui_language': 'system',
     'engine': 'google',
     'translation_target': 'zh-CN',
+    'translation_source': 'auto',
     'volume': '100',
     'clipboard_detect': '1',
     'ls_cover': '0',
@@ -229,11 +230,15 @@ class PortableBackup {
         }
         settings[entry.key as String] = entry.value as String;
       }
-      if (settings.length != defaults.length ||
+      if (defaults.keys.any(
+            (key) => key != 'translation_source' && !settings.containsKey(key),
+          ) ||
           raw['sha256'] !=
               sha256.convert(utf8.encode(_canonical(settings))).toString()) {
         throw const FormatException('backupInvalid');
       }
+      // Version 1 backups created before source selection default to auto.
+      settings.putIfAbsent('translation_source', () => 'auto');
       _validate(settings);
       return PortableBackup._(settings);
     });
@@ -351,6 +356,7 @@ class PortableBackup {
       'theme': ['system', 'light', 'dark'],
       'ui_language': ['system', 'zh-CN', 'zh-TW', 'en'],
       'translation_target': ['ui', 'zh-CN', 'zh-TW', 'en'],
+      'translation_source': ['auto', 'ja', 'zh', 'en'],
       'audio_channel_mode': ['stereo', 'swap', 'mono'],
       'initial_path_behavior': ['auto', 'root'],
       'home_category': ['all', 'hot', 'rec'],

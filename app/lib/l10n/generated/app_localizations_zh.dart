@@ -1881,8 +1881,11 @@ class AppLocalizationsZh extends AppLocalizations {
       'https://api.openai.com/v1 或 http://127.0.0.1:11434/v1';
 
   @override
-  String settingsPageSectionsSub11(String translationTargetLabel) {
-    return '日语 → $translationTargetLabel';
+  String settingsPageSectionsSub11(
+    String translationSourceLabel,
+    String translationTargetLabel,
+  ) {
+    return '$translationSourceLabel → $translationTargetLabel';
   }
 
   @override
@@ -2831,6 +2834,21 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get batchTranslationRetranslate => '重新翻译';
+
+  @override
+  String get translationSourceLanguage => '翻译源语言';
+
+  @override
+  String get translationSourceAuto => '自动';
+
+  @override
+  String get translationSourceJapanese => '日';
+
+  @override
+  String get translationSourceChinese => '中';
+
+  @override
+  String get translationSourceEnglish => '英';
 }
 
 /// The translations for Chinese, as used in China (`zh_CN`).
@@ -4715,8 +4733,11 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
       'https://api.openai.com/v1 或 http://127.0.0.1:11434/v1';
 
   @override
-  String settingsPageSectionsSub11(String translationTargetLabel) {
-    return '日語 → $translationTargetLabel';
+  String settingsPageSectionsSub11(
+    String translationSourceLabel,
+    String translationTargetLabel,
+  ) {
+    return '$translationSourceLabel → $translationTargetLabel';
   }
 
   @override
@@ -5666,4 +5687,19 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get batchTranslationRetranslate => '重新翻譯';
+
+  @override
+  String get translationSourceLanguage => '翻譯來源語言';
+
+  @override
+  String get translationSourceAuto => '自動';
+
+  @override
+  String get translationSourceJapanese => '日';
+
+  @override
+  String get translationSourceChinese => '中';
+
+  @override
+  String get translationSourceEnglish => '英';
 }

@@ -267,6 +267,7 @@ fn parse_bing_ig(page: &str) -> Result<String, String> {
 
 fn microsoft_lang(code: &str) -> String {
     match code.trim().to_ascii_lowercase().as_str() {
+        "auto" | "" => "auto-detect".to_string(),
         "zh-cn" | "zh" => "zh-Hans".to_string(),
         "zh-tw" | "zh-hant" => "zh-Hant".to_string(),
         other => other.to_string(),
@@ -399,6 +400,9 @@ mod tests {
 
     #[test]
     fn microsoft_lang_map() {
+        assert_eq!(microsoft_lang("auto"), "auto-detect");
+        assert_eq!(microsoft_lang("zh"), "zh-Hans");
+        assert_eq!(microsoft_lang("en"), "en");
         assert_eq!(microsoft_lang("zh-CN"), "zh-Hans");
         assert_eq!(microsoft_lang("zh-TW"), "zh-Hant");
         assert_eq!(microsoft_lang("ja"), "ja");

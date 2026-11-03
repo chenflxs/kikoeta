@@ -562,7 +562,7 @@
   "settingsPageAiModelInputHelperText": "已偵測到 {length} 個模型",
   "settingsPageSectionsSub10": "Google / Microsoft 免費 · DeepL 免費 Key · OpenAI 相容",
   "settingsPageSectionsInput5": "https://api.openai.com/v1 或 http://127.0.0.1:11434/v1",
-  "settingsPageSectionsSub11": "日語 → {translationTargetLabel}",
+  "settingsPageSectionsSub11": "{translationSourceLabel} → {translationTargetLabel}",
   "settingsPageNextKeyIdText": "目前按鍵：{shortcutLabel}\n\n按下新的單個按鍵",
   "settingsPageBuildText4": "將清除本機全部資料，且不可恢復：\n\n· ASMR.ONE 帳號與自建站台設定\n· 收藏 / 播放歷史 / 歌單 / 黑名單\n· 翻譯結果、均衡器、桌面歌詞、定時關閉等全部設定\n\n請確認是否繼續。",
   "mark": "標記",
@@ -841,5 +841,10 @@
   "batchTranslationSummary": "已加入 {added} 條音軌，略過 {skipped} 條，{failed} 個作品失敗",
   "batchTranslationExistingLyrics": "偵測到 {count} 條音軌已有歌詞，要如何處理？",
   "batchTranslationSkipExisting": "略過已有歌詞",
-  "batchTranslationRetranslate": "重新翻譯"
+  "batchTranslationRetranslate": "重新翻譯",
+  "translationSourceLanguage": "翻譯來源語言",
+  "translationSourceAuto": "自動",
+  "translationSourceJapanese": "日",
+  "translationSourceChinese": "中",
+  "translationSourceEnglish": "英"
 }

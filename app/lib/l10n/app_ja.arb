@@ -562,7 +562,7 @@
   "settingsPageAiModelInputHelperText": "検出されたモデル：{length}",
   "settingsPageSectionsSub10": "Google / Microsoft：無料 · DeepL：無料キー · OpenAI互換",
   "settingsPageSectionsInput5": "https://api.openai.com/v1 または http://127.0.0.1:11434/v1",
-  "settingsPageSectionsSub11": "日本語 → {translationTargetLabel}",
+  "settingsPageSectionsSub11": "{translationSourceLabel} → {translationTargetLabel}",
   "settingsPageNextKeyIdText": "現在のキー：{shortcutLabel}\n\n新しいキーを1つ押してください",
   "settingsPageBuildText4": "すべてのローカルデータを完全に削除します：\n\n· ASMR.ONEアカウントとカスタムサイト設定\n· お気に入り / 再生履歴 / プレイリスト / ブロックリスト\n· 翻訳、イコライザー、デスクトップ歌詞、スリープタイマーを含むすべての設定\n\n続行しますか？",
   "mark": "マーク",
@@ -841,5 +841,10 @@
   "batchTranslationSummary": "{added}トラックをキューに追加、{skipped}件をスキップ、{failed}作品で失敗",
   "batchTranslationExistingLyrics": "{count}トラックに歌詞があります。処理方法を選んでください。",
   "batchTranslationSkipExisting": "歌詞があるものをスキップ",
-  "batchTranslationRetranslate": "再翻訳"
+  "batchTranslationRetranslate": "再翻訳",
+  "translationSourceLanguage": "翻訳元の言語",
+  "translationSourceAuto": "自動",
+  "translationSourceJapanese": "日",
+  "translationSourceChinese": "中",
+  "translationSourceEnglish": "英"
 }

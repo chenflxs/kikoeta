@@ -5,6 +5,7 @@
 #include "flutter_window.h"
 #include "utils.h"
 #include "window_constants.h"
+#include "process_shutdown.h"
 
 namespace {
 
@@ -153,6 +154,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     ::DispatchMessage(&msg);
   }
 
+  // The engine has finished closing. Avoid plugin DLL detach deadlocks on an
+  // explicit exit; the watchdog also covers a blocked engine destruction above.
+  if (ProcessShutdown::Requested()) {
+    ProcessShutdown::Terminate();
+  }
   ::CoUninitialize();
   return EXIT_SUCCESS;
 }

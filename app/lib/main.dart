@@ -22,6 +22,7 @@ import 'pages/settings_page.dart';
 import 'pages/work_page.dart';
 import 'services/player_service.dart';
 import 'services/settings_store.dart';
+import 'services/startup_trace.dart';
 import 'services/app_data_service.dart';
 import 'services/shortcut_service.dart';
 import 'services/sleep_timer.dart';
@@ -50,9 +51,10 @@ final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await SettingsStore.init();
-  await DownloadManager.instance.init();
-  await appState.loadFromRust();
+  StartupTrace.initialize();
+  await StartupTrace.stage('settings', SettingsStore.init);
+  await StartupTrace.stage('downloads', DownloadManager.instance.init);
+  await StartupTrace.stage('state', appState.loadFromRust);
   if (appState.lyricsLibraryBroadcastOn) {
     try {
       await LyricsLibraryBroadcastService.instance.start();
@@ -60,9 +62,9 @@ Future<void> main() async {
       appState.setLyricsLibraryBroadcastOn(false);
     }
   }
-  await UpdateService.initialize();
+  await StartupTrace.stage('version', UpdateService.initialize);
   // Windows 首次运行：自动创建桌面/开始菜单快捷方式（仅 release，幂等）
-  ShortcutService.ensureShortcuts();
+  unawaited(StartupTrace.stage('shortcuts', ShortcutService.ensureShortcuts));
   // 安卓音频控制：耳机拔出/焦点丢失 → 暂停播放
   AndroidAudio.init();
   AndroidAudio.onPauseRequested = () {
@@ -73,11 +75,19 @@ Future<void> main() async {
     AndroidAudio.setIgnoreAudioFocus(appState.ignoreAudioFocus);
   }
   if (!kIsWeb && Platform.isWindows) {
-    await WindowsTrayService.instance.init(appState);
+    await StartupTrace.stage(
+      'tray',
+      () => WindowsTrayService.instance.init(appState),
+    );
   }
+  StartupTrace.mark('media-kit begin');
   MediaKit.ensureInitialized();
-  await _bindPlaybackOptions();
-  await AppPlayer.instance.setMediaCacheLimitMb(appState.mediaCacheLimitMb);
+  StartupTrace.mark('media-kit ready');
+  await StartupTrace.stage('playback.options', _bindPlaybackOptions);
+  await StartupTrace.stage(
+    'playback.cache',
+    () => AppPlayer.instance.setMediaCacheLimitMb(appState.mediaCacheLimitMb),
+  );
   // 在首次加载媒体前配置 Android 音频后端与输出缓冲，降低 UI 交互/后台
   // 调度波动引发的环境声变淡和爆音。
   if (!kIsWeb && Platform.isAndroid) {
@@ -106,6 +116,15 @@ Future<void> main() async {
   // 定时关闭：全局计时（播放器页关闭时也生效）
   SleepTimer.start(appState);
   initializeDataSync(appState);
+  StartupTrace.mark('runApp');
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    StartupTrace.mark('first-frame');
+  });
+  unawaited(
+    WidgetsBinding.instance.waitUntilFirstFrameRasterized.then((_) {
+      StartupTrace.mark('first-rasterized');
+    }),
+  );
   runApp(const KikoetaApp());
   UpdateService.startAutoCheck(appState, appNavigatorKey);
   // 剪贴板 RJ 检测（每 3 秒轮询）
@@ -116,7 +135,10 @@ Future<void> main() async {
   }
   // 桌面歌词（Windows）
   if (!kIsWeb && Platform.isWindows) {
-    await DesktopLyricsOverlay.instance.init();
+    await StartupTrace.stage(
+      'lyrics-overlay',
+      DesktopLyricsOverlay.instance.init,
+    );
     DesktopLyricsOverlay.instance.bind(
       onLockChanged: (v) => appState.setLyricsLockedDesktop(v),
       onFontSizeChanged: (v) => appState.setLyricsFontSize(v),
@@ -140,14 +162,16 @@ Future<void> main() async {
   }
   LyricsHub.instance.start();
   LyricsHub.instance.bind(appState);
+  StartupTrace.mark('startup-ready');
 }
 
 void _syncDesktopLyrics() {
   final ov = DesktopLyricsOverlay.instance;
   if (appState.desktopLyricsOn) {
-    final line = LyricsHub.instance.currentLine;
+    final cue = LyricsHub.instance.currentOverlayCue;
     ov.show(
-      text: line,
+      text: cue.text,
+      timing: cue.timing,
       fontSize: appState.lyricsFontSize,
       color: appState.lyricsColor,
       outlineColor: appState.lyricsOutlineColor,
@@ -573,8 +597,14 @@ final AppState appState = AppState();
 Future<void> _bindPlaybackOptions() async {
   var rate = appState.playbackRate;
   var channelMode = appState.audioChannelMode;
-  await AppPlayer.instance.setPlaybackRate(rate);
-  await AppPlayer.instance.setChannelMode(channelMode);
+  await StartupTrace.stage(
+    'playback.rate',
+    () => AppPlayer.instance.setPlaybackRate(rate),
+  );
+  await StartupTrace.stage(
+    'playback.channel',
+    () => AppPlayer.instance.setChannelMode(channelMode),
+  );
   appState.addListener(() {
     if (rate != appState.playbackRate) {
       rate = appState.playbackRate;

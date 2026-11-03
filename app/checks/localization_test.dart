@@ -420,8 +420,54 @@ void main() {
       expect(app.translationTarget, 'ui');
       expect(app.resolvedTranslationTarget, 'zh-CN');
       expect(saved['translation_target'], 'ui');
-      expect(find.textContaining('日语 → 跟随界面语言'), findsOneWidget);
+      expect(find.textContaining('自动 → 跟随界面语言'), findsOneWidget);
       expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'source language defaults to auto and offers Japanese, Chinese, English',
+    (tester) async {
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final saved = <String, String>{};
+      final app = AppState(
+        languageSettingsWriter: (key, value) => saved[key] = value,
+      );
+      addTearDown(app.dispose);
+      app.setUiLanguage('zh-CN');
+      expect(app.translationSource, 'auto');
+      await showSettings(tester, app);
+      for (final entry in const {
+        'ja': '日',
+        'zh': '中',
+        'en': '英',
+        'auto': '自动',
+      }.entries) {
+        await tester.tap(find.byTooltip('翻译源语言'));
+        await tester.pumpAndSettle();
+        final options = tester
+            .widgetList<PopupMenuItem<String>>(
+              find.byType(PopupMenuItem<String>),
+            )
+            .where((item) => item.value != null);
+        expect(options.map((item) => item.value), ['auto', 'ja', 'zh', 'en']);
+        await tester.tap(
+          find.byWidgetPredicate(
+            (widget) =>
+                widget is PopupMenuItem<String> && widget.value == entry.key,
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(app.translationSource, entry.key);
+        expect(saved['translation_source'], entry.key);
+        expect(find.text('${entry.value} → 简中'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      }
+      app.setTranslationSource('invalid');
+      expect(app.translationSource, 'auto');
     },
   );
 }

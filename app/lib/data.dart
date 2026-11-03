@@ -372,6 +372,7 @@ class AppState extends ChangeNotifier {
   // 翻译引擎
   String engine = 'google'; // google / deepl / openai
   String translationTarget = 'zh-CN'; // ui / zh-CN / zh-TW / en
+  String translationSource = 'auto'; // auto / ja / zh / en
   String get uiLanguage => AppLanguage.preference;
   String get resolvedTranslationTarget => translationTarget == 'ui'
       ? AppLanguage.translationTarget
@@ -1227,6 +1228,11 @@ class AppState extends ChangeNotifier {
     AppLanguage.setPreference(
       SettingsStore.get('ui_language') ?? AppLanguage.system,
     );
+    final translationSource = SettingsStore.get('translation_source');
+    this.translationSource =
+        const ['auto', 'ja', 'zh', 'en'].contains(translationSource)
+        ? translationSource!
+        : 'auto';
     final translationTarget = SettingsStore.get('translation_target');
     if (translationTarget != null &&
         const ['ui', 'zh-CN', 'zh-TW', 'en'].contains(translationTarget)) {
@@ -1356,6 +1362,14 @@ class AppState extends ChangeNotifier {
     if (!const ['ui', 'zh-CN', 'zh-TW', 'en'].contains(value)) return;
     translationTarget = value;
     _writeLanguageSetting('translation_target', value);
+    notifyListeners();
+  }
+
+  void setTranslationSource(String value) {
+    if (!const ['auto', 'ja', 'zh', 'en'].contains(value)) return;
+    if (translationSource == value) return;
+    translationSource = value;
+    _writeLanguageSetting('translation_source', value);
     notifyListeners();
   }
 
@@ -1938,6 +1952,7 @@ class AppState extends ChangeNotifier {
     engine = 'google';
     AppLanguage.setPreference(AppLanguage.system);
     translationTarget = 'zh-CN';
+    translationSource = 'auto';
     aiConfig
       ..clear()
       ..addAll({'base': '', 'model': '', 'key': ''});

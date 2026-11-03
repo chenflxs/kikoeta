@@ -3,17 +3,21 @@ import 'dart:io';
 
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:flutter/services.dart';
+import 'package:win32/win32.dart' as win32;
 
 import '../data.dart';
 import 'api_service.dart';
 import 'desktop_lyrics_overlay.dart';
 import 'download_service.dart';
 import 'player_service.dart';
+import 'startup_trace.dart';
 import '../l10n/strings.dart';
 
 class WindowsTrayService with TrayListener, WindowListener {
   WindowsTrayService._();
   static final instance = WindowsTrayService._();
+  static const _lifecycle = MethodChannel('kikoeta/lifecycle');
 
   late AppState _app;
   bool _initialized = false;
@@ -26,17 +30,29 @@ class WindowsTrayService with TrayListener, WindowListener {
     _app = app;
     if (_initialized || !Platform.isWindows) return;
     _initialized = true;
-    await windowManager.ensureInitialized();
+    await StartupTrace.stage(
+      'tray.window-manager',
+      windowManager.ensureInitialized,
+    );
     // Use the Flutter caption rendered by the app instead of the native title bar.
-    await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
+    await StartupTrace.stage(
+      'tray.title-bar',
+      () => windowManager.setTitleBarStyle(TitleBarStyle.hidden),
+    );
     // 拦截原生关闭事件，交由 onWindowClose 根据用户设置隐藏或退出。
     await windowManager.setPreventClose(true);
     windowManager.addListener(this);
     trayManager.addListener(this);
     _app.addListener(_syncContextMenu);
-    await trayManager.setIcon('assets/tray_icon.ico');
-    await trayManager.setToolTip('Kikoeta');
-    await _setContextMenu();
+    await StartupTrace.stage(
+      'tray.icon',
+      () => trayManager.setIcon('assets/tray_icon.ico'),
+    );
+    await StartupTrace.stage(
+      'tray.tooltip',
+      () => trayManager.setToolTip('Kikoeta'),
+    );
+    await StartupTrace.stage('tray.menu', _setContextMenu);
   }
 
   Future<void> _setContextMenu() async {
@@ -156,24 +172,34 @@ class WindowsTrayService with TrayListener, WindowListener {
   Future<void> _exit() async {
     if (_exiting) return;
     _exiting = true;
-    // 窗口关闭不会触发播放器页 dispose；退出前强制保存播放器当前位置。
-    if (_app.queue.isNotEmpty &&
-        (AppPlayer.instance.opened ||
-            _app.playing ||
-            _app.resumePosition == 0)) {
-      _app.resumePosition = AppPlayer.instance.currentPosition;
-      _app.savePlayState();
-    }
-    // Prevent a stuck native close callback from keeping the Dart isolate and
-    // the lyrics window alive after the user explicitly chose "Exit".
-    Timer(const Duration(seconds: 2), () => exit(0));
-    DesktopLyricsOverlay.instance.dispose();
+    // Arm native fallback before any cleanup: Dart timers cannot run while
+    // synchronous Win32 calls or Flutter engine destruction are blocked.
     try {
+      await _lifecycle.invokeMethod<void>('beginExit');
+    } catch (_) {
+      // Also support an older runner while developing with hot restart.
+      Timer(const Duration(seconds: 3), _terminateProcess);
+    }
+    _app.removeListener(_syncContextMenu);
+    try {
+      // 窗口关闭不会触发播放器页 dispose；退出前强制保存播放器当前位置。
+      if (_app.queue.isNotEmpty &&
+          (AppPlayer.instance.opened ||
+              _app.playing ||
+              _app.resumePosition == 0)) {
+        _app.resumePosition = AppPlayer.instance.currentPosition;
+        _app.savePlayState();
+      }
+      DesktopLyricsOverlay.instance.dispose();
       await trayManager.destroy();
       await windowManager.setPreventClose(false);
       await windowManager.close();
     } catch (_) {
-      exit(0);
+      _terminateProcess();
     }
+  }
+
+  static void _terminateProcess() {
+    win32.TerminateProcess(win32.GetCurrentProcess(), 0);
   }
 }

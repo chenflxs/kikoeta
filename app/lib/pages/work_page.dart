@@ -2877,20 +2877,21 @@ class _WorkPageState extends State<WorkPage> {
     try {
       final joined = lines.join('\n');
       final target = app.resolvedTranslationTarget;
+      final source = app.translationSource;
       final zh = switch (app.engine) {
         'google' => await apiTranslateGoogle(
           text: joined,
-          src: 'ja',
+          src: source,
           dst: target,
         ),
         'microsoft' => await apiTranslateMicrosoft(
           text: joined,
-          src: 'ja',
+          src: source,
           dst: target,
         ),
         'deepl' => await apiTranslateDeepl(
           text: joined,
-          src: 'ja',
+          src: source,
           dst: target,
           apiKey: app.deeplKey,
         ),
@@ -2898,7 +2899,8 @@ class _WorkPageState extends State<WorkPage> {
           baseUrl: app.activeAiConfig['base']!,
           model: app.activeAiConfig['model']!,
           apiKey: app.activeAiConfig['key'] ?? '',
-          text: '[[KIKOETA_TARGET:$target]]\n$joined',
+          text:
+              '[[KIKOETA_TARGET:$target]]\n[[KIKOETA_SOURCE:$source]]\n$joined',
           temperature: 0.2,
         ),
       };

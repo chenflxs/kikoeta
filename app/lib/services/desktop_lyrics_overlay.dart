@@ -2,13 +2,17 @@ import 'dart:async';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:ffi/ffi.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:win32/win32.dart';
 
 import 'app_paths.dart';
+import 'desktop_lyrics_marquee.dart';
+import 'desktop_lyrics_timing.dart';
 import 'settings_store.dart';
 import '../l10n/strings.dart';
 
@@ -22,6 +26,17 @@ final _gdiFlush = DynamicLibrary.open(
   'gdi32.dll',
 ).lookupFunction<Int32 Function(), int Function()>('GdiFlush');
 
+// These GDI APIs are not exposed by the project's win32 package version.
+final _intersectClipRect = DynamicLibrary.open('gdi32.dll')
+    .lookupFunction<
+      Int32 Function(IntPtr, Int32, Int32, Int32, Int32),
+      int Function(int, int, int, int, int)
+    >('IntersectClipRect');
+final _restoreDc = DynamicLibrary.open('gdi32.dll')
+    .lookupFunction<Int32 Function(IntPtr, Int32), int Function(int, int)>(
+      'RestoreDC',
+    );
+
 final _removeFontResourceEx = DynamicLibrary.open('gdi32.dll')
     .lookupFunction<_RemoveFontResourceExNative, _RemoveFontResourceExDart>(
       'RemoveFontResourceExW',
@@ -33,6 +48,9 @@ final _removeFontResourceEx = DynamicLibrary.open('gdi32.dll')
 /// - 锁定：点击穿透，悬停显示解锁按钮
 class DesktopLyricsOverlay {
   DesktopLyricsOverlay._();
+
+  @visibleForTesting
+  DesktopLyricsOverlay.forTesting();
 
   static final DesktopLyricsOverlay instance = DesktopLyricsOverlay._();
 
@@ -74,6 +92,17 @@ class DesktopLyricsOverlay {
   String? _privateFontPath;
   Timer? _pump;
   Timer? _hoverPoll;
+  final _marquee = DesktopLyricsMarquee();
+  final _animationClock = Stopwatch()..start();
+  int _marqueePixelOffset = 0;
+  Object? _singleLineMeasureKey;
+  String _singleLineSource = '';
+  String _singleLineText = '';
+  int _singleLineWidth = 0;
+  DesktopLyricsTiming? _timing;
+  Duration _timingAt = Duration.zero;
+
+  Duration? _lineElapsed(Duration now) => _timing?.elapsedAt(now - _timingAt);
 
   // 逐像素 alpha 渲染（UpdateLayeredWindowIndirect）
   int _memDc = 0;
@@ -213,7 +242,7 @@ class DesktopLyricsOverlay {
     if (_hwnd == 0) return;
     _setTopmost();
     _pump = Timer.periodic(
-      const Duration(milliseconds: 16),
+      const Duration(microseconds: 16667), // 60 FPS target.
       (_) => _pumpOnce(),
     );
     _hoverPoll = Timer.periodic(
@@ -287,6 +316,13 @@ class DesktopLyricsOverlay {
       }
     } finally {
       calloc.free(msg);
+    }
+    // Reuse the message pump; fitting/hidden lyrics add no animation repaints.
+    if (!_visible || _resizingOrMoving || !_marquee.isActive) return;
+    final now = _animationClock.elapsed;
+    if (_marquee.offsetAt(now, lineElapsed: _lineElapsed(now)).round() !=
+        _marqueePixelOffset) {
+      _render();
     }
   }
 
@@ -603,7 +639,8 @@ class DesktopLyricsOverlay {
     _textDibH = 0;
   }
 
-  void _drawText(int w, int h) {
+  void _drawText(int w, int h, {Duration? now}) {
+    final timestamp = now ?? _animationClock.elapsed;
     _ensureTextTarget(w, h);
     final mask = _textBits;
     if (mask == null || _textDib == 0) return;
@@ -628,7 +665,10 @@ class DesktopLyricsOverlay {
           final verticalPadding = (8 + _outlineWidth.ceil()) * _textScale;
           // 固定预留工具栏，避免悬停和锁定切换时歌词跳动或被遮挡。
           final contentTop = _toolbarHeight * _textScale;
-          final contentWidth = w * _textScale - horizontalPadding * 2;
+          final contentWidth = math.max(
+            1,
+            w * _textScale - horizontalPadding * 2,
+          );
           final contentHeight = math.max(
             1,
             h * _textScale - contentTop - verticalPadding * 2,
@@ -636,7 +676,37 @@ class DesktopLyricsOverlay {
           final twoLineHeight = (_fontSize * _textScale * dpi / 72 * 2.4)
               .ceil();
           final multiline = contentHeight >= twoLineHeight;
-          final sourceText = _text;
+          if (_singleLineSource != _text) {
+            _singleLineSource = _text;
+            _singleLineText = _text.replaceAll(RegExp(r'[\r\n]+'), ' ');
+          }
+          final sourceText = multiline ? _text : _singleLineText;
+          if (multiline) {
+            _marquee.reset();
+          } else {
+            final measureKey = (sourceText, _fontSize, _fontFace, dpi);
+            if (_singleLineMeasureKey != measureKey) {
+              _singleLineMeasureKey = measureKey;
+              _singleLineWidth = _measureSingleLineText(sourceText);
+            }
+            _marquee.configure(
+              layoutKey: (
+                measureKey,
+                contentWidth,
+                contentHeight,
+                _timing?.start,
+              ),
+              textWidth: _singleLineWidth / _textScale,
+              viewportWidth: contentWidth / _textScale,
+              scale: dpi / 96,
+              now: timestamp,
+              lineDuration: _timing?.duration,
+            );
+          }
+          final scrolling = _marquee.isActive;
+          _marqueePixelOffset = _marquee
+              .offsetAt(timestamp, lineElapsed: _lineElapsed(timestamp))
+              .round();
           final multilineOverflow =
               multiline &&
               _measureMultilineText(sourceText, contentWidth) > twoLineHeight;
@@ -644,15 +714,16 @@ class DesktopLyricsOverlay {
               ? _ellipsizeMultilineText(sourceText, contentWidth, twoLineHeight)
               : sourceText;
           final displayTextPtr = displayText.toNativeUtf16();
+          final viewport = calloc<RECT>();
+          final savedDc = SaveDC(_textMemDc);
           try {
             final flags = multiline
                 ? (multilineOverflow ? DT_LEFT : DT_CENTER) |
                       DT_WORDBREAK |
                       DT_NOPREFIX
-                : DT_CENTER |
+                : (scrolling ? DT_LEFT : DT_CENTER) |
                       DT_VCENTER |
                       DT_SINGLELINE |
-                      DT_END_ELLIPSIS |
                       DT_NOPREFIX;
 
             rect.ref.left = horizontalPadding;
@@ -671,7 +742,26 @@ class DesktopLyricsOverlay {
               rect.ref.top = contentTop + verticalPadding;
               rect.ref.bottom = rect.ref.top + contentHeight;
             }
+            viewport.ref
+              ..left = horizontalPadding
+              ..right = horizontalPadding + contentWidth
+              ..top = contentTop + verticalPadding
+              ..bottom = contentTop + verticalPadding + contentHeight;
             final ow = (_outlineWidth * _textScale).round();
+            if (scrolling) {
+              // Keep the run and outline inside the lyrics viewport; never
+              // draw into the toolbar. The tail stays here until the next cue.
+              _intersectClipRect(
+                _textMemDc,
+                viewport.ref.left - ow,
+                viewport.ref.top - ow,
+                viewport.ref.right + ow,
+                viewport.ref.bottom + ow,
+              );
+              rect.ref.left -= _marqueePixelOffset * _textScale;
+              rect.ref.right = rect.ref.left + _singleLineWidth;
+            }
+            final blendBounds = scrolling ? viewport : rect;
             if (ow > 0) {
               for (var dy = -ow; dy <= ow; dy++) {
                 for (var dx = -ow; dx <= ow; dx++) {
@@ -688,13 +778,15 @@ class DesktopLyricsOverlay {
                   }
                 }
               }
-              _blendTextMask(w, h, _outlineColor, rect, ow);
+              _blendTextMask(w, h, _outlineColor, blendBounds, ow);
             }
 
             mask.asTypedList(n * 4).fillRange(0, n * 4, 0);
             DrawText(_textMemDc, displayTextPtr, -1, rect, flags);
-            _blendTextMask(w, h, _textColor, rect, 0);
+            _blendTextMask(w, h, _textColor, blendBounds, 0);
           } finally {
+            if (savedDc != 0) _restoreDc(_textMemDc, savedDc);
+            calloc.free(viewport);
             calloc.free(displayTextPtr);
           }
         } finally {
@@ -721,6 +813,24 @@ class DesktopLyricsOverlay {
         rect,
         DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX,
       );
+    } finally {
+      calloc.free(textPtr);
+      calloc.free(rect);
+    }
+  }
+
+  int _measureSingleLineText(String text) {
+    final textPtr = text.toNativeUtf16();
+    final rect = calloc<RECT>();
+    try {
+      DrawText(
+        _textMemDc,
+        textPtr,
+        -1,
+        rect,
+        DT_CALCRECT | DT_SINGLELINE | DT_NOPREFIX,
+      );
+      return rect.ref.right;
     } finally {
       calloc.free(textPtr);
       calloc.free(rect);
@@ -1205,6 +1315,29 @@ class DesktopLyricsOverlay {
 
   // ---------- 对外接口 ----------
 
+  /// Exercises GDI offscreen without creating or displaying a native window.
+  @visibleForTesting
+  ({Uint8List pixels, bool scrolling, int offset}) renderTextForTesting({
+    required String text,
+    required int width,
+    required int height,
+    required Duration elapsed,
+    DesktopLyricsTiming? timing,
+  }) {
+    _text = text;
+    _timing = timing;
+    _timingAt = elapsed;
+    _ensureTarget(width, height);
+    final bits = _bits!.asTypedList(width * height * 4);
+    bits.fillRange(0, bits.length, 0);
+    _drawText(width, height, now: elapsed);
+    return (
+      pixels: Uint8List.fromList(bits),
+      scrolling: _marquee.isActive,
+      offset: _marqueePixelOffset,
+    );
+  }
+
   void Function(bool locked)? _syncLockCallback;
   void Function(double size)? _syncFontSizeCallback;
 
@@ -1222,6 +1355,7 @@ class DesktopLyricsOverlay {
 
   void show({
     required String text,
+    DesktopLyricsTiming? timing,
     required double fontSize,
     required int color,
     required int outlineColor,
@@ -1230,7 +1364,10 @@ class DesktopLyricsOverlay {
   }) {
     if (!Platform.isWindows) return;
     _ensureWindow();
+    if (!_visible) _marquee.reset();
     _text = text;
+    _timing = timing;
+    _timingAt = _animationClock.elapsed;
     _fontSize = fontSize;
     _textColor = color;
     _outlineColor = outlineColor;
@@ -1244,11 +1381,16 @@ class DesktopLyricsOverlay {
     _render();
   }
 
-  void update(String text) {
+  void update(String text, {DesktopLyricsTiming? timing}) {
     if (!_visible) return;
-    if (text == _text) return;
+    final changed =
+        text != _text ||
+        timing?.start != _timing?.start ||
+        timing?.end != _timing?.end;
     _text = text;
-    _render();
+    _timing = timing;
+    _timingAt = _animationClock.elapsed;
+    if (changed) _render();
   }
 
   void setStyle({
@@ -1273,6 +1415,7 @@ class DesktopLyricsOverlay {
   void hide() {
     if (!_visible) return;
     _visible = false;
+    _marquee.reset();
     _hover = false;
     _hoveredButton = -1;
     _cursor = const ui.Offset(-1, -1);
@@ -1280,6 +1423,7 @@ class DesktopLyricsOverlay {
   }
 
   void dispose() {
+    _marquee.reset();
     _pump?.cancel();
     _pump = null;
     _hoverPoll?.cancel();

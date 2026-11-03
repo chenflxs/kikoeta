@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kikoeta_app/services/portable_backup.dart';
 
@@ -15,6 +16,7 @@ void main() {
         'favs': '["RJ1"]',
         'theme': 'dark',
         'audio_channel_mode': 'swap',
+        'translation_source': 'en',
         'asmr_pass': 'private',
         'webdav_password': 'private',
         'deepl_key': 'private',
@@ -27,6 +29,7 @@ void main() {
       final restored = await PortableBackup.decode(bytes);
       expect(restored.settings['playlists'], data['playlists']);
       expect(restored.settings['blacklist'], data['blacklist']);
+      expect(restored.settings['translation_source'], 'en');
       expect(restored.fingerprint, backup.fingerprint);
       expect(utf8.decode(bytes), isNot(contains('private')));
       expect(utf8.decode(bytes), isNot(contains('large')));
@@ -58,6 +61,7 @@ void main() {
         {'eq_gains': '[0]'},
         {'volume': 'NaN'},
         {'theme': 'invalid'},
+        {'translation_source': 'invalid'},
       ]) {
         final backup = PortableBackup.capture((key) => invalid[key]);
         await expectLater(
@@ -78,4 +82,36 @@ void main() {
       throwsFormatException,
     );
   });
+
+  test(
+    'old backups default source to auto and still require other settings',
+    () async {
+      final backup = PortableBackup.capture((_) => null);
+      final raw = jsonDecode(utf8.decode(await backup.encode())) as Map;
+      final settings = raw['settings'] as Map;
+      settings.remove('translation_source');
+      void checksum() {
+        final keys = settings.keys.cast<String>().toList()..sort();
+        raw['sha256'] = sha256
+            .convert(
+              utf8.encode(
+                jsonEncode({for (final key in keys) key: settings[key]}),
+              ),
+            )
+            .toString();
+      }
+
+      checksum();
+      final restored = await PortableBackup.decode(
+        utf8.encode(jsonEncode(raw)),
+      );
+      expect(restored.settings['translation_source'], 'auto');
+      settings.remove('translation_target');
+      checksum();
+      await expectLater(
+        PortableBackup.decode(utf8.encode(jsonEncode(raw))),
+        throwsFormatException,
+      );
+    },
+  );
 }

@@ -1,5 +1,6 @@
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
@@ -23,15 +24,43 @@ class ShortcutService {
     try {
       if (SettingsStore.get(_doneKey) == '1') return;
       final exe = Platform.resolvedExecutable;
-      final exeDir = File(exe).parent.path;
-      final desktop = _knownFolder(FOLDERID_Desktop);
-      final programs = _knownFolder(FOLDERID_Programs);
-      if (desktop == null || programs == null) return;
-      _createLink('$desktop\\$_appName.lnk', exe, exeDir);
-      _createLink('$programs\\$_appName.lnk', exe, exeDir);
-      SettingsStore.set(_doneKey, '1');
+      if (await Isolate.run(() => _createShortcuts(exe))) {
+        SettingsStore.set(_doneKey, '1');
+      }
     } catch (_) {
       // 创建失败静默（不影响应用启动；下次运行会重试）
+    }
+  }
+
+  @visibleForTesting
+  static Future<bool> createForTesting(
+    String exe,
+    String desktop,
+    String programs,
+  ) => Isolate.run(
+    () => _createShortcuts(exe, desktop: desktop, programs: programs),
+  );
+
+  // Keep all Shell/COM calls synchronous on the worker, so interfaces never
+  // cross an await or an isolate boundary. Shell extensions can block here
+  // without blocking Flutter's UI or the tray message loop.
+  static bool _createShortcuts(
+    String exe, {
+    String? desktop,
+    String? programs,
+  }) {
+    final hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    if (FAILED(hr)) return false;
+    try {
+      desktop ??= _knownFolder(FOLDERID_Desktop);
+      programs ??= _knownFolder(FOLDERID_Programs);
+      if (desktop == null || programs == null) return false;
+      final exeDir = File(exe).parent.path;
+      _createLink('$desktop\\$_appName.lnk', exe, exeDir);
+      _createLink('$programs\\$_appName.lnk', exe, exeDir);
+      return true;
+    } finally {
+      CoUninitialize();
     }
   }
 
@@ -54,10 +83,10 @@ class ShortcutService {
   }
 
   /// 创建指向 [target] 的 .lnk（工作目录 + 图标均指向应用）。
-  /// COM 对象由 win32 的 Finalizer 自动释放，无需手动 Release。
+  /// Release both interfaces before uninitializing their COM apartment.
   static void _createLink(String linkPath, String target, String workDir) {
-    final hrInit = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     final shellLink = ShellLink.createInstance();
+    shellLink.detach();
     final targetW = target.toNativeUtf16();
     final workW = workDir.toNativeUtf16();
     try {
@@ -68,19 +97,21 @@ class ShortcutService {
       if (hrWork != S_OK) throw WindowsException(hrWork);
       if (hrIcon != S_OK) throw WindowsException(hrIcon);
       final persist = IPersistFile.from(shellLink);
+      persist.detach();
       final linkW = linkPath.toNativeUtf16();
       try {
         final hrSave = persist.save(linkW, TRUE);
         if (hrSave != S_OK) throw WindowsException(hrSave);
       } finally {
         calloc.free(linkW);
+        persist.release();
+        calloc.free(persist.ptr);
       }
     } finally {
       calloc.free(targetW);
       calloc.free(workW);
-      if (hrInit == S_OK || hrInit == 0x00000001 /* S_FALSE */) {
-        CoUninitialize();
-      }
+      shellLink.release();
+      calloc.free(shellLink.ptr);
     }
   }
 }

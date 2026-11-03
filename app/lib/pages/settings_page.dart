@@ -557,8 +557,14 @@ class _SettingsPageState extends State<SettingsPage> {
                   ],
                   _row(
                     icon: null,
-                    title: context.l10n.sourceAndTargetLanguage,
+                    title: context.l10n.translationSourceLanguage,
+                    trailing: _translationSourceDropdown(),
+                  ),
+                  _row(
+                    icon: null,
+                    title: context.l10n.translationTargetLanguage,
                     sub: context.l10n.settingsPageSectionsSub11(
+                      _translationSourceLabel(app.translationSource),
                       (_translationTargetLabel(
                         app.translationTarget,
                       )).toString(),
@@ -2001,6 +2007,32 @@ class _SettingsPageState extends State<SettingsPage> {
       onSelected: app.setTranslationTarget,
     );
   }
+
+  String _translationSourceLabel(String code) => switch (code) {
+    'ja' => context.l10n.translationSourceJapanese,
+    'zh' => context.l10n.translationSourceChinese,
+    'en' => context.l10n.translationSourceEnglish,
+    _ => context.l10n.translationSourceAuto,
+  };
+
+  Widget _translationSourceDropdown() => _translationDropdown(
+    label: _translationSourceLabel(app.translationSource),
+    icon: Icons.language_outlined,
+    tooltip: context.l10n.translationSourceLanguage,
+    items: [
+      _menuHead(context, context.l10n.translationSourceLanguage),
+      for (final code in const ['auto', 'ja', 'zh', 'en'])
+        PopupMenuItem(
+          value: code,
+          height: 42,
+          child: MenuItem(
+            label: _translationSourceLabel(code),
+            selected: app.translationSource == code,
+          ),
+        ),
+    ],
+    onSelected: app.setTranslationSource,
+  );
 
   Widget _uiLanguageDropdown() {
     final labels = {

@@ -1907,8 +1907,11 @@ class AppLocalizationsJa extends AppLocalizations {
       'https://api.openai.com/v1 または http://127.0.0.1:11434/v1';
 
   @override
-  String settingsPageSectionsSub11(String translationTargetLabel) {
-    return '日本語 → $translationTargetLabel';
+  String settingsPageSectionsSub11(
+    String translationSourceLabel,
+    String translationTargetLabel,
+  ) {
+    return '$translationSourceLabel → $translationTargetLabel';
   }
 
   @override
@@ -2878,4 +2881,19 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get batchTranslationRetranslate => '再翻訳';
+
+  @override
+  String get translationSourceLanguage => '翻訳元の言語';
+
+  @override
+  String get translationSourceAuto => '自動';
+
+  @override
+  String get translationSourceJapanese => '日';
+
+  @override
+  String get translationSourceChinese => '中';
+
+  @override
+  String get translationSourceEnglish => '英';
 }

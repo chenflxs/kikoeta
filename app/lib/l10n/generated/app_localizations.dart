@@ -3497,8 +3497,11 @@ abstract class AppLocalizations {
   /// pages/settings_page.dart: sections
   ///
   /// In zh, this message translates to:
-  /// **'日语 → {translationTargetLabel}'**
-  String settingsPageSectionsSub11(String translationTargetLabel);
+  /// **'{translationSourceLabel} → {translationTargetLabel}'**
+  String settingsPageSectionsSub11(
+    String translationSourceLabel,
+    String translationTargetLabel,
+  );
 
   /// pages/settings_page.dart: nextKeyId
   ///
@@ -5176,6 +5179,36 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'重新翻译'**
   String get batchTranslationRetranslate;
+
+  /// 翻译源语言选择
+  ///
+  /// In zh, this message translates to:
+  /// **'翻译源语言'**
+  String get translationSourceLanguage;
+
+  /// 翻译源语言选择
+  ///
+  /// In zh, this message translates to:
+  /// **'自动'**
+  String get translationSourceAuto;
+
+  /// 翻译源语言选择
+  ///
+  /// In zh, this message translates to:
+  /// **'日'**
+  String get translationSourceJapanese;
+
+  /// 翻译源语言选择
+  ///
+  /// In zh, this message translates to:
+  /// **'中'**
+  String get translationSourceChinese;
+
+  /// 翻译源语言选择
+  ///
+  /// In zh, this message translates to:
+  /// **'英'**
+  String get translationSourceEnglish;
 }
 
 class _AppLocalizationsDelegate

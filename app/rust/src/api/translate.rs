@@ -4,14 +4,20 @@ use std::time::Duration;
 
 mod microsoft;
 
-fn translation_prompt(target_language: &str) -> String {
+fn translation_prompt(source_language: &str, target_language: &str) -> String {
+    let source = match source_language.trim() {
+        "ja" => "日文",
+        "zh" => "中文",
+        "en" => "英文",
+        _ => "自动识别语言的",
+    };
     let language = match target_language.trim() {
         "zh-TW" => "繁体中文",
         "en" => "English",
         _ => "简体中文",
     };
     format!(
-        "你是音频作品标题翻译助手。把输入中的每行日文标题翻译为{language}，\\
+        "你是音频作品标题翻译助手。把输入中的每行{source}标题翻译为{language}，\\
 不翻译 RJ 编号和 .mp3/.flac 等扩展名。\\
 每行输入均以 [[KIKOETA_LINE_n]] 开头；每行输出必须保留完全相同的标记，\\
 并在标记后紧接该行译文。不得省略、修改、重排或新增标记。\
@@ -41,6 +47,7 @@ pub async fn api_translate_openai(
         return Err("请先配置 API 地址与模型名".to_string());
     }
     let (target_language, text) = split_translation_target(text);
+    let (source_language, text) = split_translation_source(text);
     if text.trim().is_empty() {
         return Ok(String::new());
     }
@@ -50,7 +57,7 @@ pub async fn api_translate_openai(
     let mut body = serde_json::json!({
         "model": model.trim(),
         "messages": [
-            { "role": "system", "content": translation_prompt(&target_language) },
+            { "role": "system", "content": translation_prompt(&source_language, &target_language) },
             { "role": "user", "content": input },
         ],
         "temperature": temperature.clamp(0.0, 2.0),
@@ -112,6 +119,22 @@ fn split_translation_target(text: String) -> (String, String) {
         return ("zh-CN".to_string(), text);
     };
     (target.trim().to_string(), content.to_string())
+}
+
+fn split_translation_source(text: String) -> (String, String) {
+    let Some(rest) = text.strip_prefix("[[KIKOETA_SOURCE:") else {
+        return ("auto".to_string(), text);
+    };
+    let Some((source, content)) = rest.split_once("]]") else {
+        return ("auto".to_string(), text);
+    };
+    let Some(content) = content
+        .strip_prefix("\r\n")
+        .or_else(|| content.strip_prefix('\n'))
+    else {
+        return ("auto".to_string(), text);
+    };
+    (source.trim().to_string(), content.to_string())
 }
 
 fn is_index_compat(base: &str) -> bool {
@@ -283,7 +306,10 @@ pub async fn api_translate_google(
     translate_google_with_client(
         &client,
         &[
-            ("https://translate.googleapis.com/translate_a/t", "dict-chrome-ex"),
+            (
+                "https://translate.googleapis.com/translate_a/t",
+                "dict-chrome-ex",
+            ),
             ("https://translate.googleapis.com/translate_a/single", "gtx"),
             ("https://translate.google.com/translate_a/single", "gtx"),
         ],
@@ -447,11 +473,7 @@ pub async fn api_translate_deepl(
     let resp = client
         .post("https://api-free.deepl.com/v2/translate")
         .header("authorization", format!("DeepL-Auth-Key {key}"))
-        .form(&[
-            ("text", text.as_str()),
-            ("source_lang", deepl_lang(&src).as_str()),
-            ("target_lang", deepl_lang(&dst).as_str()),
-        ])
+        .form(&deepl_form(&text, &src, &dst))
         .send()
         .await
         .map_err(|e| format!("DeepL 请求失败: {e}"))?;
@@ -469,6 +491,15 @@ pub async fn api_translate_deepl(
         .as_str()
         .ok_or_else(|| "DeepL 响应中未找到翻译结果".to_string())?;
     Ok(text_out.trim().to_string())
+}
+
+fn deepl_form(text: &str, src: &str, dst: &str) -> Vec<(&'static str, String)> {
+    let mut form = vec![("text", text.to_string()), ("target_lang", deepl_lang(dst))];
+    // DeepL detects the source only when source_lang is omitted.
+    if !src.trim().is_empty() && !src.trim().eq_ignore_ascii_case("auto") {
+        form.push(("source_lang", deepl_lang(src)));
+    }
+    form
 }
 
 fn deepl_lang(code: &str) -> String {
@@ -553,6 +584,45 @@ mod tests {
     fn parse_completion_strips_thinking() {
         let body = r#"{"choices":[{"message":{"reasoning_content":"ignored","content":"<think>reasoning</think>你好"}}]}"#;
         assert_eq!(parse_completion(body).unwrap(), "你好");
+    }
+
+    #[test]
+    fn source_selection_reaches_ai_prompt_without_leaking_into_titles() {
+        for (source, label) in [
+            ("auto", "自动识别语言的"),
+            ("ja", "日文"),
+            ("zh", "中文"),
+            ("en", "英文"),
+        ] {
+            let input = format!("[[KIKOETA_TARGET:en]]\r\n[[KIKOETA_SOURCE:{source}]]\r\n作品标题");
+            let (target, text) = split_translation_target(input);
+            let (actual_source, text) = split_translation_source(text);
+            assert_eq!(actual_source, source);
+            assert_eq!(text, "作品标题");
+            let prompt = translation_prompt(&actual_source, &target);
+            assert!(prompt.contains(label), "{prompt}");
+            assert!(prompt.contains("English"));
+        }
+        assert_eq!(
+            split_translation_source("Title".to_string()),
+            ("auto".to_string(), "Title".to_string())
+        );
+    }
+
+    #[test]
+    fn deepl_auto_omits_source_and_explicit_sources_are_mapped() {
+        assert_eq!(
+            deepl_form("Title", "auto", "zh-CN"),
+            vec![
+                ("text", "Title".to_string()),
+                ("target_lang", "ZH".to_string())
+            ]
+        );
+        for (source, expected) in [("ja", "JA"), ("zh", "ZH"), ("en", "EN")] {
+            assert!(
+                deepl_form("Title", source, "en").contains(&("source_lang", expected.to_string()))
+            );
+        }
     }
 
     #[test]

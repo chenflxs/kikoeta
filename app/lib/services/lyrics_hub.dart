@@ -8,6 +8,7 @@ import '../src/rust/api/textconv.dart';
 import 'api_service.dart';
 import 'android_lyrics_overlay.dart';
 import 'desktop_lyrics_overlay.dart';
+import 'desktop_lyrics_timing.dart';
 import 'lyrics_library_service.dart';
 import 'player_service.dart';
 
@@ -43,14 +44,26 @@ class LyricsHub extends ChangeNotifier {
     Future<List<LyricLine>> Function(LyricsLibraryFile)? libraryLoader,
     OnlineLyricsLoader? onlineLoader,
     ValueListenable<int>? libraryRevision,
-    int Function()? position,
-    void Function(String)? overlayUpdate,
+    Duration Function()? position,
+    Duration Function()? duration,
+    bool Function()? playing,
+    double Function()? rate,
+    void Function(String, DesktopLyricsTiming?)? overlayUpdate,
+    bool? sendTimingUpdates,
   }) : _libraryMatcher = libraryMatcher ?? _matchLibrary,
        _libraryLoader = libraryLoader ?? LyricsLibraryService.instance.loadFile,
        _onlineLoader = onlineLoader ?? _loadOnline,
        _libraryRevision =
            libraryRevision ?? LyricsLibraryService.instance.revision,
-       _position = position ?? (() => AppPlayer.instance.currentPosition),
+       _position = position ?? (() => AppPlayer.instance.player.state.position),
+       _duration = duration ?? (() => AppPlayer.instance.player.state.duration),
+       _playing =
+           playing ??
+           (() =>
+               AppPlayer.instance.isNowPlaying &&
+               !AppPlayer.instance.player.state.buffering),
+       _rate = rate ?? (() => AppPlayer.instance.player.state.rate),
+       _sendTimingUpdates = sendTimingUpdates ?? Platform.isWindows,
        _overlayUpdate = overlayUpdate ?? _updateOverlay;
 
   @visibleForTesting
@@ -59,13 +72,22 @@ class LyricsHub extends ChangeNotifier {
     required Future<List<LyricLine>> Function(LyricsLibraryFile) libraryLoader,
     required OnlineLyricsLoader onlineLoader,
     ValueListenable<int>? libraryRevision,
+    Duration Function()? position,
+    Duration Function()? duration,
+    bool Function()? playing,
+    double Function()? rate,
+    void Function(String, DesktopLyricsTiming?)? overlayUpdate,
   }) => LyricsHub._(
     libraryMatcher: libraryMatcher,
     libraryLoader: libraryLoader,
     onlineLoader: onlineLoader,
     libraryRevision: libraryRevision ?? ValueNotifier<int>(0),
-    position: () => 0,
-    overlayUpdate: (_) {},
+    position: position ?? (() => Duration.zero),
+    duration: duration ?? (() => Duration.zero),
+    playing: playing ?? (() => false),
+    rate: rate ?? (() => 1),
+    overlayUpdate: overlayUpdate ?? (_, _) {},
+    sendTimingUpdates: true,
   );
 
   static final LyricsHub instance = LyricsHub._();
@@ -73,8 +95,12 @@ class LyricsHub extends ChangeNotifier {
   final Future<List<LyricLine>> Function(LyricsLibraryFile) _libraryLoader;
   final OnlineLyricsLoader _onlineLoader;
   final ValueListenable<int> _libraryRevision;
-  final int Function() _position;
-  final void Function(String) _overlayUpdate;
+  final Duration Function() _position;
+  final Duration Function() _duration;
+  final bool Function() _playing;
+  final double Function() _rate;
+  final bool _sendTimingUpdates;
+  final void Function(String, DesktopLyricsTiming?) _overlayUpdate;
   final List<StreamSubscription> _subscriptions = [];
   List<LyricLine> _lyrics = const [];
   String? _sourceName;
@@ -101,6 +127,14 @@ class LyricsHub extends ChangeNotifier {
     if (_started) return;
     _started = true;
     _subscriptions.add(AppPlayer.instance.position.listen((_) => _tick()));
+    if (_sendTimingUpdates) {
+      _subscriptions.add(AppPlayer.instance.playing.listen((_) => _tick()));
+      _subscriptions.add(AppPlayer.instance.buffering.listen((_) => _tick()));
+      _subscriptions.add(AppPlayer.instance.duration.listen((_) => _tick()));
+      _subscriptions.add(
+        AppPlayer.instance.player.stream.rate.listen((_) => _tick()),
+      );
+    }
     _subscriptions.add(AppPlayer.instance.released.listen((_) => clear()));
   }
 
@@ -374,30 +408,52 @@ class LyricsHub extends ChangeNotifier {
   );
 
   /// 当前应显示的歌词行（保留首句时间之前显示首句的行为）。
-  String get currentLine {
-    if (_lyrics.isEmpty) return '';
+  String get currentLine => currentOverlayCue.text;
+
+  ({String text, DesktopLyricsTiming? timing}) get currentOverlayCue {
+    if (_lyrics.isEmpty) return (text: '', timing: null);
     final pos = _position();
     var idx = 0;
     for (var i = 0; i < _lyrics.length; i++) {
-      if (pos >= _lyrics[i].t) {
+      if (pos >= Duration(seconds: _lyrics[i].t)) {
         idx = i;
       } else {
         break;
       }
     }
-    return _display(_lyrics[idx]);
+    final start = Duration(seconds: _lyrics[idx].t);
+    Duration? end;
+    for (var i = idx + 1; i < _lyrics.length; i++) {
+      final next = Duration(seconds: _lyrics[i].t);
+      if (next > start) {
+        end = next;
+        break;
+      }
+    }
+    final trackEnd = _duration();
+    if (end == null && trackEnd > start) end = trackEnd;
+    return (
+      text: _display(_lyrics[idx]),
+      timing: DesktopLyricsTiming(
+        start: start,
+        end: end,
+        position: pos,
+        playing: _playing(),
+        rate: _rate(),
+      ),
+    );
   }
 
   void _tick({bool force = false}) {
-    final line = currentLine;
-    if (!force && line == _lastSent) return;
-    _lastSent = line;
-    _overlayUpdate(line);
+    final cue = currentOverlayCue;
+    if (!force && cue.text == _lastSent && !_sendTimingUpdates) return;
+    _lastSent = cue.text;
+    _overlayUpdate(cue.text, cue.timing);
   }
 
-  static void _updateOverlay(String line) {
+  static void _updateOverlay(String line, DesktopLyricsTiming? timing) {
     if (Platform.isWindows && DesktopLyricsOverlay.instance.isVisible) {
-      DesktopLyricsOverlay.instance.update(line);
+      DesktopLyricsOverlay.instance.update(line, timing: timing);
     } else if (Platform.isAndroid) {
       AndroidLyricsOverlay.instance.update(line);
     }

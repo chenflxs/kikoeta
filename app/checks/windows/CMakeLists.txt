@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.14)
+project(process_shutdown_check LANGUAGES CXX)
+add_executable(process_shutdown_test process_shutdown_test.cpp)
+target_compile_features(process_shutdown_test PRIVATE cxx_std_17)
+target_compile_options(process_shutdown_test PRIVATE /W4 /WX /EHsc)

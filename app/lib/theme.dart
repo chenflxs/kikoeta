@@ -137,7 +137,11 @@ ThemeData buildTheme(Brightness brightness) {
             : Brightness.light,
       ),
     ),
-    splashFactory: InkSparkle.splashFactory,
+    // 使用 InkWell 自带的状态底色淡入淡出，避免颗粒水波的着色器动画。
+    splashFactory: NoSplash.splashFactory,
+    highlightColor: p.accent.withValues(alpha: 0.10),
+    hoverColor: p.accent.withValues(alpha: 0.04),
+    focusColor: p.accent.withValues(alpha: 0.12),
     dividerColor: p.line,
     textTheme: const TextTheme(
       titleLarge: TextStyle(fontWeight: FontWeight.w800, letterSpacing: .2),
