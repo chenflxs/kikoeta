@@ -185,7 +185,9 @@ void _syncDesktopLyrics() {
 
 void _syncAndroidLyrics() {
   final ov = AndroidLyricsOverlay.instance;
-  if (appState.desktopLyricsOn && !appState.desktopLyricsTemporarilyHidden) {
+  if (appState.desktopLyricsOn &&
+      appState.playing &&
+      !appState.desktopLyricsTemporarilyHidden) {
     final portrait = _isPortraitNow();
     final locked = portrait
         ? appState.lyricsLockedPortrait

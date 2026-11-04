@@ -20,7 +20,7 @@ void main() {
     () {
       expect(AppLanguage.preference, 'system');
       expect(AppLanguage.localeOverride, isNull);
-      for (final locale in const [Locale('en', 'US'), Locale('ru')]) {
+      for (final locale in const [Locale('en', 'US'), Locale('de')]) {
         final resolved = AppLanguage.resolveLocale([locale]);
         final strings = lookupAppLocalizations(resolved);
         expect(strings.languageAndTranslation, 'Language and translation');
@@ -46,7 +46,7 @@ void main() {
       var notifications = 0;
       app.addListener(() => notifications++);
 
-      for (final value in ['ru', 'invalid']) {
+      for (final value in ['de', 'invalid']) {
         app.setUiLanguage(value);
       }
       expect(saved, isEmpty);
@@ -89,6 +89,15 @@ void main() {
       expect(appL10n.settings, '設定');
       expect(appL10n.confirm, '確認');
       expect(notifications, 4);
+      app.setUiLanguage('ru');
+      expect(app.uiLanguage, 'ru');
+      expect(saved, {'ui_language': 'ru'});
+      expect(AppLanguage.localeOverride, const Locale('ru'));
+      expect(appL10n.settings, 'Настройки');
+      expect(appL10n.confirm, 'Подтвердить');
+      expect(notifications, 5);
+      app.setUiLanguage('ru');
+      expect(notifications, 5);
     },
   );
 
@@ -121,6 +130,8 @@ void main() {
       expect(app.resolvedTranslationTarget, 'zh-TW');
       app.setUiLanguage('ja');
       expect(app.resolvedTranslationTarget, 'ja');
+      app.setUiLanguage('ru');
+      expect(app.resolvedTranslationTarget, 'ru');
       app.setUiLanguage('en');
       expect(app.resolvedTranslationTarget, 'en');
       app.setTranslationTarget('en');
@@ -153,7 +164,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('language menu switches Japanese, English, Chinese, and system', (
+  testWidgets('language menu switches all supported languages and system', (
     tester,
   ) async {
     final saved = <String, String>{};
@@ -185,11 +196,23 @@ void main() {
     ]);
     expect(
       entries.where((entry) => entry.enabled).map((entry) => entry.value),
-      ['system', 'zh-CN', 'zh-TW', 'ja', 'en'],
+      ['system', 'zh-CN', 'zh-TW', 'ja', 'en', 'ru'],
     );
-    for (final label in ['繁體中文', '日本語 (beta)', 'English (beta)', 'Русский']) {
+    for (final label in [
+      '繁體中文',
+      '日本語 (beta)',
+      'English (beta)',
+      'Русский (beta)',
+    ]) {
       expect(find.text(label), findsOneWidget);
     }
+    await tester.tap(find.text('Русский (beta)'));
+    await tester.pumpAndSettle();
+    expect(app.uiLanguage, 'ru');
+    expect(saved['ui_language'], 'ru');
+    expect(find.text('Язык и перевод'), findsOneWidget);
+    await tester.tap(find.byTooltip('Язык интерфейса'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('日本語 (beta)'));
     await tester.pumpAndSettle();
     expect(app.uiLanguage, 'ja');
@@ -329,6 +352,111 @@ void main() {
     expect(app.resolvedTranslationTarget, 'ja');
     expect(find.text('日本語 (beta)'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'Russian system locale and language selection fit a phone viewport',
+    (tester) async {
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      tester.binding.platformDispatcher.localesTestValue = const [
+        Locale('ru', 'RU'),
+      ];
+      addTearDown(tester.binding.platformDispatcher.clearLocalesTestValue);
+      final saved = <String, String>{};
+      final app = AppState(
+        languageSettingsWriter: (key, value) => saved[key] = value,
+      );
+      addTearDown(app.dispose);
+      app.setTranslationTarget('ui');
+      await showSettings(tester, app);
+      expect(find.text('Язык и перевод'), findsOneWidget);
+      expect(find.text('Как в системе'), findsOneWidget);
+      for (final locale in const [
+        Locale('ru'),
+        Locale('ru', 'RU'),
+        Locale('ru', 'BY'),
+      ]) {
+        expect(AppLanguage.resolveLocale([locale]), const Locale('ru'));
+      }
+      expect(
+        Localizations.localeOf(tester.element(find.text('Язык и перевод'))),
+        const Locale('ru'),
+      );
+      await tester.tap(find.byTooltip('Язык интерфейса'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Русский (beta)'));
+      await tester.pumpAndSettle();
+      expect(saved['ui_language'], 'ru');
+      expect(app.resolvedTranslationTarget, 'ru');
+      expect(find.text('Русский (beta)'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      app.setTranslationTarget('zh-CN');
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      app.setTranslationTarget('zh-TW');
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('compact translation targets keep full menu labels on phones', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final app = AppState(languageSettingsWriter: (_, _) {});
+    addTearDown(app.dispose);
+    app.setTranslationTarget('ui');
+    for (final language in ['ru', 'en', 'zh-CN', 'zh-TW', 'ja']) {
+      app.setUiLanguage(language);
+      await showSettings(tester, app);
+      final strings = appL10n;
+      final dropdown = find.byTooltip(strings.translationTargetLanguage);
+      for (final entry in {
+        'ui': strings.followInterfaceLanguageShort,
+        'zh-CN': 'ZH-CN',
+        'zh-TW': 'ZH-TW',
+        'en': 'EN',
+      }.entries) {
+        await tester.ensureVisible(dropdown);
+        await tester.tap(dropdown);
+        await tester.pumpAndSettle();
+        for (final fullLabel in [
+          strings.followInterfaceLanguage,
+          strings.translationTargetSimplifiedChinese,
+          strings.translationTargetTraditionalChinese,
+          strings.englishLanguage,
+        ]) {
+          expect(
+            find.descendant(
+              of: find.byType(PopupMenuItem<String>),
+              matching: find.text(fullLabel),
+            ),
+            findsOneWidget,
+          );
+        }
+        expect(tester.takeException(), isNull);
+        await tester.tap(
+          find.byWidgetPredicate(
+            (widget) =>
+                widget is PopupMenuItem<String> && widget.value == entry.key,
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(app.translationTarget, entry.key);
+        expect(
+          find.descendant(of: dropdown, matching: find.text(entry.value)),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      }
+      app.setTranslationTarget('ui');
+    }
   });
 
   testWidgets('English language settings fit a phone viewport', (tester) async {

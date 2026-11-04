@@ -103,6 +103,8 @@ class LyricsHub extends ChangeNotifier {
   final void Function(String, DesktopLyricsTiming?) _overlayUpdate;
   final List<StreamSubscription> _subscriptions = [];
   List<LyricLine> _lyrics = const [];
+  List<LyricLine> _visibleLyrics = const [];
+  bool _skipEmpty = false;
   String? _sourceName;
   bool _loading = false;
   String _conv = 'orig';
@@ -119,7 +121,7 @@ class LyricsHub extends ChangeNotifier {
   int _matchSeq = 0;
   bool _libraryRefreshPending = false;
 
-  List<LyricLine> get lyrics => _lyrics;
+  List<LyricLine> get lyrics => _visibleLyrics;
   String? get sourceName => _sourceName;
   bool get loading => _loading;
 
@@ -247,7 +249,18 @@ class LyricsHub extends ChangeNotifier {
     if (_conv == conv) return;
     _conv = conv;
     _convCache.clear();
+    _rebuildVisibleLyrics();
     refreshOverlay();
+  }
+
+  void _rebuildVisibleLyrics() {
+    // Only rebuild on load or display-setting changes, never on a position tick.
+    _visibleLyrics = !_skipEmpty
+        ? _lyrics
+        : List.unmodifiable(
+            _lyrics.where((line) =>
+                (_conv == 'orig' ? line.jp : line.zh).trim().isNotEmpty),
+          );
   }
 
   void refreshOverlay() => _tick(force: true);
@@ -256,6 +269,12 @@ class LyricsHub extends ChangeNotifier {
     final app = _app;
     if (app == null || _disposed) return;
     setConv(app.conv);
+    if (_skipEmpty != app.lyricsSkipEmpty) {
+      _skipEmpty = app.lyricsSkipEmpty;
+      _rebuildVisibleLyrics();
+      refreshOverlay();
+      notifyListeners();
+    }
     final key = _currentTrackKey(app);
     final trackChanged = key != _trackKey;
     final settingChanged = _libraryAuto != app.lyricsLibraryAuto;
@@ -380,6 +399,7 @@ class LyricsHub extends ChangeNotifier {
 
   void _setResult(List<LyricLine> lyrics, {String? sourceName}) {
     _lyrics = List.unmodifiable(lyrics);
+    _rebuildVisibleLyrics();
     _sourceName = sourceName;
     _convCache.clear();
     _lastSent = '';
@@ -411,20 +431,21 @@ class LyricsHub extends ChangeNotifier {
   String get currentLine => currentOverlayCue.text;
 
   ({String text, DesktopLyricsTiming? timing}) get currentOverlayCue {
-    if (_lyrics.isEmpty) return (text: '', timing: null);
+    final lyrics = _visibleLyrics;
+    if (lyrics.isEmpty) return (text: '', timing: null);
     final pos = _position();
     var idx = 0;
-    for (var i = 0; i < _lyrics.length; i++) {
-      if (pos >= Duration(seconds: _lyrics[i].t)) {
+    for (var i = 0; i < lyrics.length; i++) {
+      if (pos >= Duration(seconds: lyrics[i].t)) {
         idx = i;
       } else {
         break;
       }
     }
-    final start = Duration(seconds: _lyrics[idx].t);
+    final start = Duration(seconds: lyrics[idx].t);
     Duration? end;
-    for (var i = idx + 1; i < _lyrics.length; i++) {
-      final next = Duration(seconds: _lyrics[i].t);
+    for (var i = idx + 1; i < lyrics.length; i++) {
+      final next = Duration(seconds: lyrics[i].t);
       if (next > start) {
         end = next;
         break;
@@ -433,7 +454,7 @@ class LyricsHub extends ChangeNotifier {
     final trackEnd = _duration();
     if (end == null && trackEnd > start) end = trackEnd;
     return (
-      text: _display(_lyrics[idx]),
+      text: _display(lyrics[idx]),
       timing: DesktopLyricsTiming(
         start: start,
         end: end,

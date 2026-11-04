@@ -2109,6 +2109,9 @@
     "description": "pages/settings_page.dart: _translationTargetDropdown"
   },
   "followInterfaceLanguage": "跟随界面语言",
+  "followInterfaceLanguageShort": "跟随界面",
+  "translationTargetSimplifiedChinese": "简体中文",
+  "translationTargetTraditionalChinese": "繁体中文",
   "@followInterfaceLanguage": {
     "description": "pages/settings_page.dart: _translationTargetLabel"
   },

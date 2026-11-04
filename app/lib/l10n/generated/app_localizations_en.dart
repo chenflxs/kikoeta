@@ -1697,6 +1697,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get followInterfaceLanguage => 'Follow interface language';
 
   @override
+  String get followInterfaceLanguageShort => 'Follow UI';
+
+  @override
+  String get translationTargetSimplifiedChinese => 'Simplified Chinese';
+
+  @override
+  String get translationTargetTraditionalChinese => 'Traditional Chinese';
+
+  @override
   String get settingsPageSectionsText9 => 'Add custom site';
 
   @override

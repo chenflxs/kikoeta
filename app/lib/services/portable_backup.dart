@@ -41,6 +41,7 @@ class PortableBackup {
     'sfw': '0',
     'desktop_lyrics': '0',
     'lyrics_library_auto': '0',
+    'lyrics_skip_empty': '0',
     'lyrics_font_size': '20',
     'lyrics_color': '4294967295',
     'lyrics_outline_color': '4278190080',

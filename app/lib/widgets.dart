@@ -189,7 +189,8 @@ class _CoverArtState extends State<CoverArt> {
               ),
             ),
           if (showBadges)
-            Positioned(top: 8, right: 8, child: AgeBadge(age: work.age)),
+            if (work.ageKnown)
+              Positioned(top: 8, right: 8, child: AgeBadge(age: work.age)),
           ?child,
         ],
       ),

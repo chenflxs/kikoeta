@@ -248,7 +248,8 @@ class PlaylistDetailPage extends StatelessWidget {
       title: entry.title,
       circle: entry.circle,
       va: '',
-      age: Age.all,
+      age: entry.age ?? Age.all,
+      ageKnown: entry.age != null,
       dur: '',
       tags: const [],
       grad: 0,
@@ -257,12 +258,12 @@ class PlaylistDetailPage extends StatelessWidget {
     );
   }
 
-  void _playTrack(
+  Future<void> _playTrack(
     BuildContext context,
     List<PlaylistEntry> entries,
     PlaylistEntry entry,
     PlaylistTrack track,
-  ) {
+  ) async {
     if (track.url == null || track.url!.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(context.l10n.playlistsPagePlayTrackText2)),
@@ -294,8 +295,18 @@ class PlaylistDetailPage extends StatelessWidget {
       );
       return;
     }
+    var work = _workFor(entry);
+    if (!work.ageKnown && work.apiId != null) {
+      try {
+        work = await ApiService.fetchWork(app, work.apiId!);
+        entry.age = work.age;
+      } catch (_) {
+        // 旧歌单离线时仍可播放；未知分级不显示为「全年龄」。
+      }
+      if (!context.mounted) return;
+    }
     app.startPlayback(
-      _workFor(entry),
+      work,
       files,
       initialTrackIndex: index < 0 ? 0 : index,
     );

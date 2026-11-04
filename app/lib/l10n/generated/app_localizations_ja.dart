@@ -1641,6 +1641,15 @@ class AppLocalizationsJa extends AppLocalizations {
   String get followInterfaceLanguage => '表示言語に従う';
 
   @override
+  String get followInterfaceLanguageShort => '画面に従う';
+
+  @override
+  String get translationTargetSimplifiedChinese => '簡体字中国語';
+
+  @override
+  String get translationTargetTraditionalChinese => '繁体字中国語';
+
+  @override
   String get settingsPageSectionsText9 => 'カスタムサイトを追加';
 
   @override

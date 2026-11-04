@@ -13,12 +13,14 @@ class AppLanguage {
   static const traditionalChinese = 'zh-TW';
   static const english = 'en';
   static const japanese = 'ja';
+  static const russian = 'ru';
   static const selectablePreferences = [
     system,
     simplifiedChinese,
     traditionalChinese,
     english,
     japanese,
+    russian,
   ];
   static String _preference = system;
 
@@ -37,6 +39,7 @@ class AppLanguage {
     ),
     english => const Locale('en'),
     japanese => const Locale('ja'),
+    russian => const Locale('ru'),
     _ => null,
   };
 

@@ -7,6 +7,7 @@ import 'package:intl/intl.dart' as intl;
 
 import 'app_localizations_en.dart';
 import 'app_localizations_ja.dart';
+import 'app_localizations_ru.dart';
 import 'app_localizations_zh.dart';
 
 // ignore_for_file: type=lint
@@ -98,6 +99,7 @@ abstract class AppLocalizations {
     Locale('en'),
     Locale('zh', 'CN'),
     Locale('ja'),
+    Locale('ru'),
     Locale('zh'),
     Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hant'),
   ];
@@ -3032,6 +3034,24 @@ abstract class AppLocalizations {
   /// **'跟随界面语言'**
   String get followInterfaceLanguage;
 
+  /// No description provided for @followInterfaceLanguageShort.
+  ///
+  /// In zh, this message translates to:
+  /// **'跟随界面'**
+  String get followInterfaceLanguageShort;
+
+  /// No description provided for @translationTargetSimplifiedChinese.
+  ///
+  /// In zh, this message translates to:
+  /// **'简体中文'**
+  String get translationTargetSimplifiedChinese;
+
+  /// No description provided for @translationTargetTraditionalChinese.
+  ///
+  /// In zh, this message translates to:
+  /// **'繁体中文'**
+  String get translationTargetTraditionalChinese;
+
   /// pages/settings_page.dart: sections
   ///
   /// In zh, this message translates to:
@@ -5222,7 +5242,7 @@ class _AppLocalizationsDelegate
 
   @override
   bool isSupported(Locale locale) =>
-      <String>['en', 'ja', 'zh'].contains(locale.languageCode);
+      <String>['en', 'ja', 'ru', 'zh'].contains(locale.languageCode);
 
   @override
   bool shouldReload(_AppLocalizationsDelegate old) => false;
@@ -5259,6 +5279,8 @@ AppLocalizations lookupAppLocalizations(Locale locale) {
       return AppLocalizationsEn();
     case 'ja':
       return AppLocalizationsJa();
+    case 'ru':
+      return AppLocalizationsRu();
     case 'zh':
       return AppLocalizationsZh();
   }

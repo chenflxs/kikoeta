@@ -1,6 +1,7 @@
 package com.kikoeta.kikoeta_app
 
 import android.content.Context
+import android.hardware.input.InputManager
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -236,6 +237,13 @@ class LyricsOverlay(
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            // Android 12+ also checks opacity when passing touches through overlays.
+            alpha = if (locked && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                context.getSystemService(InputManager::class.java)
+                    .maximumObscuringOpacityForTouch
+            } else {
+                1f
+            }
             x = winX
             y = winY
         }

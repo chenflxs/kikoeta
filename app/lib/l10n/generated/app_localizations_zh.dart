@@ -1620,6 +1620,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get followInterfaceLanguage => '跟随界面语言';
 
   @override
+  String get followInterfaceLanguageShort => '跟随界面';
+
+  @override
+  String get translationTargetSimplifiedChinese => '简体中文';
+
+  @override
+  String get translationTargetTraditionalChinese => '繁体中文';
+
+  @override
   String get settingsPageSectionsText9 => '添加自建站点';
 
   @override
@@ -4470,6 +4479,15 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get followInterfaceLanguage => '跟隨介面語言';
+
+  @override
+  String get followInterfaceLanguageShort => '跟隨介面';
+
+  @override
+  String get translationTargetSimplifiedChinese => '簡體中文';
+
+  @override
+  String get translationTargetTraditionalChinese => '繁體中文';
 
   @override
   String get settingsPageSectionsText9 => '新增自建站台';

@@ -82,10 +82,16 @@ fn convert_s2t(text: &str) -> String {
 
 fn convert_t2s(text: &str) -> String {
     T2S_CONVERTER
-        .get_or_init(|| Mutex::new(Converter::new(Config::T2s)))
+        .get_or_init(|| Mutex::new(lyrics_t2s_converter()))
         .lock()
         .map(|converter| converter.convert(text))
-        .unwrap_or_else(|_| Converter::new(Config::T2s).convert(text))
+        .unwrap_or_else(|_| lyrics_t2s_converter().convert(text))
+}
+
+fn lyrics_t2s_converter() -> Converter {
+    // OpenCC treats 坏 as an old form of 坯. Lyrics commonly already contain
+    // simplified 坏, including mixed-script lines; preserve that modern spelling.
+    Converter::with_custom(Config::T2s, &[("坏".into(), "坏".into())])
 }
 
 #[cfg(test)]
@@ -108,6 +114,17 @@ mod tests {
             api_convert_text("我喜歡聽音樂".into(), "t2s".into()).unwrap(),
             "我喜欢听音乐"
         );
+    }
+
+    #[test]
+    fn t2s_preserves_simplified_huai_in_mixed_lyrics() {
+        for text in ["坏孩子，别弄坏了", "壞孩子，別弄坏了", "坏子、坏土、坯布"] {
+            let expected = match text {
+                "坏子、坏土、坯布" => text,
+                _ => "坏孩子，别弄坏了",
+            };
+            assert_eq!(api_convert_text(text.into(), "t2s".into()).unwrap(), expected);
+        }
     }
 
     #[test]

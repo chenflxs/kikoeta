@@ -1983,12 +1983,19 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget _translationTargetDropdown() {
     final labels = {
       'ui': context.l10n.followInterfaceLanguage,
-      'zh-CN': context.l10n.simplifiedChineseShort,
-      'zh-TW': context.l10n.traditionalChineseShort,
+      'zh-CN': context.l10n.translationTargetSimplifiedChinese,
+      'zh-TW': context.l10n.translationTargetTraditionalChinese,
       'en': context.l10n.englishLanguage,
     };
+    final selectedLabel = switch (app.translationTarget) {
+      'ui' => context.l10n.followInterfaceLanguageShort,
+      'zh-CN' => 'ZH-CN',
+      'zh-TW' => 'ZH-TW',
+      'en' => 'EN',
+      _ => labels[app.translationTarget]!,
+    };
     return _translationDropdown(
-      label: labels[app.translationTarget]!,
+      label: selectedLabel,
       icon: Icons.language_outlined,
       tooltip: context.l10n.translationTargetLanguage,
       items: [
@@ -2041,7 +2048,7 @@ class _SettingsPageState extends State<SettingsPage> {
       'zh-TW': context.l10n.traditionalChinese,
       'ja': '日本語 (beta)',
       'en': 'English (beta)',
-      'ru': 'Русский',
+      'ru': 'Русский (beta)',
     };
     return _translationDropdown(
       label: labels[app.uiLanguage]!,

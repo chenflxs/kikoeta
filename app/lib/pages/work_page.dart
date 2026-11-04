@@ -1476,11 +1476,11 @@ class _WorkPageState extends State<WorkPage> {
                         child: Row(
                           children: [
                             Icon(
-                              chosen == pl
+                              !newMode && chosen == pl
                                   ? Icons.radio_button_checked
                                   : Icons.radio_button_off,
                               size: 20,
-                              color: chosen == pl ? p.accent : p.dim,
+                              color: !newMode && chosen == pl ? p.accent : p.dim,
                             ),
                             const SizedBox(width: 10),
                             Text(pl, style: const TextStyle(fontSize: 13.5)),
@@ -2032,7 +2032,7 @@ class _WorkPageState extends State<WorkPage> {
                                           WrapCrossAlignment.center,
                                       children: [
                                         _rjChip(),
-                                        AgeBadge(age: work.age),
+                                        if (work.ageKnown) AgeBadge(age: work.age),
                                       ],
                                     ),
                                     const SizedBox(height: 6),
@@ -2056,7 +2056,7 @@ class _WorkPageState extends State<WorkPage> {
                                   crossAxisAlignment: WrapCrossAlignment.center,
                                   children: [
                                     _rjChip(),
-                                    AgeBadge(age: work.age),
+                                    if (work.ageKnown) AgeBadge(age: work.age),
                                     if (work.releaseDate.isNotEmpty)
                                       _releaseDateChip(work.releaseDate),
                                     if (_languageEditions.isNotEmpty)

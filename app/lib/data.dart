@@ -37,6 +37,7 @@ class Work {
   final String circle;
   final String va;
   final Age age;
+  final bool ageKnown;
   final String dur;
   final String releaseDate;
   final List<String> tags;
@@ -68,6 +69,7 @@ class Work {
     required this.circle,
     required this.va,
     required this.age,
+    this.ageKnown = true,
     required this.dur,
     this.releaseDate = '',
     required this.tags,
@@ -154,11 +156,13 @@ class PlaylistEntry {
   final String rj;
   final String title;
   final String circle;
+  Age? age;
   final List<PlaylistTrack> tracks;
-  const PlaylistEntry({
+  PlaylistEntry({
     required this.rj,
     required this.title,
     required this.circle,
+    this.age,
     this.tracks = const [],
   });
 }
@@ -361,6 +365,7 @@ class AppState extends ChangeNotifier {
   // 播放器宽屏时的临时抑制状态，不写入设置，离开宽屏后自动恢复。
   bool desktopLyricsTemporarilyHidden = false;
   bool lyricsLibraryAuto = false;
+  bool lyricsSkipEmpty = false;
   double lyricsFontSize = 20;
   int lyricsColor = 0xFFFFFFFF;
   int lyricsOutlineColor = 0xFF000000;
@@ -592,6 +597,7 @@ class AppState extends ChangeNotifier {
           'circle': w.circle,
           'va': w.va,
           'age': w.age.index,
+          'ageKnown': w.ageKnown,
           'dur': w.dur,
           'releaseDate': w.releaseDate,
           'tags': w.tags,
@@ -698,6 +704,7 @@ class AppState extends ChangeNotifier {
           circle: wm['circle'] as String,
           va: wm['va'] as String,
           age: Age.values[(wm['age'] as int?) ?? 0],
+          ageKnown: wm['ageKnown'] != false,
           dur: wm['dur'] as String? ?? '',
           releaseDate: wm['releaseDate'] as String? ?? '',
           tags: List<String>.from((wm['tags'] as List?) ?? const []),
@@ -790,6 +797,7 @@ class AppState extends ChangeNotifier {
       }
     }
     if (existing != null) {
+      existing.age = w?.age ?? existing.age;
       final known = existing.tracks.map((track) => track.path).toSet();
       existing.tracks.addAll(tracks.where((track) => known.add(track.path)));
     } else {
@@ -798,6 +806,7 @@ class AppState extends ChangeNotifier {
           rj: rj,
           title: w?.title ?? (tracks.isNotEmpty ? tracks.first.title : name),
           circle: w?.circle ?? '',
+          age: w?.age,
           tracks: List.of(tracks),
         ),
       );
@@ -1099,6 +1108,7 @@ class AppState extends ChangeNotifier {
     }
     final lla = SettingsStore.get('lyrics_library_auto');
     if (lla != null) lyricsLibraryAuto = lla == '1';
+    lyricsSkipEmpty = SettingsStore.get('lyrics_skip_empty') == '1';
     final lfs = SettingsStore.get('lyrics_font_size');
     if (lfs != null) {
       lyricsFontSize = (double.tryParse(lfs) ?? 20).clamp(12, 64);
@@ -1190,6 +1200,7 @@ class AppState extends ChangeNotifier {
               rj: e['rj'] as String? ?? '',
               title: e['title'] as String? ?? '',
               circle: e['circle'] as String? ?? '',
+              age: Age.values.where((age) => age.name == e['age']).firstOrNull,
               tracks: tracks,
             );
           }).toList();
@@ -1609,6 +1620,13 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setLyricsSkipEmpty(bool v) {
+    if (lyricsSkipEmpty == v) return;
+    lyricsSkipEmpty = v;
+    SettingsStore.set('lyrics_skip_empty', v ? '1' : '0');
+    notifyListeners();
+  }
+
   void setLyricsFontSize(double v) {
     lyricsFontSize = v.clamp(12, 64);
     SettingsStore.set('lyrics_font_size', lyricsFontSize.toStringAsFixed(1));
@@ -1943,6 +1961,7 @@ class AppState extends ChangeNotifier {
     desktopLyricsOn = false;
     lyricsLibraryBroadcastOn = false;
     lyricsFontSize = 20;
+    lyricsSkipEmpty = false;
     lyricsColor = 0xFFFFFFFF;
     lyricsOutlineColor = 0xFF000000;
     lyricsOutlineWidth = 1;
@@ -2046,6 +2065,7 @@ class AppState extends ChangeNotifier {
                   'rj': e.rj,
                   'title': e.title,
                   'circle': e.circle,
+                  if (e.age != null) 'age': e.age!.name,
                   'tracks': e.tracks
                       .map(
                         (t) => {
