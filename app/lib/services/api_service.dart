@@ -46,6 +46,8 @@ class AdvancedFilterEntry {
 
 /// asmr.one API 客户端（网络请求统一由 Rust 核心执行）。
 class ApiService {
+  static final _playbackAgeRequests =
+      <(AppState, String, String), Future<void>>{};
   static String resolveBase(AppState app) {
     if (app.customServer && app.customSites.isNotEmpty) {
       return app.customSites[app.customServerIdx].url;
@@ -276,6 +278,35 @@ class ApiService {
       throw FormatException(appL10n.apiServiceFetchWorkFormatException);
     }
     return _mapWork(Map<String, dynamic>.from(decoded), 0, resolveBase(app));
+  }
+
+  /// Playback and automatic track changes share one metadata backfill request.
+  static Future<void> ensurePlaybackAge(AppState app) {
+    final work = app.currentWork;
+    if (work == null || work.ageKnown) return Future.value();
+    final id = work.apiId ?? apiIdFromRj(work.rj);
+    if (id == null) return Future.value();
+    final base = resolveBase(app);
+    final key = (app, base, work.rj);
+    Future<void> load() async {
+      try {
+        final details = await fetchWork(app, id);
+        if (resolveBase(app) == base &&
+            details.apiId == id &&
+            details.ageKnown) {
+          app.completePlaybackAge(work, details.age);
+        }
+      } catch (_) {
+        // Metadata failure must not interrupt audio; the next playback can retry.
+      }
+    }
+
+    return _playbackAgeRequests.putIfAbsent(
+      key,
+      () => load().whenComplete(() {
+        _playbackAgeRequests.remove(key);
+      }),
+    );
   }
 
   /// 快速打分 / 保存评价与标记（PUT /api/review）。
@@ -1658,6 +1689,11 @@ class ApiService {
       circle: circle,
       va: vas.isEmpty ? appL10n.apiServiceMapWorkVa : 'CV. $vas',
       age: age,
+      ageKnown:
+          ageStr == 'adult' ||
+          ageStr == 'r15' ||
+          ageStr == 'general' ||
+          m['nsfw'] is bool,
       dur: _fmtDuration((m['duration'] as num?)?.toInt() ?? 0),
       releaseDate: _formatReleaseDate(
         m['release'] ?? m['release_date'] ?? m['releaseDate'],

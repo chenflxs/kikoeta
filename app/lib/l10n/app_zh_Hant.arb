@@ -489,8 +489,6 @@
   "translationTargetSimplifiedChinese": "簡體中文",
   "translationTargetTraditionalChinese": "繁體中文",
   "settingsPageSectionsText9": "新增自建站台",
-  "settingsPageSectionsLockRow2": "Android（橫向）",
-  "settingsPageSectionsLockRow3": "Android（直向）",
   "settingsPageSectionsTitle12": "完全重置軟體",
   "settingsPageProxySettingsSwitchRow": "HTTP 代理",
   "settingsPageAiModelInputTooltip": "選擇已偵測模型",
@@ -849,5 +847,14 @@
   "translationSourceAuto": "自動",
   "translationSourceJapanese": "日",
   "translationSourceChinese": "中",
-  "translationSourceEnglish": "英"
+  "translationSourceEnglish": "英",
+  "lyricsSkipEmpty": "跳過歌詞空行",
+  "lyricsSkipEmptyDescription": "保留上一句，直到下一句歌詞",
+  "androidLyricsHideWhenPaused": "暫停時隱藏桌面歌詞",
+  "androidLyricsHideWhenPausedDescription": "暫停或停止播放時隱藏，恢復播放時顯示",
+  "lockDesktopLyrics": "鎖定歌詞",
+  "unlockDesktopLyrics": "解鎖歌詞",
+  "showDesktopLyrics": "開啟歌詞",
+  "hideDesktopLyrics": "關閉歌詞",
+  "androidLyricsLockDescription": "鎖定後觸控穿透，橫直向共用"
 }

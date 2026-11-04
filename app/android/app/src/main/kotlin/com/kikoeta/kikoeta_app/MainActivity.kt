@@ -85,8 +85,6 @@ class MainActivity : FlutterActivity() {
                         (a["outlineColor"] as Number).toInt(),
                         (a["outlineWidth"] as Number).toDouble(),
                         a["locked"] as Boolean,
-                        a["portrait"] as Boolean,
-                        (a["portraitWidthDp"] as Number).toDouble(),
                     )
                     result.success(null)
                 }
@@ -221,9 +219,16 @@ class MainActivity : FlutterActivity() {
                     val state = Media3Bridge.PendingState(
                         playing, pos, dur, title, artist, artworkKey, mediaId, hideCard, logoCover,
                         playbackRate, playbackSpeedEnabled,
+                        LyricsMediaState(
+                            enabled = a["lyricsEnabled"] == true,
+                            locked = a["lyricsLocked"] == true,
+                            lockLabel = a["lyricsLockLabel"] as String? ?: "Lock lyrics",
+                            toggleLabel = a["lyricsToggleLabel"] as String? ?: "Show lyrics",
+                        ),
                     )
                     // 始终保留最近状态：服务刚创建时需要回放，而异步封面也需要据此丢弃旧结果。
                     Media3Bridge.pendingState = state
+                    Media3Bridge.onLyricsStateChanged?.invoke(state.lyrics)
                     val p = Media3Bridge.player
                     if (p != null) {
                         // 隐藏卡片时让 Media3 看到空播放列表，由 Provider 自行移除通知。

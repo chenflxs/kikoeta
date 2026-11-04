@@ -1480,7 +1480,9 @@ class _WorkPageState extends State<WorkPage> {
                                   ? Icons.radio_button_checked
                                   : Icons.radio_button_off,
                               size: 20,
-                              color: !newMode && chosen == pl ? p.accent : p.dim,
+                              color: !newMode && chosen == pl
+                                  ? p.accent
+                                  : p.dim,
                             ),
                             const SizedBox(width: 10),
                             Text(pl, style: const TextStyle(fontSize: 13.5)),
@@ -2032,7 +2034,8 @@ class _WorkPageState extends State<WorkPage> {
                                           WrapCrossAlignment.center,
                                       children: [
                                         _rjChip(),
-                                        if (work.ageKnown) AgeBadge(age: work.age),
+                                        if (work.ageKnown)
+                                          AgeBadge(age: work.age),
                                       ],
                                     ),
                                     const SizedBox(height: 6),

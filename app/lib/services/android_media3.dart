@@ -8,7 +8,7 @@ class AndroidMedia3 {
 
   static const _ch = MethodChannel('kikoeta/media3');
 
-  /// MediaSession 控制命令回调：action = play/pause/stop/seekTo/next/previous
+  /// MediaSession commands, including lyricsLock/lyricsToggle.
   static void Function(String action, int positionMs)? onCommand;
 
   static void Function(double rate)? onPlaybackRateChanged;
@@ -50,6 +50,10 @@ class AndroidMedia3 {
     bool logoCover = false,
     double playbackRate = 1.0,
     bool playbackSpeedEnabled = false,
+    bool lyricsEnabled = false,
+    bool lyricsLocked = false,
+    String lyricsLockLabel = 'Lock lyrics',
+    String lyricsToggleLabel = 'Show lyrics',
   }) async {
     // ignore: avoid_print
     print(
@@ -68,6 +72,10 @@ class AndroidMedia3 {
         'logoCover': logoCover,
         'playbackRate': playbackRate,
         'playbackSpeedEnabled': playbackSpeedEnabled,
+        'lyricsEnabled': lyricsEnabled,
+        'lyricsLocked': lyricsLocked,
+        'lyricsLockLabel': lyricsLockLabel,
+        'lyricsToggleLabel': lyricsToggleLabel,
       });
     } catch (e) {
       // ignore: avoid_print

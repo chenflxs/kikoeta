@@ -1,5 +1,7 @@
 import 'package:flutter/services.dart';
 
+import '../data.dart';
+
 /// 安卓端桌面歌词悬浮窗（原生 WindowManager 覆盖层）
 class AndroidLyricsOverlay {
   AndroidLyricsOverlay._();
@@ -9,7 +11,8 @@ class AndroidLyricsOverlay {
 
   bool _available = false;
   String _text = '';
-  void Function(bool portrait, bool locked)? onLockChanged;
+  bool _toggling = false;
+  void Function(bool locked)? onLockChanged;
 
   bool get available => _available;
   String get text => _text;
@@ -20,7 +23,7 @@ class AndroidLyricsOverlay {
       _ch.setMethodCallHandler((call) async {
         if (call.method == 'lockChanged') {
           final a = call.arguments as Map;
-          onLockChanged?.call(a['portrait'] == true, a['locked'] == true);
+          onLockChanged?.call(a['locked'] == true);
         }
       });
     } catch (_) {
@@ -30,6 +33,8 @@ class AndroidLyricsOverlay {
 
   Future<bool> requestPermission() async {
     try {
+      _available = await _ch.invokeMethod('isAvailable') == true;
+      if (_available) return true;
       await _ch.invokeMethod('requestPermission'); // 未授权时拉起系统授权页
       // 轮询等待授权结果（用户从系统授权页返回后生效，最多约 6 秒）
       for (var i = 0; i < 10; i++) {
@@ -43,6 +48,21 @@ class AndroidLyricsOverlay {
     }
   }
 
+  Future<void> handleMediaCommand(AppState app, String action) async {
+    if (action == 'lyricsLock') {
+      app.setLyricsLockedAndroid(!app.lyricsLockedAndroid);
+    } else if (action == 'lyricsToggle' && !_toggling) {
+      _toggling = true;
+      try {
+        final enabled = !app.desktopLyricsOn;
+        if (enabled && !await requestPermission()) return;
+        app.setDesktopLyricsOn(enabled);
+      } finally {
+        _toggling = false;
+      }
+    }
+  }
+
   Future<void> show({
     required String text,
     required double fontSize,
@@ -50,8 +70,6 @@ class AndroidLyricsOverlay {
     required int outlineColor,
     required double outlineWidth,
     required bool locked,
-    required bool portrait,
-    required double portraitWidthDp,
   }) async {
     _text = text;
     if (!_available) return;
@@ -63,8 +81,6 @@ class AndroidLyricsOverlay {
         'outlineColor': outlineColor,
         'outlineWidth': outlineWidth,
         'locked': locked,
-        'portrait': portrait,
-        'portraitWidthDp': portraitWidthDp,
       });
     } catch (_) {}
   }

@@ -1632,12 +1632,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsPageSectionsText9 => '添加自建站点';
 
   @override
-  String get settingsPageSectionsLockRow2 => '安卓（横屏）';
-
-  @override
-  String get settingsPageSectionsLockRow3 => '安卓（竖屏）';
-
-  @override
   String get settingsPageSectionsTitle12 => '完全重置软件';
 
   @override
@@ -2858,6 +2852,33 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get translationSourceEnglish => '英';
+
+  @override
+  String get lyricsSkipEmpty => '跳过歌词空行';
+
+  @override
+  String get lyricsSkipEmptyDescription => '保留上一句，直到下一句歌词';
+
+  @override
+  String get androidLyricsHideWhenPaused => '暂停时隐藏桌面歌词';
+
+  @override
+  String get androidLyricsHideWhenPausedDescription => '暂停或停止播放时隐藏，恢复播放时显示';
+
+  @override
+  String get lockDesktopLyrics => '锁定歌词';
+
+  @override
+  String get unlockDesktopLyrics => '解锁歌词';
+
+  @override
+  String get showDesktopLyrics => '开启歌词';
+
+  @override
+  String get hideDesktopLyrics => '关闭歌词';
+
+  @override
+  String get androidLyricsLockDescription => '锁定后触摸穿透，横竖屏共用';
 }
 
 /// The translations for Chinese, as used in China (`zh_CN`).
@@ -4493,12 +4514,6 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String get settingsPageSectionsText9 => '新增自建站台';
 
   @override
-  String get settingsPageSectionsLockRow2 => 'Android（橫向）';
-
-  @override
-  String get settingsPageSectionsLockRow3 => 'Android（直向）';
-
-  @override
   String get settingsPageSectionsTitle12 => '完全重置軟體';
 
   @override
@@ -5720,4 +5735,31 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get translationSourceEnglish => '英';
+
+  @override
+  String get lyricsSkipEmpty => '跳過歌詞空行';
+
+  @override
+  String get lyricsSkipEmptyDescription => '保留上一句，直到下一句歌詞';
+
+  @override
+  String get androidLyricsHideWhenPaused => '暫停時隱藏桌面歌詞';
+
+  @override
+  String get androidLyricsHideWhenPausedDescription => '暫停或停止播放時隱藏，恢復播放時顯示';
+
+  @override
+  String get lockDesktopLyrics => '鎖定歌詞';
+
+  @override
+  String get unlockDesktopLyrics => '解鎖歌詞';
+
+  @override
+  String get showDesktopLyrics => '開啟歌詞';
+
+  @override
+  String get hideDesktopLyrics => '關閉歌詞';
+
+  @override
+  String get androidLyricsLockDescription => '鎖定後觸控穿透，橫直向共用';
 }

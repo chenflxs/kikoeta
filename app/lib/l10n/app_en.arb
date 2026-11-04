@@ -489,8 +489,6 @@
   "translationTargetSimplifiedChinese": "Simplified Chinese",
   "translationTargetTraditionalChinese": "Traditional Chinese",
   "settingsPageSectionsText9": "Add custom site",
-  "settingsPageSectionsLockRow2": "Android (landscape)",
-  "settingsPageSectionsLockRow3": "Android (portrait)",
   "settingsPageSectionsTitle12": "Reset the app",
   "settingsPageProxySettingsSwitchRow": "HTTP proxy",
   "settingsPageAiModelInputTooltip": "Choose a detected model",
@@ -849,5 +847,14 @@
   "translationSourceAuto": "Auto",
   "translationSourceJapanese": "JA",
   "translationSourceChinese": "ZH",
-  "translationSourceEnglish": "EN"
+  "translationSourceEnglish": "EN",
+  "lyricsSkipEmpty": "Skip blank lyric lines",
+  "lyricsSkipEmptyDescription": "Keep the previous line until the next lyric",
+  "androidLyricsHideWhenPaused": "Hide desktop lyrics when paused",
+  "androidLyricsHideWhenPausedDescription": "Hide while playback is paused or stopped; show again on resume",
+  "lockDesktopLyrics": "Lock lyrics",
+  "unlockDesktopLyrics": "Unlock lyrics",
+  "showDesktopLyrics": "Show lyrics",
+  "hideDesktopLyrics": "Hide lyrics",
+  "androidLyricsLockDescription": "Touch passes through when locked; shared by portrait and landscape"
 }

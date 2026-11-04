@@ -261,7 +261,8 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
       '${app.volumeBoostLevel}|${app.sleepEndAt?.millisecondsSinceEpoch}|'
       '${app.playbackSeekBackwardSeconds}|${app.playbackSeekForwardSeconds}|'
       '${app.playbackSpeedEnabled}|${app.playbackRate}|'
-      '${app.queue.length}|${app.playWork?.rj ?? ''}|${app.lyricsLibraryAuto}';
+      '${app.queue.length}|${app.playWork?.rj ?? ''}|${app.lyricsLibraryAuto}|'
+      '${app.playWork?.ageKnown}|${app.playWork?.age}';
 
   void _syncPlayerSnapshot({bool rebuild = false}) {
     final position = AppPlayer.instance.currentPosition;
@@ -1973,6 +1974,16 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                   ],
                 ),
                 const SizedBox(height: 16),
+                _lyricSwitchTile(
+                  icon: Icons.filter_alt_outlined,
+                  title: context.l10n.lyricsSkipEmpty,
+                  sub: context.l10n.lyricsSkipEmptyDescription,
+                  value: app.lyricsSkipEmpty,
+                  onChanged: (value) {
+                    app.setLyricsSkipEmpty(value);
+                    setDlg(() {});
+                  },
+                ),
                 Row(
                   children: [
                     Text(
@@ -2165,30 +2176,42 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   }
 
   Widget _libraryAutoTile(StateSetter setDlg) {
-    return InkWell(
-      onTap: () {
-        final next = !app.lyricsLibraryAuto;
-        app.setLyricsLibraryAuto(next);
+    return _lyricSwitchTile(
+      icon: Icons.library_music_outlined,
+      title: context.l10n.playerPageLibraryAutoTileText,
+      sub: context.l10n.playerPageLibraryAutoTileText2,
+      value: app.lyricsLibraryAuto,
+      onChanged: (value) {
+        app.setLyricsLibraryAuto(value);
         setDlg(() {});
       },
+    );
+  }
+
+  Widget _lyricSwitchTile({
+    required IconData icon,
+    required String title,
+    required String sub,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return InkWell(
+      onTap: () => onChanged(!value),
       borderRadius: BorderRadius.circular(12),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 10),
         child: Row(
           children: [
-            _lyricSettingIcon(Icons.library_music_outlined),
+            _lyricSettingIcon(icon),
             const SizedBox(width: 9),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    context.l10n.playerPageLibraryAutoTileText,
-                    style: TextStyle(fontSize: 13.5, color: p.text),
-                  ),
+                  Text(title, style: TextStyle(fontSize: 13.5, color: p.text)),
                   const SizedBox(height: 2),
                   Text(
-                    context.l10n.playerPageLibraryAutoTileText2,
+                    sub,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontSize: 11, color: p.dim),
@@ -2196,13 +2219,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                 ],
               ),
             ),
-            Switch.adaptive(
-              value: app.lyricsLibraryAuto,
-              onChanged: (value) {
-                app.setLyricsLibraryAuto(value);
-                setDlg(() {});
-              },
-            ),
+            Switch.adaptive(value: value, onChanged: onChanged),
           ],
         ),
       ),

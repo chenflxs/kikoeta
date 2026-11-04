@@ -3061,18 +3061,6 @@ abstract class AppLocalizations {
   /// pages/settings_page.dart: sections
   ///
   /// In zh, this message translates to:
-  /// **'安卓（横屏）'**
-  String get settingsPageSectionsLockRow2;
-
-  /// pages/settings_page.dart: sections
-  ///
-  /// In zh, this message translates to:
-  /// **'安卓（竖屏）'**
-  String get settingsPageSectionsLockRow3;
-
-  /// pages/settings_page.dart: sections
-  ///
-  /// In zh, this message translates to:
   /// **'完全重置软件'**
   String get settingsPageSectionsTitle12;
 
@@ -5229,6 +5217,60 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'英'**
   String get translationSourceEnglish;
+
+  /// No description provided for @lyricsSkipEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'跳过歌词空行'**
+  String get lyricsSkipEmpty;
+
+  /// No description provided for @lyricsSkipEmptyDescription.
+  ///
+  /// In zh, this message translates to:
+  /// **'保留上一句，直到下一句歌词'**
+  String get lyricsSkipEmptyDescription;
+
+  /// No description provided for @androidLyricsHideWhenPaused.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂停时隐藏桌面歌词'**
+  String get androidLyricsHideWhenPaused;
+
+  /// No description provided for @androidLyricsHideWhenPausedDescription.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂停或停止播放时隐藏，恢复播放时显示'**
+  String get androidLyricsHideWhenPausedDescription;
+
+  /// No description provided for @lockDesktopLyrics.
+  ///
+  /// In zh, this message translates to:
+  /// **'锁定歌词'**
+  String get lockDesktopLyrics;
+
+  /// No description provided for @unlockDesktopLyrics.
+  ///
+  /// In zh, this message translates to:
+  /// **'解锁歌词'**
+  String get unlockDesktopLyrics;
+
+  /// No description provided for @showDesktopLyrics.
+  ///
+  /// In zh, this message translates to:
+  /// **'开启歌词'**
+  String get showDesktopLyrics;
+
+  /// No description provided for @hideDesktopLyrics.
+  ///
+  /// In zh, this message translates to:
+  /// **'关闭歌词'**
+  String get hideDesktopLyrics;
+
+  /// No description provided for @androidLyricsLockDescription.
+  ///
+  /// In zh, this message translates to:
+  /// **'锁定后触摸穿透，横竖屏共用'**
+  String get androidLyricsLockDescription;
 }
 
 class _AppLocalizationsDelegate

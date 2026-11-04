@@ -258,21 +258,24 @@ class PlaylistDetailPage extends StatelessWidget {
     );
   }
 
-  Future<void> _playTrack(
+  void _playTrack(
     BuildContext context,
     List<PlaylistEntry> entries,
     PlaylistEntry entry,
     PlaylistTrack track,
-  ) async {
+  ) {
     if (track.url == null || track.url!.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(context.l10n.playlistsPagePlayTrackText2)),
       );
       return;
     }
+    final work = _workFor(entry);
+    app.rememberPlaylistAge(work);
     final files = <MediaNode>[];
     var index = -1;
     for (final currentEntry in entries) {
+      final owner = identical(currentEntry, entry) ? work : _workFor(currentEntry);
       for (final item in currentEntry.tracks) {
         if (item.url == null || item.url!.isEmpty) continue;
         if (identical(currentEntry, entry) && item.path == track.path) {
@@ -285,6 +288,7 @@ class PlaylistDetailPage extends StatelessWidget {
             path: item.path,
             url: item.url,
             duration: item.duration,
+            work: owner,
           ),
         );
       }
@@ -295,21 +299,7 @@ class PlaylistDetailPage extends StatelessWidget {
       );
       return;
     }
-    var work = _workFor(entry);
-    if (!work.ageKnown && work.apiId != null) {
-      try {
-        work = await ApiService.fetchWork(app, work.apiId!);
-        entry.age = work.age;
-      } catch (_) {
-        // 旧歌单离线时仍可播放；未知分级不显示为「全年龄」。
-      }
-      if (!context.mounted) return;
-    }
-    app.startPlayback(
-      work,
-      files,
-      initialTrackIndex: index < 0 ? 0 : index,
-    );
+    app.startPlayback(work, files, initialTrackIndex: index < 0 ? 0 : index);
     Navigator.of(context).pushNamed('/player');
   }
 

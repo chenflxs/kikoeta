@@ -1653,12 +1653,6 @@ class AppLocalizationsJa extends AppLocalizations {
   String get settingsPageSectionsText9 => 'カスタムサイトを追加';
 
   @override
-  String get settingsPageSectionsLockRow2 => 'Android（横向き）';
-
-  @override
-  String get settingsPageSectionsLockRow3 => 'Android（縦向き）';
-
-  @override
   String get settingsPageSectionsTitle12 => 'アプリをリセット';
 
   @override
@@ -2905,4 +2899,31 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get translationSourceEnglish => '英';
+
+  @override
+  String get lyricsSkipEmpty => '歌詞の空行をスキップ';
+
+  @override
+  String get lyricsSkipEmptyDescription => '次の歌詞まで前の行を表示する';
+
+  @override
+  String get androidLyricsHideWhenPaused => '一時停止中はデスクトップ歌詞を非表示';
+
+  @override
+  String get androidLyricsHideWhenPausedDescription => '一時停止・停止中は非表示にし、再生時に表示';
+
+  @override
+  String get lockDesktopLyrics => '歌詞をロック';
+
+  @override
+  String get unlockDesktopLyrics => '歌詞のロックを解除';
+
+  @override
+  String get showDesktopLyrics => '歌詞を表示';
+
+  @override
+  String get hideDesktopLyrics => '歌詞を非表示';
+
+  @override
+  String get androidLyricsLockDescription => 'ロック中はタッチを透過し、縦横の向きで共通';
 }

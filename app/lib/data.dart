@@ -89,6 +89,29 @@ class Work {
 
   String tagLabel(String name, Locale locale) =>
       TagNames.display(name, locale, translations: tagNames[name]);
+
+  Work withAge(Age value) => Work(
+    rj: rj,
+    title: title,
+    circle: circle,
+    va: va,
+    age: value,
+    dur: dur,
+    releaseDate: releaseDate,
+    tags: tags,
+    grayTags: grayTags,
+    tagNames: tagNames,
+    grad: grad,
+    coverUrl: coverUrl,
+    hasSubtitle: hasSubtitle,
+    apiId: apiId,
+    hasReview: hasReview,
+    languageEditions: languageEditions,
+    rating: rating,
+    userRating: userRating,
+    progress: progress,
+    reviewText: reviewText,
+  );
 }
 
 /// 作品媒体树节点（文件夹 / 文件）
@@ -100,6 +123,8 @@ class MediaNode {
   final String? url;
   final String? downloadUrl;
   final int duration; // 音频时长（秒），文件夹为 0
+  // Only cross-work playlist queues need an explicit owner.
+  final Work? work;
   const MediaNode({
     required this.title,
     required this.type,
@@ -108,6 +133,7 @@ class MediaNode {
     this.url,
     this.downloadUrl,
     this.duration = 0,
+    this.work,
   });
 
   bool get isDir => type == 'folder';
@@ -274,7 +300,16 @@ class AppState extends ChangeNotifier {
   int worksPage = 1;
   bool worksLoadingMore = false;
   bool worksHasMore = true;
-  Work? currentWork;
+  Work? _currentWork;
+  Work? get currentWork {
+    if (_currentWork == null) return null;
+    if (trackIdx >= 0 && trackIdx < queue.length) {
+      return queue[trackIdx].work ?? _currentWork;
+    }
+    return _currentWork;
+  }
+
+  set currentWork(Work? value) => _currentWork = value;
   List<MediaNode> queue = [];
   int trackIdx = 0;
   bool playing = false;
@@ -318,6 +353,7 @@ class AppState extends ChangeNotifier {
   bool clipboardDetect = true;
   bool lsCover = false; // 不显示通知栏媒体卡片（隐私）
   bool notifCover = false; // 通知栏封面显示项目 logo（隐私）
+  bool androidLyricsHideWhenPaused = false;
   bool releaseInterface = true;
   bool doNotRememberPlaybackProgress = false;
   // 安卓音频（默认关闭）
@@ -366,13 +402,17 @@ class AppState extends ChangeNotifier {
   bool desktopLyricsTemporarilyHidden = false;
   bool lyricsLibraryAuto = false;
   bool lyricsSkipEmpty = false;
+  bool get androidDesktopLyricsVisible =>
+      desktopLyricsOn &&
+      !desktopLyricsTemporarilyHidden &&
+      (!androidLyricsHideWhenPaused || playing);
+
   double lyricsFontSize = 20;
   int lyricsColor = 0xFFFFFFFF;
   int lyricsOutlineColor = 0xFF000000;
   double lyricsOutlineWidth = 1;
   bool lyricsLockedDesktop = false; // 桌面端
-  bool lyricsLockedPortrait = false; // 安卓竖屏
-  bool lyricsLockedLandscape = false; // 安卓横屏
+  bool lyricsLockedAndroid = false;
 
   // 翻译引擎
   String engine = 'google'; // google / deepl / openai
@@ -568,7 +608,7 @@ class AppState extends ChangeNotifier {
 
   // ---------- 播放状态记忆（重启恢复，默认暂停） ----------
   bool get _samePlaybackStructure =>
-      identical(currentWork, _savedPlaybackWork) &&
+      identical(_currentWork, _savedPlaybackWork) &&
       identical(queue, _savedPlaybackQueue) &&
       queue.length == _savedPlaybackQueueLength;
 
@@ -591,24 +631,7 @@ class AppState extends ChangeNotifier {
       'play_state',
       jsonEncode({
         'stateId': stateId,
-        'work': {
-          'rj': w.rj,
-          'title': w.title,
-          'circle': w.circle,
-          'va': w.va,
-          'age': w.age.index,
-          'ageKnown': w.ageKnown,
-          'dur': w.dur,
-          'releaseDate': w.releaseDate,
-          'tags': w.tags,
-          'grayTags': w.grayTags,
-          'tagNames': w.tagNames,
-          'grad': w.grad,
-          'coverUrl': w.coverUrl,
-          'hasSubtitle': w.hasSubtitle,
-          'apiId': w.apiId,
-          'hasReview': w.hasReview,
-        },
+        'work': _workToJson(w),
         'queue': queue.map(_nodeToJson).toList(),
         'trackIdx': trackIdx,
         'position': doNotRememberPlaybackProgress ? 0 : resumePosition,
@@ -663,7 +686,7 @@ class AppState extends ChangeNotifier {
   }
 
   void _rememberSavedPlayback(String? stateId) {
-    _savedPlaybackWork = currentWork;
+    _savedPlaybackWork = _currentWork;
     _savedPlaybackQueue = queue;
     _savedPlaybackQueueLength = queue.length;
     _savedPlaybackStateId = stateId;
@@ -698,24 +721,7 @@ class AppState extends ChangeNotifier {
       try {
         final m = jsonDecode(raw) as Map<String, dynamic>;
         final wm = m['work'] as Map<String, dynamic>;
-        currentWork = Work(
-          rj: wm['rj'] as String,
-          title: wm['title'] as String,
-          circle: wm['circle'] as String,
-          va: wm['va'] as String,
-          age: Age.values[(wm['age'] as int?) ?? 0],
-          ageKnown: wm['ageKnown'] != false,
-          dur: wm['dur'] as String? ?? '',
-          releaseDate: wm['releaseDate'] as String? ?? '',
-          tags: List<String>.from((wm['tags'] as List?) ?? const []),
-          grayTags: List<String>.from((wm['grayTags'] as List?) ?? const []),
-          tagNames: TagNames.fromJson(wm['tagNames']),
-          grad: (wm['grad'] as int?) ?? 0,
-          coverUrl: wm['coverUrl'] as String?,
-          hasSubtitle: (wm['hasSubtitle'] as bool?) ?? false,
-          apiId: wm['apiId'] as int?,
-          hasReview: wm['hasReview'] as bool?,
-        );
+        currentWork = _workFromJson(wm);
         queue = ((m['queue'] as List?) ?? const [])
             .map((e) => _nodeFromJson(e as Map<String, dynamic>))
             .toList();
@@ -753,6 +759,44 @@ class AppState extends ChangeNotifier {
     _rememberSavedPlayback(stateId);
   }
 
+  Map<String, dynamic> _workToJson(Work w) => {
+    'rj': w.rj,
+    'title': w.title,
+    'circle': w.circle,
+    'va': w.va,
+    'age': w.age.index,
+    'ageKnown': w.ageKnown,
+    'dur': w.dur,
+    'releaseDate': w.releaseDate,
+    'tags': w.tags,
+    'grayTags': w.grayTags,
+    'tagNames': w.tagNames,
+    'grad': w.grad,
+    'coverUrl': w.coverUrl,
+    'hasSubtitle': w.hasSubtitle,
+    'apiId': w.apiId,
+    'hasReview': w.hasReview,
+  };
+
+  Work _workFromJson(Map<String, dynamic> wm) => Work(
+    rj: wm['rj'] as String,
+    title: wm['title'] as String,
+    circle: wm['circle'] as String,
+    va: wm['va'] as String,
+    age: Age.values[(wm['age'] as int?) ?? 0],
+    ageKnown: wm['ageKnown'] != false,
+    dur: wm['dur'] as String? ?? '',
+    releaseDate: wm['releaseDate'] as String? ?? '',
+    tags: List<String>.from((wm['tags'] as List?) ?? const []),
+    grayTags: List<String>.from((wm['grayTags'] as List?) ?? const []),
+    tagNames: TagNames.fromJson(wm['tagNames']),
+    grad: (wm['grad'] as int?) ?? 0,
+    coverUrl: wm['coverUrl'] as String?,
+    hasSubtitle: (wm['hasSubtitle'] as bool?) ?? false,
+    apiId: wm['apiId'] as int?,
+    hasReview: wm['hasReview'] as bool?,
+  );
+
   Map<String, dynamic> _nodeToJson(MediaNode n) => {
     'title': n.title,
     'type': n.type,
@@ -761,6 +805,7 @@ class AppState extends ChangeNotifier {
     if (n.url != null) 'url': n.url,
     if (n.downloadUrl != null) 'downloadUrl': n.downloadUrl,
     if (n.duration > 0) 'duration': n.duration,
+    if (n.work != null) 'work': _workToJson(n.work!),
   };
 
   MediaNode _nodeFromJson(Map<String, dynamic> m) => MediaNode(
@@ -773,6 +818,9 @@ class AppState extends ChangeNotifier {
     url: m['url'] as String?,
     downloadUrl: m['downloadUrl'] as String?,
     duration: (m['duration'] as num?)?.toInt() ?? 0,
+    work: m['work'] is Map<String, dynamic>
+        ? _workFromJson(m['work'] as Map<String, dynamic>)
+        : null,
   );
 
   void addToPlaylist(String name, List<String> titles) {
@@ -797,7 +845,7 @@ class AppState extends ChangeNotifier {
       }
     }
     if (existing != null) {
-      existing.age = w?.age ?? existing.age;
+      existing.age = w?.ageKnown == true ? w!.age : existing.age;
       final known = existing.tracks.map((track) => track.path).toSet();
       existing.tracks.addAll(tracks.where((track) => known.add(track.path)));
     } else {
@@ -806,7 +854,7 @@ class AppState extends ChangeNotifier {
           rj: rj,
           title: w?.title ?? (tracks.isNotEmpty ? tracks.first.title : name),
           circle: w?.circle ?? '',
-          age: w?.age,
+          age: w?.ageKnown == true ? w!.age : null,
           tracks: List.of(tracks),
         ),
       );
@@ -821,6 +869,53 @@ class AppState extends ChangeNotifier {
     playlists[n] = [];
     _persistPlaylists();
     notifyListeners();
+  }
+
+  void rememberPlaylistAge(Work work) {
+    if (!work.ageKnown) return;
+    var changed = false;
+    for (final entries in playlists.values) {
+      for (final entry in entries) {
+        if (entry.rj == work.rj && entry.age != work.age) {
+          entry.age = work.age;
+          changed = true;
+        }
+      }
+    }
+    if (!changed) return;
+    _persistPlaylists();
+    notifyListeners();
+  }
+
+  void completePlaybackAge(Work original, Age age) {
+    var changed = false;
+    Work? complete(Work? work) {
+      if (work == null || work.rj != original.rj || work.ageKnown) return work;
+      changed = true;
+      return work.withAge(age);
+    }
+
+    _currentWork = complete(_currentWork);
+    final updatedQueue = queue.map((node) {
+      final owner = complete(node.work);
+      if (identical(owner, node.work)) return node;
+      return MediaNode(
+        title: node.title,
+        type: node.type,
+        path: node.path,
+        children: node.children,
+        url: node.url,
+        downloadUrl: node.downloadUrl,
+        duration: node.duration,
+        work: owner,
+      );
+    }).toList();
+    if (changed) {
+      queue = updatedQueue;
+      savePlayState(forceStructure: true);
+    }
+    rememberPlaylistAge(original.withAge(age));
+    if (changed) notifyListeners();
   }
 
   void removeFromPlaylist(String name, int index) {
@@ -1043,6 +1138,8 @@ class AppState extends ChangeNotifier {
     if (lsCoverSetting != null) lsCover = lsCoverSetting == '1';
     final notifCoverSetting = SettingsStore.get('notif_cover');
     if (notifCoverSetting != null) notifCover = notifCoverSetting == '1';
+    androidLyricsHideWhenPaused =
+        SettingsStore.get('android_lyrics_hide_when_paused') == '1';
     final releaseInterfaceSetting = SettingsStore.get('release_interface');
     if (releaseInterfaceSetting != null) {
       releaseInterface = releaseInterfaceSetting == '1';
@@ -1123,10 +1220,19 @@ class AppState extends ChangeNotifier {
     }
     final lld = SettingsStore.get('lyrics_locked_desktop');
     if (lld != null) lyricsLockedDesktop = lld == '1';
-    final llp = SettingsStore.get('lyrics_locked_portrait');
-    if (llp != null) lyricsLockedPortrait = llp == '1';
-    final lll = SettingsStore.get('lyrics_locked_landscape');
-    if (lll != null) lyricsLockedLandscape = lll == '1';
+    final androidLock = SettingsStore.get('lyrics_locked_android');
+    if (androidLock != null) {
+      lyricsLockedAndroid = androidLock == '1';
+    } else {
+      // Read the discontinued orientation settings only for one-time migration.
+      lyricsLockedAndroid =
+          SettingsStore.get('lyrics_locked_portrait') == '1' ||
+          SettingsStore.get('lyrics_locked_landscape') == '1';
+      SettingsStore.set(
+        'lyrics_locked_android',
+        lyricsLockedAndroid ? '1' : '0',
+      );
+    }
     final conv = SettingsStore.get('conv');
     if (conv != null && conv.isNotEmpty) this.conv = conv;
     final eqOn = SettingsStore.get('eq_on');
@@ -1590,6 +1696,13 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setAndroidLyricsHideWhenPaused(bool value) {
+    if (androidLyricsHideWhenPaused == value) return;
+    androidLyricsHideWhenPaused = value;
+    SettingsStore.set('android_lyrics_hide_when_paused', value ? '1' : '0');
+    notifyListeners();
+  }
+
   void setReleaseInterface(bool v) {
     releaseInterface = v;
     SettingsStore.set('release_interface', v ? '1' : '0');
@@ -1660,15 +1773,10 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setLyricsLockedPortrait(bool v) {
-    lyricsLockedPortrait = v;
-    SettingsStore.set('lyrics_locked_portrait', v ? '1' : '0');
-    notifyListeners();
-  }
-
-  void setLyricsLockedLandscape(bool v) {
-    lyricsLockedLandscape = v;
-    SettingsStore.set('lyrics_locked_landscape', v ? '1' : '0');
+  void setLyricsLockedAndroid(bool v) {
+    if (lyricsLockedAndroid == v) return;
+    lyricsLockedAndroid = v;
+    SettingsStore.set('lyrics_locked_android', v ? '1' : '0');
     notifyListeners();
   }
 
@@ -1936,6 +2044,7 @@ class AppState extends ChangeNotifier {
     clipboardDetect = true;
     lsCover = false;
     notifCover = false;
+    androidLyricsHideWhenPaused = false;
     releaseInterface = true;
     doNotRememberPlaybackProgress = false;
     earPause = false;
@@ -1966,8 +2075,7 @@ class AppState extends ChangeNotifier {
     lyricsOutlineColor = 0xFF000000;
     lyricsOutlineWidth = 1;
     lyricsLockedDesktop = false;
-    lyricsLockedPortrait = false;
-    lyricsLockedLandscape = false;
+    lyricsLockedAndroid = false;
     engine = 'google';
     AppLanguage.setPreference(AppLanguage.system);
     translationTarget = 'zh-CN';

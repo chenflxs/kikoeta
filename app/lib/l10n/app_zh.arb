@@ -2119,14 +2119,6 @@
   "@settingsPageSectionsText9": {
     "description": "pages/settings_page.dart: sections"
   },
-  "settingsPageSectionsLockRow2": "安卓（横屏）",
-  "@settingsPageSectionsLockRow2": {
-    "description": "pages/settings_page.dart: sections"
-  },
-  "settingsPageSectionsLockRow3": "安卓（竖屏）",
-  "@settingsPageSectionsLockRow3": {
-    "description": "pages/settings_page.dart: sections"
-  },
   "settingsPageSectionsTitle12": "完全重置软件",
   "@settingsPageSectionsTitle12": {
     "description": "pages/settings_page.dart: sections"
@@ -3808,5 +3800,14 @@
   "translationSourceChinese": "中",
   "@translationSourceChinese": {"description": "翻译源语言选择"},
   "translationSourceEnglish": "英",
-  "@translationSourceEnglish": {"description": "翻译源语言选择"}
+  "@translationSourceEnglish": {"description": "翻译源语言选择"},
+  "lyricsSkipEmpty": "跳过歌词空行",
+  "lyricsSkipEmptyDescription": "保留上一句，直到下一句歌词",
+  "androidLyricsHideWhenPaused": "暂停时隐藏桌面歌词",
+  "androidLyricsHideWhenPausedDescription": "暂停或停止播放时隐藏，恢复播放时显示",
+  "lockDesktopLyrics": "锁定歌词",
+  "unlockDesktopLyrics": "解锁歌词",
+  "showDesktopLyrics": "开启歌词",
+  "hideDesktopLyrics": "关闭歌词",
+  "androidLyricsLockDescription": "锁定后触摸穿透，横竖屏共用"
 }

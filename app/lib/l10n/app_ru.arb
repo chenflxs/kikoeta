@@ -489,8 +489,6 @@
   "translationTargetSimplifiedChinese": "Китайский (упрощённый)",
   "translationTargetTraditionalChinese": "Китайский (традиционный)",
   "settingsPageSectionsText9": "Добавить свой сайт",
-  "settingsPageSectionsLockRow2": "Android (альбомная)",
-  "settingsPageSectionsLockRow3": "Android (портретная)",
   "settingsPageSectionsTitle12": "Сбросить приложение",
   "settingsPageProxySettingsSwitchRow": "HTTP-прокси",
   "settingsPageAiModelInputTooltip": "Выбрать обнаруженную модель",
@@ -849,5 +847,14 @@
   "translationSourceAuto": "Авто",
   "translationSourceJapanese": "JA",
   "translationSourceChinese": "ZH",
-  "translationSourceEnglish": "EN"
+  "translationSourceEnglish": "EN",
+  "lyricsSkipEmpty": "Пропускать пустые строки",
+  "lyricsSkipEmptyDescription": "Показывать предыдущую строку до следующей",
+  "androidLyricsHideWhenPaused": "Скрывать текст при паузе",
+  "androidLyricsHideWhenPausedDescription": "Скрывать при паузе или остановке и показывать при продолжении",
+  "lockDesktopLyrics": "Заблокировать текст",
+  "unlockDesktopLyrics": "Разблокировать текст",
+  "showDesktopLyrics": "Показать текст",
+  "hideDesktopLyrics": "Скрыть текст",
+  "androidLyricsLockDescription": "При блокировке касания проходят сквозь текст; одинаково для обеих ориентаций"
 }

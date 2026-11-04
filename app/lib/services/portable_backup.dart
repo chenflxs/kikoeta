@@ -24,6 +24,7 @@ class PortableBackup {
     'clipboard_detect': '1',
     'ls_cover': '0',
     'notif_cover': '0',
+    'android_lyrics_hide_when_paused': '0',
     'release_interface': '1',
     'ear_pause': '0',
     'ignore_audio_focus': '0',
@@ -47,8 +48,7 @@ class PortableBackup {
     'lyrics_outline_color': '4278190080',
     'lyrics_outline_width': '1',
     'lyrics_locked_desktop': '0',
-    'lyrics_locked_portrait': '0',
-    'lyrics_locked_landscape': '0',
+    'lyrics_locked_android': '0',
     'conv': 'orig',
     'eq_on': '1',
     'eq_gains': '[0,0,0,0,0,0,0,0,0,0]',
@@ -74,9 +74,27 @@ class PortableBackup {
   factory PortableBackup.capture(String? Function(String) read) {
     return PortableBackup._({
       for (final entry in defaults.entries)
-        entry.key: read(entry.key) ?? entry.value,
+        entry.key:
+            read(entry.key) ??
+            (entry.key == 'lyrics_locked_android'
+                ? _migrateAndroidLock(read)
+                : entry.value),
     });
   }
+
+  static const _legacyLockKeys = {
+    'lyrics_locked_portrait',
+    'lyrics_locked_landscape',
+  };
+  static const _optionalKeys = {
+    'translation_source',
+    'lyrics_skip_empty',
+    'android_lyrics_hide_when_paused',
+    'lyrics_locked_android',
+  };
+
+  static String _migrateAndroidLock(String? Function(String) read) =>
+      _legacyLockKeys.any((key) => read(key) == '1') ? '1' : '0';
 
   String get fingerprint =>
       sha256.convert(utf8.encode(_canonical(settings))).toString();
@@ -102,6 +120,7 @@ class PortableBackup {
         }
         return entries.values.toList();
       }
+
       Object workKey(dynamic row) => (row['rj'] as String).isNotEmpty
           ? ('rj', row['rj'])
           : ('work', row['title'], row['circle']);
@@ -134,10 +153,13 @@ class PortableBackup {
           history[key] = row;
         }
       }
-      final sortedHistory = history.values.toList()..sort((a, b) {
-        final order = (b['at'] as int).compareTo(a['at'] as int);
-        return order != 0 ? order : (a['rj'] as String).compareTo(b['rj'] as String);
-      });
+      final sortedHistory = history.values.toList()
+        ..sort((a, b) {
+          final order = (b['at'] as int).compareTo(a['at'] as int);
+          return order != 0
+              ? order
+              : (a['rj'] as String).compareTo(b['rj'] as String);
+        });
       merged['play_history'] = jsonEncode(sortedHistory.take(50).toList());
 
       final localPlaylists =
@@ -226,20 +248,33 @@ class PortableBackup {
       }
       final settings = <String, String>{};
       for (final entry in (raw['settings'] as Map).entries) {
-        if (!defaults.containsKey(entry.key) || entry.value is! String) {
+        if ((!defaults.containsKey(entry.key) &&
+                !_legacyLockKeys.contains(entry.key)) ||
+            entry.value is! String) {
           throw const FormatException('backupInvalid');
         }
         settings[entry.key as String] = entry.value as String;
       }
       if (defaults.keys.any(
-            (key) => key != 'translation_source' && !settings.containsKey(key),
+            (key) => !_optionalKeys.contains(key) && !settings.containsKey(key),
           ) ||
           raw['sha256'] !=
               sha256.convert(utf8.encode(_canonical(settings))).toString()) {
         throw const FormatException('backupInvalid');
       }
-      // Version 1 backups created before source selection default to auto.
-      settings.putIfAbsent('translation_source', () => 'auto');
+      for (final key in _legacyLockKeys) {
+        if (settings.containsKey(key) && !['0', '1'].contains(settings[key])) {
+          throw const FormatException('backupInvalid');
+        }
+      }
+      settings.putIfAbsent(
+        'lyrics_locked_android',
+        () => _migrateAndroidLock((key) => settings[key]),
+      );
+      settings.removeWhere((key, _) => _legacyLockKeys.contains(key));
+      for (final key in _optionalKeys) {
+        settings.putIfAbsent(key, () => defaults[key]!);
+      }
       _validate(settings);
       return PortableBackup._(settings);
     });

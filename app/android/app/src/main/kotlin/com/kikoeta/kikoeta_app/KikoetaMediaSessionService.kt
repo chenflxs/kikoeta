@@ -4,10 +4,14 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Handler
 import android.os.Looper
+import android.os.Bundle
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
 
 /**
  * Media3 媒体会话前台服务。
@@ -21,10 +25,11 @@ import androidx.media3.session.MediaSessionService
 class KikoetaMediaSessionService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var lyricsState: LyricsMediaState? = null
 
     override fun onCreate() {
         super.onCreate()
-        DefaultMediaNotificationProvider(this).also { provider ->
+        LyricsMediaNotificationProvider(this).also { provider ->
             provider.setSmallIcon(R.drawable.ic_play_arrow)
             setMediaNotificationProvider(provider)
         }
@@ -48,8 +53,48 @@ class KikoetaMediaSessionService : MediaSessionService() {
             }
             val session = MediaSession.Builder(this, player)
                 .setSessionActivity(createSessionPendingIntent())
+                .setCallback(object : MediaSession.Callback {
+                    override fun onConnect(
+                        session: MediaSession,
+                        controller: MediaSession.ControllerInfo,
+                    ): MediaSession.ConnectionResult = MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                        .setAvailableSessionCommands(
+                            MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
+                                .add(LyricsMediaButtons.lockCommand)
+                                .add(LyricsMediaButtons.toggleCommand)
+                                .build(),
+                        )
+                        .build()
+
+                    override fun onCustomCommand(
+                        session: MediaSession,
+                        controller: MediaSession.ControllerInfo,
+                        customCommand: SessionCommand,
+                        args: Bundle,
+                    ): ListenableFuture<SessionResult> {
+                        val action = when (customCommand.customAction) {
+                            LyricsMediaButtons.lockCommand.customAction -> "lyricsLock"
+                            LyricsMediaButtons.toggleCommand.customAction -> "lyricsToggle"
+                            else -> return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
+                        }
+                        val sender = Media3Bridge.commandSender
+                            ?: return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_INVALID_STATE))
+                        sender(action, -1L)
+                        return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                    }
+                })
+                .setMediaButtonPreferences(LyricsMediaButtons.build(
+                    Media3Bridge.pendingState?.lyrics ?: LyricsMediaState(),
+                ))
                 .build()
             mediaSession = session
+            lyricsState = Media3Bridge.pendingState?.lyrics ?: LyricsMediaState()
+            Media3Bridge.onLyricsStateChanged = { state ->
+                if (state != lyricsState) {
+                    lyricsState = state
+                    mediaSession?.setMediaButtonPreferences(LyricsMediaButtons.build(state))
+                }
+            }
             // Provider 只跟踪显式加入服务的会话；仅从 onGetSession 返回不会触发前台媒体通知。
             addSession(session)
         } catch (_: Throwable) {
@@ -114,6 +159,7 @@ class KikoetaMediaSessionService : MediaSessionService() {
         mediaSession = null
         Media3Bridge.player = null
         Media3Bridge.onArtworkCached = null
+        Media3Bridge.onLyricsStateChanged = null
         super.onDestroy()
     }
 }
@@ -126,6 +172,7 @@ object Media3Bridge {
     var commandSender: ((String, Long) -> Unit)? = null
 
     var playbackRateSender: ((Float) -> Unit)? = null
+    var onLyricsStateChanged: ((LyricsMediaState) -> Unit)? = null
 
     /** Flutter/Rust 写完封面缓存后的本地路径。 */
     var onArtworkCached: ((mediaId: String, artworkKey: String, artworkPath: String) -> Unit)? =
@@ -144,6 +191,7 @@ object Media3Bridge {
         val logoCover: Boolean,
         val playbackRate: Float,
         val playbackSpeedEnabled: Boolean,
+        val lyrics: LyricsMediaState,
     )
 
     var pendingState: PendingState? = null

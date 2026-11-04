@@ -1709,12 +1709,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsPageSectionsText9 => 'Add custom site';
 
   @override
-  String get settingsPageSectionsLockRow2 => 'Android (landscape)';
-
-  @override
-  String get settingsPageSectionsLockRow3 => 'Android (portrait)';
-
-  @override
   String get settingsPageSectionsTitle12 => 'Reset the app';
 
   @override
@@ -3037,4 +3031,34 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get translationSourceEnglish => 'EN';
+
+  @override
+  String get lyricsSkipEmpty => 'Skip blank lyric lines';
+
+  @override
+  String get lyricsSkipEmptyDescription =>
+      'Keep the previous line until the next lyric';
+
+  @override
+  String get androidLyricsHideWhenPaused => 'Hide desktop lyrics when paused';
+
+  @override
+  String get androidLyricsHideWhenPausedDescription =>
+      'Hide while playback is paused or stopped; show again on resume';
+
+  @override
+  String get lockDesktopLyrics => 'Lock lyrics';
+
+  @override
+  String get unlockDesktopLyrics => 'Unlock lyrics';
+
+  @override
+  String get showDesktopLyrics => 'Show lyrics';
+
+  @override
+  String get hideDesktopLyrics => 'Hide lyrics';
+
+  @override
+  String get androidLyricsLockDescription =>
+      'Touch passes through when locked; shared by portrait and landscape';
 }

@@ -489,8 +489,6 @@
   "translationTargetSimplifiedChinese": "簡体字中国語",
   "translationTargetTraditionalChinese": "繁体字中国語",
   "settingsPageSectionsText9": "カスタムサイトを追加",
-  "settingsPageSectionsLockRow2": "Android（横向き）",
-  "settingsPageSectionsLockRow3": "Android（縦向き）",
   "settingsPageSectionsTitle12": "アプリをリセット",
   "settingsPageProxySettingsSwitchRow": "HTTPプロキシ",
   "settingsPageAiModelInputTooltip": "検出されたモデルを選択",
@@ -849,5 +847,14 @@
   "translationSourceAuto": "自動",
   "translationSourceJapanese": "日",
   "translationSourceChinese": "中",
-  "translationSourceEnglish": "英"
+  "translationSourceEnglish": "英",
+  "lyricsSkipEmpty": "歌詞の空行をスキップ",
+  "lyricsSkipEmptyDescription": "次の歌詞まで前の行を表示する",
+  "androidLyricsHideWhenPaused": "一時停止中はデスクトップ歌詞を非表示",
+  "androidLyricsHideWhenPausedDescription": "一時停止・停止中は非表示にし、再生時に表示",
+  "lockDesktopLyrics": "歌詞をロック",
+  "unlockDesktopLyrics": "歌詞のロックを解除",
+  "showDesktopLyrics": "歌詞を表示",
+  "hideDesktopLyrics": "歌詞を非表示",
+  "androidLyricsLockDescription": "ロック中はタッチを透過し、縦横の向きで共通"
 }

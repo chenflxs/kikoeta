@@ -251,6 +251,7 @@ class LyricsHub extends ChangeNotifier {
     _convCache.clear();
     _rebuildVisibleLyrics();
     refreshOverlay();
+    notifyListeners();
   }
 
   void _rebuildVisibleLyrics() {
@@ -258,8 +259,9 @@ class LyricsHub extends ChangeNotifier {
     _visibleLyrics = !_skipEmpty
         ? _lyrics
         : List.unmodifiable(
-            _lyrics.where((line) =>
-                (_conv == 'orig' ? line.jp : line.zh).trim().isNotEmpty),
+            _lyrics.where(
+              (line) => (_conv == 'orig' ? line.jp : line.zh).trim().isNotEmpty,
+            ),
           );
   }
 

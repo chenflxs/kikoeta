@@ -149,13 +149,8 @@ Future<void> main() async {
   }
   // 桌面歌词（安卓悬浮窗）
   if (!kIsWeb && Platform.isAndroid) {
-    AndroidLyricsOverlay.instance.onLockChanged = (portrait, locked) {
-      if (portrait) {
-        appState.setLyricsLockedPortrait(locked);
-      } else {
-        appState.setLyricsLockedLandscape(locked);
-      }
-    };
+    AndroidLyricsOverlay.instance.onLockChanged =
+        appState.setLyricsLockedAndroid;
     await AndroidLyricsOverlay.instance.init();
     appState.addListener(_syncAndroidLyrics);
     _syncAndroidLyrics();
@@ -185,39 +180,18 @@ void _syncDesktopLyrics() {
 
 void _syncAndroidLyrics() {
   final ov = AndroidLyricsOverlay.instance;
-  if (appState.desktopLyricsOn &&
-      appState.playing &&
-      !appState.desktopLyricsTemporarilyHidden) {
-    final portrait = _isPortraitNow();
-    final locked = portrait
-        ? appState.lyricsLockedPortrait
-        : appState.lyricsLockedLandscape;
+  if (appState.androidDesktopLyricsVisible) {
     ov.show(
       text: LyricsHub.instance.currentLine,
       fontSize: appState.lyricsFontSize,
       color: appState.lyricsColor,
       outlineColor: appState.lyricsOutlineColor,
       outlineWidth: appState.lyricsOutlineWidth,
-      locked: locked,
-      portrait: portrait,
-      portraitWidthDp: _portraitWidthDp(),
+      locked: appState.lyricsLockedAndroid,
     );
   } else {
     ov.hide();
   }
-}
-
-bool _isPortraitNow() {
-  final size =
-      WidgetsBinding.instance.platformDispatcher.views.first.physicalSize;
-  return size.height >= size.width;
-}
-
-double _portraitWidthDp() {
-  final view = WidgetsBinding.instance.platformDispatcher.views.first;
-  final size = view.physicalSize;
-  final min = size.width < size.height ? size.width : size.height;
-  return min / view.devicePixelRatio;
 }
 
 bool _autoAdvancing = false;
@@ -395,7 +369,19 @@ bool _media3Hidden = false;
 bool _media3LogoCover = false;
 double _media3PlaybackRate = 1.0;
 bool _media3SpeedEnabled = false;
+String _media3LyricsState = '';
 String _media3ArtworkLoadKey = '';
+
+bool get _androidLyricsLocked => appState.lyricsLockedAndroid;
+String get _lyricsLockLabel => _androidLyricsLocked
+    ? appL10n.unlockDesktopLyrics
+    : appL10n.lockDesktopLyrics;
+String get _lyricsToggleLabel => appState.desktopLyricsOn
+    ? appL10n.hideDesktopLyrics
+    : appL10n.showDesktopLyrics;
+String get _media3LyricsStateKey =>
+    '${appState.desktopLyricsOn}|$_androidLyricsLocked|'
+    '$_lyricsLockLabel|$_lyricsToggleLabel';
 
 /// MediaSession 控制命令（Kotlin → Dart，mpv 执行）
 void _media3Command(String action, int positionMs) {
@@ -417,6 +403,12 @@ void _media3Command(String action, int positionMs) {
       break;
     case 'previous':
       _mediaPrev();
+      break;
+    case 'lyricsLock':
+    case 'lyricsToggle':
+      unawaited(
+        AndroidLyricsOverlay.instance.handleMediaCommand(appState, action),
+      );
       break;
   }
 }
@@ -505,6 +497,7 @@ void _syncMedia3State() {
   _media3LogoCover = appState.notifCover;
   _media3PlaybackRate = appState.playbackRate;
   _media3SpeedEnabled = appState.playbackSpeedEnabled;
+  _media3LyricsState = _media3LyricsStateKey;
   AndroidMedia3.updateState(
     isPlaying: AppPlayer.instance.isNowPlaying,
     positionMs: AppPlayer.instance.currentPosition * 1000,
@@ -517,6 +510,10 @@ void _syncMedia3State() {
     mediaId: w.rj,
     hideCard: hideCard,
     logoCover: appState.notifCover,
+    lyricsEnabled: appState.desktopLyricsOn,
+    lyricsLocked: _androidLyricsLocked,
+    lyricsLockLabel: _lyricsLockLabel,
+    lyricsToggleLabel: _lyricsToggleLabel,
   );
   final shouldLoadArtwork =
       !hideCard &&
@@ -586,6 +583,7 @@ void _bindMedia3Sync() {
         appState.playbackSpeedEnabled != _media3SpeedEnabled;
     if (privacySettingChanged ||
         speedSettingChanged ||
+        _media3LyricsState != _media3LyricsStateKey ||
         now.difference(_lastMedia3Sync).inMilliseconds > 1000) {
       _lastMedia3Sync = now;
       _syncMedia3State();
@@ -635,7 +633,9 @@ void _bindPlaybackPersistence() {
   appState.addListener(_persistPlaybackTrackChange);
   AppPlayer.instance.position.listen(_persistPlaybackPositionTick);
   AppPlayer.instance.playing.listen((playing) {
-    if (!playing) {
+    if (playing) {
+      unawaited(ApiService.ensurePlaybackAge(appState));
+    } else {
       _persistPlaybackPositionTick(
         AppPlayer.instance.currentPosition,
         force: true,
@@ -654,6 +654,7 @@ void _persistPlaybackTrackChange() {
   // 切歌后立即保存曲目和从零开始的位置，避免异常退出恢复到旧曲目/旧进度。
   appState.resumePosition = 0;
   appState.savePlayState();
+  unawaited(ApiService.ensurePlaybackAge(appState));
 }
 
 void _persistPlaybackPositionTick(int position, {bool force = false}) {
@@ -736,6 +737,14 @@ class _KikoetaAppState extends State<KikoetaApp>
         AppPlayer.instance.currentPosition,
         force: true,
       );
+    }
+  }
+
+  @override
+  void didChangeMetrics() {
+    if (!kIsWeb && Platform.isAndroid) {
+      _syncAndroidLyrics();
+      _syncMedia3State();
     }
   }
 

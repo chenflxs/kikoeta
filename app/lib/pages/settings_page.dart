@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -588,7 +589,13 @@ class _SettingsPageState extends State<SettingsPage> {
                     title: context.l10n.chineseConversion,
                     sub: context.l10n.settingsPageSectionsSub3,
                     trailing: _convDropdown(),
-                    showDivider: false,
+                  ),
+                  _switchRow(
+                    Icons.filter_alt_outlined,
+                    context.l10n.lyricsSkipEmpty,
+                    context.l10n.lyricsSkipEmptyDescription,
+                    app.lyricsSkipEmpty,
+                    app.setLyricsSkipEmpty,
                   ),
                 ]),
                 rootVisible: false,
@@ -723,28 +730,22 @@ class _SettingsPageState extends State<SettingsPage> {
                       ],
                     ),
                   ),
-                  _lockRow(
-                    context.l10n.settingsPageSectionsLockRow,
-                    app.lyricsLockedDesktop,
-                    () {
-                      app.setLyricsLockedDesktop(false);
-                    },
-                  ),
-                  _lockRow(
-                    context.l10n.settingsPageSectionsLockRow3,
-                    app.lyricsLockedPortrait,
-                    () {
-                      app.setLyricsLockedPortrait(false);
-                    },
-                  ),
-                  _lockRow(
-                    context.l10n.settingsPageSectionsLockRow2,
-                    app.lyricsLockedLandscape,
-                    () {
-                      app.setLyricsLockedLandscape(false);
-                    },
-                    showDivider: false,
-                  ),
+                  if (defaultTargetPlatform == TargetPlatform.android)
+                    _switchRow(
+                      Icons.lock_outline,
+                      context.l10n.lockDesktopLyrics,
+                      context.l10n.androidLyricsLockDescription,
+                      app.lyricsLockedAndroid,
+                      app.setLyricsLockedAndroid,
+                      showDivider: false,
+                    )
+                  else
+                    _lockRow(
+                      context.l10n.settingsPageSectionsLockRow,
+                      app.lyricsLockedDesktop,
+                      () => app.setLyricsLockedDesktop(false),
+                      showDivider: false,
+                    ),
                 ]),
                 rootVisible: false,
                 rootCardRadius: BorderRadius.zero,
@@ -916,6 +917,14 @@ class _SettingsPageState extends State<SettingsPage> {
                     app.notifCover,
                     app.setNotifCover,
                   ),
+                  if (defaultTargetPlatform == TargetPlatform.android)
+                    _switchRow(
+                      Icons.subtitles_off_outlined,
+                      context.l10n.androidLyricsHideWhenPaused,
+                      context.l10n.androidLyricsHideWhenPausedDescription,
+                      app.androidLyricsHideWhenPaused,
+                      app.setAndroidLyricsHideWhenPaused,
+                    ),
                   _switchRow(
                     Icons.privacy_tip_outlined,
                     context.l10n.settingsPageSectionsSwitchRow12,

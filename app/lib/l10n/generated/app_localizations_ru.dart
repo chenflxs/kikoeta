@@ -1724,12 +1724,6 @@ class AppLocalizationsRu extends AppLocalizations {
   String get settingsPageSectionsText9 => 'Добавить свой сайт';
 
   @override
-  String get settingsPageSectionsLockRow2 => 'Android (альбомная)';
-
-  @override
-  String get settingsPageSectionsLockRow3 => 'Android (портретная)';
-
-  @override
   String get settingsPageSectionsTitle12 => 'Сбросить приложение';
 
   @override
@@ -3057,4 +3051,34 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get translationSourceEnglish => 'EN';
+
+  @override
+  String get lyricsSkipEmpty => 'Пропускать пустые строки';
+
+  @override
+  String get lyricsSkipEmptyDescription =>
+      'Показывать предыдущую строку до следующей';
+
+  @override
+  String get androidLyricsHideWhenPaused => 'Скрывать текст при паузе';
+
+  @override
+  String get androidLyricsHideWhenPausedDescription =>
+      'Скрывать при паузе или остановке и показывать при продолжении';
+
+  @override
+  String get lockDesktopLyrics => 'Заблокировать текст';
+
+  @override
+  String get unlockDesktopLyrics => 'Разблокировать текст';
+
+  @override
+  String get showDesktopLyrics => 'Показать текст';
+
+  @override
+  String get hideDesktopLyrics => 'Скрыть текст';
+
+  @override
+  String get androidLyricsLockDescription =>
+      'При блокировке касания проходят сквозь текст; одинаково для обеих ориентаций';
 }

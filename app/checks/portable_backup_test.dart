@@ -6,6 +6,48 @@ import 'package:kikoeta_app/services/portable_backup.dart';
 
 void main() {
   test(
+    'legacy orientation lock backups normalize to one Android lock',
+    () async {
+      final captured = PortableBackup.capture(
+        (key) => {
+          'lyrics_locked_portrait': '0',
+          'lyrics_locked_landscape': '1',
+        }[key],
+      );
+      expect(captured.settings['lyrics_locked_android'], '1');
+      expect(captured.settings.containsKey('lyrics_locked_portrait'), isFalse);
+      final raw = jsonDecode(utf8.decode(await captured.encode())) as Map;
+      final settings = raw['settings'] as Map;
+      settings
+        ..remove('lyrics_locked_android')
+        ..remove('lyrics_skip_empty')
+        ..remove('android_lyrics_hide_when_paused')
+        ..['lyrics_locked_portrait'] = '1'
+        ..['lyrics_locked_landscape'] = '0';
+      Future<PortableBackup> decode() {
+        final keys = settings.keys.cast<String>().toList()..sort();
+        raw['sha256'] = sha256
+            .convert(
+              utf8.encode(
+                jsonEncode({for (final key in keys) key: settings[key]}),
+              ),
+            )
+            .toString();
+        return PortableBackup.decode(utf8.encode(jsonEncode(raw)));
+      }
+
+      final migrated = await decode();
+      expect(migrated.settings['lyrics_locked_android'], '1');
+      expect(migrated.settings.containsKey('lyrics_locked_landscape'), isFalse);
+      expect(migrated.settings['lyrics_skip_empty'], '0');
+      expect(migrated.settings['android_lyrics_hide_when_paused'], '0');
+      settings['lyrics_locked_android'] = '0';
+      expect((await decode()).settings['lyrics_locked_android'], '0');
+      settings['lyrics_locked_landscape'] = 'invalid';
+      await expectLater(decode(), throwsFormatException);
+    },
+  );
+  test(
     'round trip keeps small local data and excludes credentials and libraries',
     () async {
       final data = <String, String>{
