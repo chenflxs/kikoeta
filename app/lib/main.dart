@@ -211,7 +211,10 @@ Future<bool> _openAppTrack(MediaNode track, {bool autoplay = true}) async {
     return true;
   }
   final url = track.url;
-  if (url == null || url.isEmpty) return false;
+  if (url == null || url.isEmpty) {
+    await AppPlayer.instance.stop();
+    return false;
+  }
   await AppPlayer.instance.openMediaUrl(url, autoplay: autoplay);
   return true;
 }

@@ -60,6 +60,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   late bool _lastAppPlaying;
   late int _lastTrackIdx;
   late String _lastUiStateSig;
+  int _openRequest = 0;
   bool _opening = false; // 正在打开媒体
   bool _buffering = false; // 缓冲中
   bool _reconnecting = false; // 网络流自动重连中
@@ -177,17 +178,30 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
 
   Future<void> _restorePlayback(int resume) async {
     app.restoringPlaybackPosition = true;
+    final queue = app.queue;
+    final selectedTrack = track;
+    final request = _openRequest + 1;
+    bool isCurrent() =>
+        mounted &&
+        request == _openRequest &&
+        identical(app.queue, queue) &&
+        app.queue.isNotEmpty &&
+        identical(track, selectedTrack);
     try {
       await _openCurrent(autoplay: false);
-      if (!AppPlayer.instance.opened || resume <= 0) return;
+      if (!isCurrent() || !AppPlayer.instance.opened || resume <= 0) {
+        return;
+      }
       final target = Duration(seconds: resume);
       for (var attempt = 0; attempt < 2; attempt++) {
+        if (!isCurrent()) return;
         try {
           await _player.seek(target);
         } catch (_) {}
         if ((AppPlayer.instance.currentPosition - resume).abs() <= 1) break;
         await Future<void>.delayed(const Duration(milliseconds: 120));
       }
+      if (!isCurrent()) return;
       app.resumePosition = resume;
       app.savePlayPosition();
       if (mounted) setState(() => _pos = resume);
@@ -209,6 +223,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _openRequest++;
     _restoreAndroidStatusBar();
     WidgetsBinding.instance.removeObserver(this);
     app.removeListener(_onAppStateChanged);
@@ -237,6 +252,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     _lastAppPlaying = app.playing;
     var needsRebuild = playingChanged;
     if (app.trackIdx != _lastTrackIdx) {
+      _openRequest++;
       _lastTrackIdx = app.trackIdx;
       // 歌词由全局中枢随曲目变化更新。
       needsRebuild = true;
@@ -281,6 +297,15 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
 
   Future<void> _openCurrent({bool autoplay = true}) async {
     final l10n = context.l10n;
+    final request = ++_openRequest;
+    final queue = app.queue;
+    final selectedTrack = track;
+    bool isCurrent() =>
+        mounted &&
+        request == _openRequest &&
+        identical(app.queue, queue) &&
+        app.queue.isNotEmpty &&
+        identical(track, selectedTrack);
     final localPath = app.currentWork == null
         ? null
         : DownloadManager.instance.localPathFor(
@@ -289,16 +314,18 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
             node: track,
           );
     final url = track.url;
-    if (localPath == null && url == null) {
+    if (localPath == null && (url == null || url.isEmpty)) {
       app.playing = false;
       app.notify();
       _toast(l10n.playerPageOpenCurrentToast);
+      await AppPlayer.instance.stop();
       return;
     }
     if (mounted) setState(() => _opening = true);
     try {
       if (localPath != null) {
         await AppPlayer.instance.openLocalPath(localPath, autoplay: autoplay);
+        if (!isCurrent()) return;
         _syncPlayerSnapshot(rebuild: true);
         _applyVolume();
         AppPlayer.instance.applyEqualizer(
@@ -306,10 +333,10 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
           gains: app.eqGains,
         );
       } else {
-        await _openMedia(url!, autoplay: autoplay);
+        await _openMedia(url!, autoplay: autoplay, isCurrent: isCurrent);
       }
     } finally {
-      if (mounted) setState(() => _opening = false);
+      if (isCurrent()) setState(() => _opening = false);
     }
   }
 
@@ -317,29 +344,44 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   Future<void> _openMedia(
     String url, {
     required bool autoplay,
+    required bool Function() isCurrent,
     int attempt = 1,
   }) async {
+    if (!isCurrent()) return;
     final l10n = context.l10n;
     try {
       await AppPlayer.instance.openMediaUrl(url, autoplay: autoplay);
+      if (!isCurrent()) return;
       _syncPlayerSnapshot(rebuild: true);
       _applyVolume();
       AppPlayer.instance.applyEqualizer(enabled: app.eqOn, gains: app.eqGains);
     } on TimeoutException {
+      if (!isCurrent()) return;
       if (attempt < 2) {
         if (mounted) _toast(l10n.playerPageOpenMediaToast3);
         await Future.delayed(const Duration(seconds: 1));
-        await _openMedia(url, autoplay: autoplay, attempt: attempt + 1);
+        await _openMedia(
+          url,
+          autoplay: autoplay,
+          isCurrent: isCurrent,
+          attempt: attempt + 1,
+        );
       } else {
         app.playing = false;
         app.notify();
         _toast(l10n.playerPageOpenMediaToast);
       }
     } catch (e) {
+      if (!isCurrent()) return;
       if (attempt < 2) {
         if (mounted) _toast(l10n.playerPageOpenMediaToast2);
         await Future.delayed(const Duration(seconds: 1));
-        await _openMedia(url, autoplay: autoplay, attempt: attempt + 1);
+        await _openMedia(
+          url,
+          autoplay: autoplay,
+          isCurrent: isCurrent,
+          attempt: attempt + 1,
+        );
       } else {
         app.playing = false;
         app.notify();

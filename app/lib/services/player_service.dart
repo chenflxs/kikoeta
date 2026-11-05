@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:media_kit/media_kit.dart' hide Track;
 
 import '../src/rust/api/proxy.dart';
@@ -12,6 +13,8 @@ import 'audio_effects.dart';
 /// mpv 卸载旧文件/加载新文件产生的伪 completed=true 会在这段时间内到达，
 /// 而真正的“播完”（EOF）只会在媒体实际播放结束后发生，远晚于该窗口。
 const _suppressWindow = Duration(seconds: 2);
+
+const _tracePlayback = bool.fromEnvironment('KIKOETA_PLAYBACK_TRACE');
 
 /// 网络流中断后的自动重连间隔。最后一档会持续重试，避免网络恢复后仍
 /// 需要切歌才能重新建立 mpv 的媒体会话。
@@ -28,7 +31,15 @@ const _reconnectDelays = <Duration>[
 /// 播放器随应用生命周期常驻，退出播放器页面时不会销毁，
 /// 重新进入页面可继续播放（不再从头开始）。
 class AppPlayer {
-  AppPlayer._() {
+  AppPlayer._({
+    Player? backend,
+    Future<Media> Function(String)? resolveMedia,
+    this._audioOutputReleased,
+  }) : player =
+           backend ??
+           Player(configuration: const PlayerConfiguration(pitch: false)),
+       _resolveMedia = resolveMedia ?? _networkMedia {
+    if (_tracePlayback) unawaited(_trace('created'));
     _subs = [
       player.stream.position.listen((d) {
         _lastPos = d.inSeconds;
@@ -46,7 +57,7 @@ class AppPlayer {
       player.stream.completed.listen((completed) {
         // completed 流是去重流：stop()/open()/seek() 会把它复位为 false，
         // 只有 mpv 真正播到结尾（EOF）才会置为 true，仅此时才算播放完成。
-        if (!completed) return;
+        if (!completed || _mediaOperationActive) return;
         // 主动 stop()/open()（切歌、重开媒体、手动停止）后短时间内 mpv 会残留
         // 触发一次 completed=true，需要抑制避免误判播放完成。
         // 用时间窗口而不是等事件复位：去重流可能吞掉复位用的 false 事件，
@@ -69,11 +80,31 @@ class AppPlayer {
 
   static final AppPlayer instance = AppPlayer._();
 
+  @visibleForTesting
+  factory AppPlayer.forTesting({
+    required Player player,
+    required Future<Media> Function(String) resolveMedia,
+    Duration openTimeout = const Duration(seconds: 20),
+    Future<bool> Function()? audioOutputReleased,
+    Duration stopTimeout = const Duration(seconds: 5),
+  }) =>
+      AppPlayer._(
+          backend: player,
+          resolveMedia: resolveMedia,
+          audioOutputReleased: audioOutputReleased,
+        )
+        .._openTimeout = openTimeout
+        .._stopTimeout = stopTimeout;
+
   // Keep pitch control disabled: media_kit then sets mpv speed directly instead
   // of replacing af with its own scaletempo filter when changing the rate.
-  final Player player = Player(
-    configuration: const PlayerConfiguration(pitch: false),
-  );
+  final Player player;
+  final Future<Media> Function(String) _resolveMedia;
+  final Future<bool> Function()? _audioOutputReleased;
+  Duration _stopTimeout = const Duration(seconds: 5);
+  Future<void> _mediaOperations = Future<void>.value();
+  bool _mediaOperationActive = false;
+  Duration _openTimeout = const Duration(seconds: 20);
 
   bool _equalizerEnabled = false;
   List<double> _equalizerGains = const [];
@@ -89,7 +120,7 @@ class AppPlayer {
 
   /// stop()/open() 后的 completed 抑制截止时间；到点自动失效，避免被去重流卡死
   DateTime? _suppressCompletedUntil;
-  int _releaseGeneration = 0;
+  int _mediaGeneration = 0;
   int _reconnectGeneration = 0;
   String? _remoteUrl;
   bool _playbackRequested = false;
@@ -131,41 +162,58 @@ class AppPlayer {
   /// 当前是否正在播放
   bool get isNowPlaying => _nowPlaying;
 
-  Future<void> open(Media media, {bool autoplay = true}) async {
-    _suppressCompletedUntil = DateTime.now().add(_suppressWindow);
-    _lastPos = 0;
-    _lastDur = 0;
-    _posCtrl.add(_lastPos);
-    _durCtrl.add(_lastDur);
-    if (Platform.isAndroid && autoplay) {
-      await AndroidAudio.setPlaybackActive(true);
-    }
+  /// Opt-in native snapshots for Android device debugging; no media URLs/tokens.
+  Future<void> _trace(String event) async {
+    if (!_tracePlayback) return;
     try {
-      await player.open(media, play: autoplay);
-    } catch (_) {
-      if (Platform.isAndroid && autoplay) {
-        await AndroidAudio.setPlaybackActive(false);
+      final backend = player.platform;
+      final values = <String>[];
+      if (backend is NativePlayer) {
+        values.add('handle=${await backend.handle}');
+        for (final key in [
+          'mpv-version',
+          'playlist-count',
+          'idle-active',
+          'pause',
+          'current-ao',
+          'audio-out-params',
+          'gapless-audio',
+          'time-pos',
+        ]) {
+          values.add('$key=${await backend.getProperty(key)}');
+        }
       }
-      rethrow;
+      debugPrint(
+        '[playback] pid=$pid instance=${identityHashCode(this)} '
+        'generation=$_mediaGeneration event=$event pos=$_lastPos '
+        'opened=$opened requested=$_playbackRequested ${values.join(' ')}',
+      );
+    } catch (_) {
+      // Diagnostics must not change playback error handling.
     }
-    opened = true;
   }
 
-  /// 打开网络音频：桌面始终经本地代理转发；Android 在启用应用 HTTP
-  /// 代理时也走本地代理，未启用时直连并附带该媒体域的 Bearer token。
-  Future<void> openMediaUrl(
-    String url, {
-    bool autoplay = true,
-    bool preserveReconnect = false,
-  }) async {
-    if (!preserveReconnect) _cancelReconnect();
-    _playbackRequested = autoplay;
-    _remoteUrl = url;
-    final generation = _releaseGeneration;
-    await _stop(preservePlaybackRequest: true);
-    if (generation != _releaseGeneration) return;
+  // Match media_kit's serialized native commands, but keep stop, URL resolution
+  // and open in one operation. A timeout must not release this queue while the
+  // underlying open is still running (Future.timeout does not cancel it).
+  Future<void> _enqueueMediaOperation(Future<void> Function() operation) {
+    final result = _mediaOperations.then((_) async {
+      _mediaOperationActive = true;
+      try {
+        await operation();
+      } finally {
+        _mediaOperationActive = false;
+      }
+    });
+    _mediaOperations = result.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    return result;
+  }
+
+  static Future<Media> _networkMedia(String url) async {
     final httpProxy = await httpProxyConfig();
-    if (generation != _releaseGeneration) return;
     final direct = Platform.isAndroid && httpProxy == null;
     final mediaUrl = direct ? url : apiStreamProxyUrl(url: url);
     final uri = Uri.tryParse(url);
@@ -173,85 +221,187 @@ class AppPlayer {
         ? ''
         : '${uri.scheme}://${uri.authority}';
     final token = base.isEmpty ? null : getToken(base: base);
-    await open(
-      Media(
-        mediaUrl,
-        httpHeaders: direct && token != null && token.isNotEmpty
-            ? {'Authorization': 'Bearer $token'}
-            : null,
-      ),
-      autoplay: autoplay,
-    ).timeout(const Duration(seconds: 20));
-    if (generation != _releaseGeneration) {
-      await stop();
-      opened = false;
-      openedUrl = null;
-      return;
-    }
-    openedUrl = url;
-    // stop() 期间可能刚好收到旧媒体的错误事件；新媒体已经成功打开时，
-    // 取消其排队的旧重连，避免稍后又把当前媒体重新打开一次。
-    if (!preserveReconnect) _cancelReconnect();
+    return Media(
+      mediaUrl,
+      httpHeaders: direct && token != null && token.isNotEmpty
+          ? {'Authorization': 'Bearer $token'}
+          : null,
+    );
   }
+
+  /// 打开网络音频：桌面经本地代理；Android 未启用 HTTP 代理时直连。
+  Future<void> openMediaUrl(
+    String url, {
+    bool autoplay = true,
+    bool preserveReconnect = false,
+  }) => _openSource(
+    url,
+    () => _resolveMedia(url),
+    autoplay: autoplay,
+    remote: true,
+    preserveReconnect: preserveReconnect,
+  );
 
   /// 打开已下载的真实文件，不经过网络代理。
-  Future<void> openLocalPath(String path, {bool autoplay = true}) async {
-    _cancelReconnect();
+  Future<void> openLocalPath(String path, {bool autoplay = true}) =>
+      _openSource(
+        path,
+        () async => Media(path),
+        autoplay: autoplay,
+        remote: false,
+      );
+
+  Future<void> _openSource(
+    String source,
+    Future<Media> Function() resolve, {
+    required bool autoplay,
+    required bool remote,
+    bool preserveReconnect = false,
+  }) {
+    final generation = ++_mediaGeneration;
+    if (!preserveReconnect) _cancelReconnect();
     _playbackRequested = autoplay;
-    _remoteUrl = null;
-    final generation = _releaseGeneration;
-    await _stop(preservePlaybackRequest: true);
-    if (generation != _releaseGeneration) return;
-    await open(Media(path), autoplay: autoplay);
-    openedUrl = path;
+    _remoteUrl = remote ? source : null;
+    opened = false;
+    openedUrl = null;
+    final operation = _enqueueMediaOperation(() async {
+      if (generation != _mediaGeneration) return;
+      await _stop();
+      if (generation != _mediaGeneration) return;
+      final media = await resolve();
+      if (generation != _mediaGeneration) return;
+      _suppressCompletedUntil = DateTime.now().add(_suppressWindow);
+      _lastPos = 0;
+      _lastDur = 0;
+      _posCtrl.add(0);
+      _durCtrl.add(0);
+      // Open paused so a superseded/late request can never start old audio.
+      await _trace('open-begin');
+      await player.open(media, play: false);
+      await _trace('open-end');
+      if (generation != _mediaGeneration) {
+        await _stop();
+        return;
+      }
+      opened = true;
+      openedUrl = source;
+      if (_playbackRequested) await _play(generation);
+      if (generation != _mediaGeneration) {
+        await _stop();
+        return;
+      }
+      if (!preserveReconnect) {
+        _cancelReconnect();
+      }
+    });
+    return operation
+        .catchError((Object error, StackTrace stack) {
+          // Superseded callers must not retry their old URL or change new UI state.
+          if (generation != _mediaGeneration) return;
+          Error.throwWithStackTrace(error, stack);
+        })
+        .timeout(
+          _openTimeout,
+          onTimeout: () {
+            if (generation != _mediaGeneration) return;
+            // Invalidate late completion without cancelling the reconnect loop's
+            // playback intent. The queued operation still owns native cleanup.
+            _mediaGeneration++;
+            opened = false;
+            openedUrl = null;
+            throw TimeoutException('Opening media timed out', _openTimeout);
+          },
+        );
   }
 
-  /// 停止播放（抑制 stop 后短时间内残留的 completed，避免被误判为播放完成）
-  Future<void> stop() async {
+  /// 停止播放，并使所有尚未完成的媒体加载失效。
+  Future<void> stop() {
+    final generation = ++_mediaGeneration;
     _cancelReconnect();
     _playbackRequested = false;
-    await _stop();
+    _remoteUrl = null;
+    opened = false;
+    openedUrl = null;
+    return _enqueueMediaOperation(() async {
+      if (generation == _mediaGeneration) await _stop();
+    });
   }
 
-  Future<void> _stop({bool preservePlaybackRequest = false}) async {
-    if (!preservePlaybackRequest) _playbackRequested = false;
+  Future<void> _stop() async {
     _suppressCompletedUntil = DateTime.now().add(_suppressWindow);
     if (Platform.isAndroid) {
       await AndroidAudio.setPlaybackActive(false);
     }
-    try {
-      await player.stop();
-    } catch (_) {}
+    await _trace('stop-begin');
+    // Android must stop rendering buffered audio before the device is closed.
+    if (Platform.isAndroid || _audioOutputReleased != null) {
+      await player.pause();
+    }
+    await player.stop();
+    await _waitForAudioOutputRelease();
+    _suppressCompletedUntil = DateTime.now().add(_suppressWindow);
+    await _trace('stop-end');
   }
 
-  /// 带播放意图地暂停。网络重连等待期间调用时会同时取消后续重试。
-  Future<void> pause() async {
+  Future<void> _waitForAudioOutputRelease() async {
+    final backend = player.platform;
+    if (_audioOutputReleased == null &&
+        (!Platform.isAndroid || backend is! NativePlayer)) {
+      return;
+    }
+    final clock = Stopwatch()..start();
+    while (true) {
+      final bool released;
+      if (_audioOutputReleased != null) {
+        released = await _audioOutputReleased();
+      } else {
+        final native = backend as NativePlayer;
+        released =
+            await native.getProperty('idle-active') == 'yes' &&
+            (await native.getProperty('current-ao')).isEmpty;
+      }
+      if (released) return;
+      if (clock.elapsed >= _stopTimeout) {
+        // Keep the new source closed if the old Android output cannot close.
+        throw StateError('Previous audio output did not close');
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+  }
+
+  /// 暂停时保留媒体，同时阻止尚未完成的 open 自动启播。
+  Future<void> pause() {
     _cancelReconnect();
     _playbackRequested = false;
-    if (Platform.isAndroid) {
-      await AndroidAudio.setPlaybackActive(false);
-    }
-    await player.pause();
+    final generation = _mediaGeneration;
+    return _enqueueMediaOperation(() async {
+      if (generation != _mediaGeneration || _playbackRequested) return;
+      if (Platform.isAndroid) await AndroidAudio.setPlaybackActive(false);
+      await player.pause();
+      await _trace('pause-end');
+    });
   }
 
-  /// 恢复播放。若上一次是网络流错误，不复用已失效的 mpv 会话，而是立即
-  /// 重开原始 URL；这样网络恢复后点击一次播放即可生效。
-  Future<void> play() async {
+  Future<void> play() {
     _playbackRequested = true;
     if (_reconnecting && _remoteUrl != null) {
       _cancelReconnect();
       _scheduleReconnect(immediate: true);
-      return;
+      return Future<void>.value();
     }
-    if (Platform.isAndroid) {
-      await AndroidAudio.setPlaybackActive(true);
-    }
+    final generation = _mediaGeneration;
+    return _enqueueMediaOperation(() => _play(generation));
+  }
+
+  Future<void> _play(int generation) async {
+    if (generation != _mediaGeneration || !_playbackRequested) return;
+    if (Platform.isAndroid) await AndroidAudio.setPlaybackActive(true);
+    if (generation != _mediaGeneration || !_playbackRequested) return;
     try {
       await player.play();
+      await _trace('play-end');
     } catch (_) {
-      if (Platform.isAndroid) {
-        await AndroidAudio.setPlaybackActive(false);
-      }
+      if (Platform.isAndroid) await AndroidAudio.setPlaybackActive(false);
       rethrow;
     }
   }
@@ -321,9 +471,10 @@ class AppPlayer {
 
   /// 停止并解除当前媒体关联，用于隐私模式等需要立即丢弃播放上下文的场景。
   Future<void> releaseMedia() async {
-    _releaseGeneration++;
-    _cancelReconnect();
-    await stop();
+    final stopping = stop();
+    final generation = _mediaGeneration;
+    await stopping;
+    if (generation != _mediaGeneration) return;
     opened = false;
     openedUrl = null;
     _lastPos = 0;
@@ -401,6 +552,9 @@ class AppPlayer {
       // 列表中前一个后端不可用时，mpv 会继续尝试后面的后端。
       'ao': 'audiotrack,opensles',
       'audio-buffer': '1.0',
+      // Manual replacement must close the old device, even for identical PCM
+      // formats. mpv's default weak gapless mode may retain the old output.
+      'gapless-audio': 'no',
     };
     for (final entry in options.entries) {
       try {
@@ -413,6 +567,7 @@ class AppPlayer {
 
   /// 应用退出时释放（平时播放器常驻，不随页面销毁）
   void dispose() {
+    _mediaGeneration++;
     _cancelReconnect();
     _playbackRequested = false;
     if (Platform.isAndroid) {

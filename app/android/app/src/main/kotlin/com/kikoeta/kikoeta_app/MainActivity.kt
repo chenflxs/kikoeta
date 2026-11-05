@@ -1,37 +1,30 @@
 package com.kikoeta.kikoeta_app
 
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.embedding.engine.FlutterEngineCache
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private var overlay: LyricsOverlay? = null
     private var lyricsFolderImport: LyricsFolderImport? = null
-    private var audioControlChannel: MethodChannel? = null
-    private var earPauseReceiver: BroadcastReceiver? = null
-    private var ignoreAudioFocus = false
-    private var playbackActive = false
-    private var hasAudioFocus = false
 
-    // 音频焦点丢失 → 通知 Dart 暂停
-    private val audioFocusListener = AudioManager.OnAudioFocusChangeListener { change ->
-        if (playbackActive && !ignoreAudioFocus &&
-            (change == AudioManager.AUDIOFOCUS_LOSS ||
-                change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
-        ) {
-            setPlaybackActive(false)
-            audioControlChannel?.invokeMethod("pause", null)
-        }
+    // Playback outlives the Activity. Reuse its Dart isolate and mpv owner on
+    // re-entry instead of leaving the native player behind in a destroyed engine.
+    override fun provideFlutterEngine(context: Context): FlutterEngine? =
+        FlutterEngineCache.getInstance().get(PLAYBACK_ENGINE)
+
+    override fun shouldDestroyEngineWithHost(): Boolean = false
+
+    companion object {
+        private const val PLAYBACK_ENGINE = "kikoeta-playback"
     }
 
     override fun onDestroy() {
@@ -40,9 +33,18 @@ class MainActivity : FlutterActivity() {
         // alive by the battery-optimization exemption can leave it behind across app restarts.
         overlay?.dispose()
         overlay = null
-        setPlaybackActive(false)
-        setEarPauseEnabled(false)
         super.onDestroy()
+    }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        // Only the UI channels belong to this Activity. Audio + Media3 continue
+        // running on the cached engine while it has no attached window.
+        for (name in listOf("kikoeta/lyrics_overlay", "kikoeta/battery_optimization",
+            "kikoeta/notification", LyricsFolderImport.CHANNEL)) {
+            MethodChannel(flutterEngine.dartExecutor.binaryMessenger, name)
+                .setMethodCallHandler(null)
+        }
+        super.cleanUpFlutterEngine(flutterEngine)
     }
 
     /** SAF 文件夹选择结果（歌词库文件夹导入）。 */
@@ -54,7 +56,8 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        registerAudioControl(flutterEngine)
+        FlutterEngineCache.getInstance().put(PLAYBACK_ENGINE, flutterEngine)
+        PlaybackAudioControl.register(applicationContext, flutterEngine)
         registerMedia3(flutterEngine)
         lyricsFolderImport = LyricsFolderImport(this).also { it.register(flutterEngine) }
         val channel = MethodChannel(
@@ -178,6 +181,7 @@ class MainActivity : FlutterActivity() {
 
     // ---------------- Media3 媒体会话桥接 ----------------
     private fun registerMedia3(flutterEngine: FlutterEngine) {
+        val appContext = applicationContext
         val ch = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "kikoeta/media3",
@@ -200,7 +204,7 @@ class MainActivity : FlutterActivity() {
                 "ensureSession" -> {
                     // 与 Kikoeru 一致：先在前台 Activity 中创建 MediaSessionService，
                     // 再由 Media3 Provider 在真实播放状态到达时提升为前台服务。
-                    startService(Intent(this, KikoetaMediaSessionService::class.java))
+                    appContext.startService(Intent(appContext, KikoetaMediaSessionService::class.java))
                     result.success(null)
                 }
                 "updateState" -> {
@@ -256,87 +260,6 @@ class MainActivity : FlutterActivity() {
                 }
                 else -> result.notImplemented()
             }
-        }
-    }
-
-    // ---------------- 音频控制（拔出耳机暂停 / 音频焦点） ----------------
-    private fun registerAudioControl(flutterEngine: FlutterEngine) {
-        val ch = MethodChannel(
-            flutterEngine.dartExecutor.binaryMessenger,
-            "kikoeta/audio_control",
-        )
-        audioControlChannel = ch
-        ch.setMethodCallHandler { call, result ->
-            when (call.method) {
-                "setEarPause" -> {
-                    setEarPauseEnabled(call.argument<Boolean>("enabled") == true)
-                    result.success(null)
-                }
-                "setIgnoreAudioFocus" -> {
-                    setIgnoreAudioFocus(call.argument<Boolean>("ignore") == true)
-                    result.success(null)
-                }
-                "setPlaybackActive" -> {
-                    setPlaybackActive(call.argument<Boolean>("active") == true)
-                    result.success(null)
-                }
-                else -> result.notImplemented()
-            }
-        }
-    }
-
-    /** 拔出耳机/断开蓝牙自动暂停（动态注册，仅开启时注册） */
-    private fun setEarPauseEnabled(enabled: Boolean) {
-        if (enabled) {
-            if (earPauseReceiver == null) {
-                earPauseReceiver = object : BroadcastReceiver() {
-                    override fun onReceive(context: Context, intent: Intent) {
-                        if (intent.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
-                            audioControlChannel?.invokeMethod("pause", null)
-                        }
-                    }
-                }
-                val filter = IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
-                if (Build.VERSION.SDK_INT >= 33) {
-                    registerReceiver(earPauseReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-                } else {
-                    @Suppress("DEPRECATION")
-                    registerReceiver(earPauseReceiver, filter)
-                }
-            }
-        } else {
-            earPauseReceiver?.let { unregisterReceiver(it) }
-            earPauseReceiver = null
-        }
-    }
-
-    /** 设置仅改变焦点策略；空闲时不申请焦点。 */
-    private fun setIgnoreAudioFocus(ignore: Boolean) {
-        ignoreAudioFocus = ignore
-        updateAudioFocus()
-    }
-
-    /** 播放开始前申请焦点，暂停或停止后释放。 */
-    private fun setPlaybackActive(active: Boolean) {
-        playbackActive = active
-        updateAudioFocus()
-    }
-
-    private fun updateAudioFocus() {
-        val am = getSystemService(AUDIO_SERVICE) as AudioManager
-        if (ignoreAudioFocus || !playbackActive) {
-            if (hasAudioFocus) {
-                hasAudioFocus = false
-                @Suppress("DEPRECATION")
-                am.abandonAudioFocus(audioFocusListener)
-            }
-        } else if (!hasAudioFocus) {
-            @Suppress("DEPRECATION")
-            hasAudioFocus = am.requestAudioFocus(
-                audioFocusListener,
-                AudioManager.STREAM_MUSIC,
-                AudioManager.AUDIOFOCUS_GAIN,
-            ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
         }
     }
 }
