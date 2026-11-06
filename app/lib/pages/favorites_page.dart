@@ -363,6 +363,8 @@ class _FavoritesPageState extends State<FavoritesPage> {
     final l10n = context.l10n;
     final epoch = app.serverEpoch;
     final base = ApiService.resolveBase(app);
+    final writebackKey =
+        app.customSites[app.customServerIdx].lyricsWritebackKey;
     final playlistId = _reviewsMode ? null : _playlist?.id;
     final order = _reviewSort;
     final sort = _reviewOrderAsc ? 'asc' : 'desc';
@@ -415,6 +417,8 @@ class _FavoritesPageState extends State<FavoritesPage> {
           work: batch.work,
           tracks: batch.tracks,
           automaticallyMatched: true,
+          sourceBase: base,
+          lyricsWritebackKey: writebackKey,
           sourceHeaders: token == null || token.isEmpty
               ? const {}
               : {'Authorization': 'Bearer $token'},

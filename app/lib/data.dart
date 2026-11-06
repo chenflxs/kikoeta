@@ -151,11 +151,13 @@ class CustomSite {
   String url;
   String user;
   String pass;
+  final String lyricsWritebackKey;
   CustomSite({
     required this.alias,
     required this.url,
     this.user = '',
     this.pass = '',
+    this.lyricsWritebackKey = '',
   });
 }
 
@@ -1104,6 +1106,9 @@ class AppState extends ChangeNotifier {
                 url: e['url'] as String,
                 user: (e['user'] as String?) ?? '',
                 pass: (e['pass'] as String?) ?? '',
+                lyricsWritebackKey: e['lyrics_writeback_key'] is String
+                    ? e['lyrics_writeback_key'] as String
+                    : '',
               ),
             ),
           );
@@ -2146,6 +2151,8 @@ class AppState extends ChangeNotifier {
                 'url': s.url,
                 'user': s.user,
                 'pass': s.pass,
+                if (s.lyricsWritebackKey.isNotEmpty)
+                  'lyrics_writeback_key': s.lyricsWritebackKey,
               },
             )
             .toList(),

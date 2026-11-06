@@ -320,6 +320,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get dictationTranslationPageStartUpdate5 => '正在写入歌词库';
 
   @override
+  String get dictationSourceWritebackFailed => '部分歌词未能写入音轨目录，已保存在本地歌词库。';
+
+  @override
+  String get sheetsLyricsWritebackKey => '歌词写回密钥';
+
+  @override
+  String get sheetsLyricsWritebackKeyHint => '16 位英文字母或数字，留空关闭写回';
+
+  @override
   String dictationTranslationPageStartAppendLog(String error) {
     return '错误：$error';
   }
@@ -3200,6 +3209,15 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get dictationTranslationPageStartUpdate5 => '正在寫入歌詞庫';
+
+  @override
+  String get dictationSourceWritebackFailed => '部分歌詞未能寫入音軌目錄，已儲存在本機歌詞庫。';
+
+  @override
+  String get sheetsLyricsWritebackKey => '歌詞寫回金鑰';
+
+  @override
+  String get sheetsLyricsWritebackKeyHint => '16 位英文字母或數字，留空關閉寫回';
 
   @override
   String dictationTranslationPageStartAppendLog(String error) {

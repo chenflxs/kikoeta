@@ -342,6 +342,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get dictationTranslationPageStartUpdate5 => 'Saving to lyrics library';
 
   @override
+  String get dictationSourceWritebackFailed =>
+      'Some lyrics could not be written next to the audio and were saved to the local lyrics library.';
+
+  @override
+  String get sheetsLyricsWritebackKey => 'Lyrics writeback key';
+
+  @override
+  String get sheetsLyricsWritebackKeyHint =>
+      '16 letters or digits. Leave blank to disable.';
+
+  @override
   String dictationTranslationPageStartAppendLog(String error) {
     return 'Error: $error';
   }

@@ -143,7 +143,7 @@ void main() {
     },
   );
 
-  test('batches capture tracks and source credentials at import', () {
+  test('batches keep the writeback key separate from download credentials', () {
     final queue = DictationQueue();
     addTearDown(queue.dispose);
     final tracks = [const MediaNode(title: 'one', type: 'file', path: 'one')];
@@ -151,12 +151,16 @@ void main() {
     final entry = queue.enqueue(
       work: work('RJ1'),
       tracks: tracks,
+      sourceBase: 'https://library.example.com',
+      lyricsWritebackKey: 'ABcd1234EFgh5678',
       sourceHeaders: headers,
     )!;
     tracks.clear();
     headers['Authorization'] = 'Bearer second';
     expect(entry.tracks.single.path, 'one');
-    expect(entry.sourceHeaders['Authorization'], 'Bearer first');
+    expect(entry.sourceBase, 'https://library.example.com');
+    expect(entry.lyricsWritebackKey, 'ABcd1234EFgh5678');
+    expect(entry.sourceHeaders, {'Authorization': 'Bearer first'});
   });
 
   test(

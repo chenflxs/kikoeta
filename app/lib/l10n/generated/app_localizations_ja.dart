@@ -327,6 +327,16 @@ class AppLocalizationsJa extends AppLocalizations {
   String get dictationTranslationPageStartUpdate5 => '歌詞ライブラリに保存中';
 
   @override
+  String get dictationSourceWritebackFailed =>
+      '一部の歌詞を音声と同じフォルダーに書き込めなかったため、ローカルの歌詞ライブラリに保存しました。';
+
+  @override
+  String get sheetsLyricsWritebackKey => '歌詞の書き戻しキー';
+
+  @override
+  String get sheetsLyricsWritebackKeyHint => '半角英数字16文字。空欄で無効になります。';
+
+  @override
   String dictationTranslationPageStartAppendLog(String error) {
     return 'エラー：$error';
   }

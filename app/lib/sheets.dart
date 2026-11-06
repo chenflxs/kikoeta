@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'data.dart';
 import 'services/api_service.dart';
 import 'services/audio_effects.dart';
+import 'services/kikoeru_lyrics_writeback.dart';
 import 'services/player_service.dart';
 import 'smooth_scroll.dart';
 import 'theme.dart';
@@ -299,6 +300,9 @@ Future<void> showSiteSheet(
   final passCtrl = TextEditingController(
     text: isEdit ? app.customSites[editIndex].pass : '',
   );
+  final savedUrl = urlCtrl.text.trim().replaceFirst(RegExp(r'/+$'), '');
+  final savedKey = isEdit ? app.customSites[editIndex].lyricsWritebackKey : '';
+  final writebackKeyCtrl = TextEditingController(text: savedKey);
   return showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -322,6 +326,12 @@ Future<void> showSiteSheet(
             context.l10n.sheetsShowSiteSheetField2,
             urlCtrl,
             hint: 'http://192.168.1.100:3000',
+            onChanged: (value) {
+              if (writebackKeyCtrl.text == savedKey &&
+                  value.trim().replaceFirst(RegExp(r'/+$'), '') != savedUrl) {
+                writebackKeyCtrl.clear();
+              }
+            },
           ),
           _field(
             ctx,
@@ -336,12 +346,20 @@ Future<void> showSiteSheet(
             hint: context.l10n.loginPageBuildSiteConfigHint,
             obscure: true,
           ),
+          _field(
+            ctx,
+            context.l10n.sheetsLyricsWritebackKey,
+            writebackKeyCtrl,
+            hint: context.l10n.sheetsLyricsWritebackKeyHint,
+            obscure: true,
+          ),
           ElevatedButton(
             onPressed: () async {
               final alias = aliasCtrl.text.trim();
               final url = urlCtrl.text.trim().replaceFirst(RegExp(r'/+$'), '');
               final user = userCtrl.text.trim();
               final pass = passCtrl.text;
+              final writebackKey = writebackKeyCtrl.text;
               if (alias.isEmpty ||
                   url.isEmpty ||
                   user.isEmpty ||
@@ -349,6 +367,15 @@ Future<void> showSiteSheet(
                 ScaffoldMessenger.of(ctx).showSnackBar(
                   SnackBar(
                     content: Text(context.l10n.loginPageSaveNewSiteToast),
+                  ),
+                );
+                return;
+              }
+              if (writebackKey.isNotEmpty &&
+                  !KikoeruLyricsWriteback.isValidKey(writebackKey)) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  SnackBar(
+                    content: Text(context.l10n.sheetsLyricsWritebackKeyHint),
                   ),
                 );
                 return;
@@ -363,26 +390,16 @@ Future<void> showSiteSheet(
                 } catch (_) {}
               }
               if (!ctx.mounted) return;
-              if (isEdit) {
-                app.saveSite(
-                  CustomSite(
-                    alias: alias,
-                    url: url,
-                    user: userCtrl.text.trim(),
-                    pass: passCtrl.text,
-                  ),
-                  index: editIndex,
-                );
-              } else {
-                app.saveSite(
-                  CustomSite(
-                    alias: alias,
-                    url: url,
-                    user: userCtrl.text.trim(),
-                    pass: passCtrl.text,
-                  ),
-                );
-              }
+              app.saveSite(
+                CustomSite(
+                  alias: alias,
+                  url: url,
+                  user: user,
+                  pass: pass,
+                  lyricsWritebackKey: writebackKey,
+                ),
+                index: editIndex,
+              );
               Navigator.pop(ctx);
             },
             style: ElevatedButton.styleFrom(
@@ -951,6 +968,7 @@ Widget _field(
   TextEditingController ctrl, {
   String? hint,
   bool obscure = false,
+  ValueChanged<String>? onChanged,
 }) {
   final p = _p(context);
   return Padding(
@@ -972,6 +990,7 @@ Widget _field(
         TextField(
           controller: ctrl,
           obscureText: obscure,
+          onChanged: onChanged,
           style: TextStyle(fontSize: 13, color: p.text),
           decoration: InputDecoration(
             hintText: hint,

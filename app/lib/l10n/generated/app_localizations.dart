@@ -710,6 +710,24 @@ abstract class AppLocalizations {
   /// **'正在写入歌词库'**
   String get dictationTranslationPageStartUpdate5;
 
+  /// No description provided for @dictationSourceWritebackFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'部分歌词未能写入音轨目录，已保存在本地歌词库。'**
+  String get dictationSourceWritebackFailed;
+
+  /// No description provided for @sheetsLyricsWritebackKey.
+  ///
+  /// In zh, this message translates to:
+  /// **'歌词写回密钥'**
+  String get sheetsLyricsWritebackKey;
+
+  /// No description provided for @sheetsLyricsWritebackKeyHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'16 位英文字母或数字，留空关闭写回'**
+  String get sheetsLyricsWritebackKeyHint;
+
   /// pages/dictation_translation_page.dart: _start
   ///
   /// In zh, this message translates to:

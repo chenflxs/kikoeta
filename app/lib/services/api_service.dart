@@ -1454,6 +1454,8 @@ class ApiService {
 
   static final Map<String, List<MediaNode>> _tracksCache = {};
   static String _tracksKey(AppState app, int id) => '${resolveBase(app)}|$id';
+  static void invalidateTracks(String base, int id) =>
+      _tracksCache.remove('$base|$id');
 
   /// 将 asmr.one 与 kikoeru-express 的曲目树统一为客户端模型。
   /// 自建站返回的 mediaStreamUrl 通常是相对地址，必须按该站点的 base

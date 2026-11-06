@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../data.dart';
 import '../services/api_service.dart';
+import '../services/kikoeru_lyrics_writeback.dart';
 import '../services/kt_service.dart';
 import '../services/dictation_queue.dart';
 import '../widgets/dictation_queue_list.dart';
@@ -57,11 +58,17 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
     super.initState();
     _session = DictationQueue.forApp(widget.app);
     if (widget.work != null && widget.tracks.isNotEmpty) {
-      final token = ApiService.tokenFor(app, ApiService.resolveBase(app));
+      final base = ApiService.resolveBase(app);
+      final token = ApiService.tokenFor(app, base);
+      final site = app.customServer && app.customSites.isNotEmpty
+          ? app.customSites[app.customServerIdx]
+          : null;
       _session.enqueue(
         work: widget.work!,
         tracks: widget.tracks,
         automaticallyMatched: widget.automaticallyMatched,
+        sourceBase: site?.url,
+        lyricsWritebackKey: site?.lyricsWritebackKey ?? '',
         sourceHeaders: token == null || token.isEmpty
             ? const {}
             : {'Authorization': 'Bearer $token'},
@@ -287,12 +294,7 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
           _session.stageFraction = 0;
         });
         try {
-          _session.savedFiles = await _saveOutputs(
-            service,
-            job,
-            currentWork,
-            tracks,
-          );
+          _session.savedFiles = await _saveOutputs(service, job, entry, l10n);
         } catch (error) {
           // The backend checkpoint remains resumable even if writing an
           // already finished lyric to the local library fails.
@@ -356,50 +358,78 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
   Future<int> _saveOutputs(
     KtService service,
     Map<String, dynamic> job,
-    Work currentWork,
-    List<MediaNode> tracks,
+    DictationQueueEntry entry,
+    AppLocalizations l10n,
   ) async {
     final rawResults = job['results'];
     if (rawResults is! List) return 0;
     final files = job['files'];
+    final tracks = entry.tracks;
+    final work = entry.work;
+    final workId = work.apiId;
+    final sourceBase = entry.sourceBase;
+    final writeback = job['status'] == 'completed' && workId != null
+        ? KikoeruLyricsWriteback.connect(
+            sourceBase,
+            entry.sourceHeaders,
+            key: entry.lyricsWritebackKey,
+          )
+        : null;
     var saved = 0;
-    for (
-      var index = 0;
-      index < rawResults.length && index < tracks.length;
-      index++
-    ) {
-      final raw = rawResults[index];
-      if (raw is! Map || raw['status'] != 'done') continue;
-      final trackIndex =
-          (raw['file_index'] as num?)?.toInt() ??
-          (files is List ? files.indexOf(raw['path']) : index);
-      if (trackIndex < 0 || trackIndex >= tracks.length) continue;
-      final urls = raw['download_urls'];
-      if (urls is! List || urls.isEmpty) continue;
-      String? lrcUrl;
-      final outputs = raw['outputs'];
-      if (outputs is List) {
-        for (var i = 0; i < outputs.length && i < urls.length; i++) {
-          if (outputs[i].toString().toLowerCase().endsWith('.lrc')) {
-            lrcUrl = urls[i].toString();
-            break;
+    var wroteToSource = false;
+    var sourceWriteFailed = false;
+    try {
+      for (
+        var index = 0;
+        index < rawResults.length && index < tracks.length;
+        index++
+      ) {
+        final raw = rawResults[index];
+        if (raw is! Map || raw['status'] != 'done') continue;
+        final trackIndex =
+            (raw['file_index'] as num?)?.toInt() ??
+            (files is List ? files.indexOf(raw['path']) : index);
+        if (trackIndex < 0 || trackIndex >= tracks.length) continue;
+        final urls = raw['download_urls'];
+        if (urls is! List || urls.isEmpty) continue;
+        String? lrcUrl;
+        final outputs = raw['outputs'];
+        if (outputs is List) {
+          for (var i = 0; i < outputs.length && i < urls.length; i++) {
+            if (outputs[i].toString().toLowerCase().endsWith('.lrc')) {
+              lrcUrl = urls[i].toString();
+              break;
+            }
           }
         }
+        final bytes = await service.download(lrcUrl ?? urls.first.toString());
+        final content = utf8.decode(bytes, allowMalformed: true);
+        final track = tracks[trackIndex];
+        await LyricsLibraryService.instance.saveTranslatedLyrics(
+          workId: work.rj,
+          relativePath: ktLyricsRelativePath(work.rj, track.path),
+          content: content,
+        );
+        saved++;
+        if (writeback != null && workId != null && lrcUrl != null) {
+          final written = await writeback.write(
+            workId: workId,
+            mediaUrl: track.downloadUrl ?? track.url,
+            trackPath: track.path,
+            content: content,
+          );
+          if (written == true) wroteToSource = true;
+          if (written == false) sourceWriteFailed = true;
+        }
       }
-      lrcUrl ??= urls.first.toString();
-      final bytes = await service.download(lrcUrl);
-      final content = utf8.decode(bytes, allowMalformed: true);
-      await LyricsLibraryService.instance.saveTranslatedLyrics(
-        workId: currentWork.rj,
-        relativePath: ktLyricsRelativePath(
-          currentWork.rj,
-          tracks[trackIndex].path,
-        ),
-        content: content,
-      );
-      saved++;
+      return saved;
+    } finally {
+      writeback?.close();
+      if (wroteToSource && sourceBase != null && workId != null) {
+        ApiService.invalidateTracks(sourceBase, workId);
+      }
+      if (sourceWriteFailed) _appendLog(l10n.dictationSourceWritebackFailed);
     }
-    return saved;
   }
 
   void _applyEvent(Map<String, dynamic> event) {

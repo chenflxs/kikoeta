@@ -348,6 +348,17 @@ class AppLocalizationsRu extends AppLocalizations {
       'Сохранение в библиотеку текстов';
 
   @override
+  String get dictationSourceWritebackFailed =>
+      'Некоторые тексты не удалось записать рядом с аудио. Они сохранены в локальной библиотеке текстов.';
+
+  @override
+  String get sheetsLyricsWritebackKey => 'Ключ записи текстов';
+
+  @override
+  String get sheetsLyricsWritebackKeyHint =>
+      '16 латинских букв или цифр. Пустое поле отключает запись.';
+
+  @override
   String dictationTranslationPageStartAppendLog(String error) {
     return 'Ошибка: $error';
   }

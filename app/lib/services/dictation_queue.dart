@@ -13,6 +13,8 @@ class DictationQueueEntry {
   final List<MediaNode> tracks;
   final bool automaticallyMatched;
   final String label;
+  final String? sourceBase;
+  final String lyricsWritebackKey;
   final Map<String, String> sourceHeaders;
   KtJobReference? backendJob;
   DictationQueueStatus _status = DictationQueueStatus.pending;
@@ -22,6 +24,8 @@ class DictationQueueEntry {
     required List<MediaNode> tracks,
     required this.automaticallyMatched,
     required this.label,
+    required this.sourceBase,
+    required this.lyricsWritebackKey,
     required Map<String, String> sourceHeaders,
   }) : tracks = List.unmodifiable(tracks),
        sourceHeaders = Map.unmodifiable(sourceHeaders);
@@ -67,6 +71,8 @@ class DictationQueue extends ChangeNotifier {
     required Work work,
     required List<MediaNode> tracks,
     bool automaticallyMatched = false,
+    String? sourceBase,
+    String lyricsWritebackKey = '',
     Map<String, String> sourceHeaders = const {},
   }) {
     final id = work.rj.toUpperCase();
@@ -88,6 +94,8 @@ class DictationQueue extends ChangeNotifier {
       tracks: addedTracks,
       automaticallyMatched: automaticallyMatched,
       label: batch == 0 ? work.rj : '${work.rj}-$batch',
+      sourceBase: sourceBase,
+      lyricsWritebackKey: lyricsWritebackKey,
       sourceHeaders: sourceHeaders,
     );
     _entries.insert(0, entry);

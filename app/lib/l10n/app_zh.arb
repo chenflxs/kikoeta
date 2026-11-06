@@ -251,6 +251,9 @@
   "@dictationTranslationPageStartUpdate5": {
     "description": "pages/dictation_translation_page.dart: _start"
   },
+  "dictationSourceWritebackFailed": "部分歌词未能写入音轨目录，已保存在本地歌词库。",
+  "sheetsLyricsWritebackKey": "歌词写回密钥",
+  "sheetsLyricsWritebackKeyHint": "16 位英文字母或数字，留空关闭写回",
   "dictationTranslationPageStartAppendLog": "错误：{error}",
   "@dictationTranslationPageStartAppendLog": {
     "description": "pages/dictation_translation_page.dart: _start",
