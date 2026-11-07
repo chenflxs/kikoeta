@@ -334,7 +334,7 @@ class AppLocalizationsJa extends AppLocalizations {
   String get sheetsLyricsWritebackKey => '歌詞の書き戻しキー';
 
   @override
-  String get sheetsLyricsWritebackKeyHint => '半角英数字16文字。空欄で無効になります。';
+  String get sheetsLyricsWritebackKeyHint => 'ユーザー認証が有効な場合は半角英数字16文字';
 
   @override
   String dictationTranslationPageStartAppendLog(String error) {
@@ -892,7 +892,8 @@ class AppLocalizationsJa extends AppLocalizations {
   String get loginPageBuildSiteConfigHint3 => '表示名（例：自宅NAS）';
 
   @override
-  String get loginPageSaveNewSiteToast => '表示名、URL、ユーザー名、パスワードを入力してください';
+  String get loginPageSaveNewSiteToast =>
+      '表示名とURLを入力してください。ユーザー名とパスワードは両方空欄でも構いません。';
 
   @override
   String get loginPageShowProxyDialogHintText => '例：http://proxy-address:port';

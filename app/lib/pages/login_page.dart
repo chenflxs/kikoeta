@@ -261,15 +261,17 @@ class _LoginPageState extends State<LoginPage> {
     final url = _urlCtrl.text.trim().replaceFirst(RegExp(r'/+$'), '');
     final user = _siteUserCtrl.text.trim();
     final pass = _sitePassCtrl.text;
-    if (alias.isEmpty || url.isEmpty || user.isEmpty || pass.isEmpty) {
+    if (alias.isEmpty || url.isEmpty || user.isEmpty != pass.isEmpty) {
       _toast(l10n.loginPageSaveNewSiteToast);
       return;
     }
     setState(() => _savingSite = true);
     try {
-      try {
-        await ApiService.login(app, url, user, pass);
-      } catch (_) {}
+      if (user.isNotEmpty) {
+        try {
+          await ApiService.login(app, url, user, pass);
+        } catch (_) {}
+      }
       app.saveSite(CustomSite(alias: alias, url: url, user: user, pass: pass));
       // 自动启用刚添加的站点并进入主界面
       app.applyServer(true, app.customSites.length - 1);

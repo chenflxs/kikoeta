@@ -6,6 +6,7 @@ import 'package:kikoeta_app/data.dart';
 import 'package:kikoeta_app/l10n/app_language.dart';
 import 'package:kikoeta_app/l10n/generated/app_localizations.dart';
 import 'package:kikoeta_app/pages/settings_page.dart';
+import 'package:kikoeta_app/sheets.dart';
 import 'package:kikoeta_app/src/rust/frb_generated.dart';
 import 'package:kikoeta_app/theme.dart';
 
@@ -38,6 +39,44 @@ void main() {
     await tester.pumpAndSettle();
     return app;
   }
+
+  testWidgets('saves a public custom site without credentials or key', (
+    tester,
+  ) async {
+    final app = AppState(languageSettingsWriter: (_, _) {});
+    addTearDown(app.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: AppLanguage.localeOverride,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: buildTheme(Brightness.light),
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showSiteSheet(context, app),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    final fields = find.byType(TextField);
+    await tester.enterText(fields.at(0), 'Public library');
+    await tester.enterText(fields.at(1), 'http://127.0.0.1:8888/');
+    await tester.ensureVisible(find.text('保存'));
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(app.customSites, hasLength(1));
+    final site = app.customSites.single;
+    expect(site.url, 'http://127.0.0.1:8888');
+    expect(site.user, isEmpty);
+    expect(site.pass, isEmpty);
+    expect(site.lyricsWritebackKey, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('successful Chinese checks stay green and relabel in English', (
     tester,
@@ -114,6 +153,9 @@ class _HealthApi extends RustLibApi {
 
   @override
   String? crateApiSimpleGetToken({required String base}) => null;
+
+  @override
+  void crateApiSimpleSetSetting({required String key, required String value}) {}
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

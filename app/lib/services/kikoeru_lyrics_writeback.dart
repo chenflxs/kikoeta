@@ -28,16 +28,15 @@ class KikoeruLyricsWriteback {
         base.host.isEmpty ||
         base.userInfo.isNotEmpty ||
         base.hasQuery ||
-        base.hasFragment ||
-        !headers.containsKey('Authorization') ||
-        !isValidKey(key)) {
+        base.hasFragment) {
       return null;
     }
     final path = base.path.replaceFirst(RegExp(r'/+$'), '');
     final endpoint = base.replace(path: '$path/api/media/kikoeta-lyrics');
     return KikoeruLyricsWriteback._(endpoint, {
-      'Authorization': headers['Authorization']!,
-      'X-Kikoeru-Writeback-Key': key,
+      if (headers['Authorization']?.isNotEmpty == true)
+        'Authorization': headers['Authorization']!,
+      if (isValidKey(key)) 'X-Kikoeru-Writeback-Key': key,
     }, http.Client());
   }
 

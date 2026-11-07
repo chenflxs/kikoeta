@@ -16,19 +16,23 @@ void main() {
   late String? capability;
   late int probeStatus;
   late int writeStatus;
+  String? expectedAuthorization;
+  String? expectedKey;
 
   setUp(() async {
     requests = [];
     capability = '2';
     probeStatus = 204;
     writeStatus = 204;
+    expectedAuthorization = 'Bearer test-token';
+    expectedKey = key;
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     base = 'http://127.0.0.1:${server.port}/library';
     writer = KikoeruLyricsWriteback.connect(base, headers, key: key)!;
     server.listen((request) async {
       requests.add('${request.method} ${request.uri.path}');
-      expect(request.headers.value('authorization'), 'Bearer test-token');
-      expect(request.headers.value('X-Kikoeru-Writeback-Key'), key);
+      expect(request.headers.value('authorization'), expectedAuthorization);
+      expect(request.headers.value('X-Kikoeru-Writeback-Key'), expectedKey);
       expect(request.uri.queryParameters.values, isNot(contains(key)));
       if (request.method == 'HEAD') {
         if (capability != null) {
@@ -49,7 +53,7 @@ void main() {
       }
       await request.response.close();
     });
-    addTearDown(writer.close);
+    addTearDown(() => writer.close());
     addTearDown(() => server.close(force: true));
   });
 
@@ -112,16 +116,15 @@ void main() {
     expect(requests, isNot(contains('PUT /redirected')));
   });
 
-  test('skips public sites and sources without login', () {
+  test('skips missing and non-HTTP sources', () {
     expect(KikoeruLyricsWriteback.connect(null, headers, key: key), isNull);
-    expect(KikoeruLyricsWriteback.connect(base, {}, key: key), isNull);
     expect(
       KikoeruLyricsWriteback.connect('file:///tmp', headers, key: key),
       isNull,
     );
   });
 
-  test('skips sources without a key of exactly 16 ASCII letters or digits', () {
+  test('validates optional keys as exactly 16 ASCII letters or digits', () {
     for (final invalid in [
       '',
       '123456789012345',
@@ -129,11 +132,33 @@ void main() {
       '123456789012345\n',
       '123456789012345密',
     ]) {
-      expect(
-        KikoeruLyricsWriteback.connect(base, headers, key: invalid),
-        isNull,
-      );
+      expect(KikoeruLyricsWriteback.isValidKey(invalid), isFalse);
     }
     expect(requests, isEmpty);
+  });
+
+  test(
+    'uploads without credentials or key when the server permits it',
+    () async {
+      writer.close();
+      writer = KikoeruLyricsWriteback.connect(base, {}, key: '')!;
+      expectedAuthorization = null;
+      expectedKey = null;
+      expect(await write(), isTrue);
+      expect(requests, [
+        'HEAD /library/api/media/kikoeta-lyrics',
+        'PUT /library/api/media/kikoeta-lyrics/123456',
+      ]);
+    },
+  );
+
+  test('keeps lyrics local if a protected server requires login', () async {
+    writer.close();
+    writer = KikoeruLyricsWriteback.connect(base, {}, key: '')!;
+    expectedAuthorization = null;
+    expectedKey = null;
+    probeStatus = 401;
+    expect(await write(), isFalse);
+    expect(requests, ['HEAD /library/api/media/kikoeta-lyrics']);
   });
 }

@@ -362,8 +362,7 @@ Future<void> showSiteSheet(
               final writebackKey = writebackKeyCtrl.text;
               if (alias.isEmpty ||
                   url.isEmpty ||
-                  user.isEmpty ||
-                  pass.isEmpty) {
+                  user.isEmpty != pass.isEmpty) {
                 ScaffoldMessenger.of(ctx).showSnackBar(
                   SnackBar(
                     content: Text(context.l10n.loginPageSaveNewSiteToast),

@@ -253,7 +253,7 @@
   },
   "dictationSourceWritebackFailed": "部分歌词未能写入音轨目录，已保存在本地歌词库。",
   "sheetsLyricsWritebackKey": "歌词写回密钥",
-  "sheetsLyricsWritebackKeyHint": "16 位英文字母或数字，留空关闭写回",
+  "sheetsLyricsWritebackKeyHint": "用户验证开启时填写 16 位英文字母或数字",
   "dictationTranslationPageStartAppendLog": "错误：{error}",
   "@dictationTranslationPageStartAppendLog": {
     "description": "pages/dictation_translation_page.dart: _start",
@@ -1069,7 +1069,7 @@
   "@loginPageBuildSiteConfigHint3": {
     "description": "pages/login_page.dart: _buildSiteConfig"
   },
-  "loginPageSaveNewSiteToast": "请填写别名、地址、账号和密码",
+  "loginPageSaveNewSiteToast": "请填写别名和地址，账号和密码可同时留空",
   "@loginPageSaveNewSiteToast": {
     "description": "pages/login_page.dart: _saveNewSite"
   },

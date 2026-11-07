@@ -725,7 +725,7 @@ abstract class AppLocalizations {
   /// No description provided for @sheetsLyricsWritebackKeyHint.
   ///
   /// In zh, this message translates to:
-  /// **'16 位英文字母或数字，留空关闭写回'**
+  /// **'用户验证开启时填写 16 位英文字母或数字'**
   String get sheetsLyricsWritebackKeyHint;
 
   /// pages/dictation_translation_page.dart: _start
@@ -1663,7 +1663,7 @@ abstract class AppLocalizations {
   /// pages/login_page.dart: _saveNewSite
   ///
   /// In zh, this message translates to:
-  /// **'请填写别名、地址、账号和密码'**
+  /// **'请填写别名和地址，账号和密码可同时留空'**
   String get loginPageSaveNewSiteToast;
 
   /// pages/login_page.dart: _showProxyDialog

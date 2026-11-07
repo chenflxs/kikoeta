@@ -356,7 +356,7 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get sheetsLyricsWritebackKeyHint =>
-      '16 латинских букв или цифр. Пустое поле отключает запись.';
+      '16 латинских букв или цифр, если включена авторизация пользователей';
 
   @override
   String dictationTranslationPageStartAppendLog(String error) {
@@ -927,7 +927,7 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get loginPageSaveNewSiteToast =>
-      'Введите название, URL, имя пользователя и пароль';
+      'Введите название и URL. Имя пользователя и пароль можно оставить пустыми.';
 
   @override
   String get loginPageShowProxyDialogHintText =>

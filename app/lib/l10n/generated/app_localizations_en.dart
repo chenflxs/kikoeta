@@ -350,7 +350,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get sheetsLyricsWritebackKeyHint =>
-      '16 letters or digits. Leave blank to disable.';
+      '16 letters or digits when user authentication is enabled';
 
   @override
   String dictationTranslationPageStartAppendLog(String error) {
@@ -919,7 +919,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get loginPageSaveNewSiteToast =>
-      'Enter an alias, URL, username, and password';
+      'Enter an alias and URL. Enter both credentials or leave both blank.';
 
   @override
   String get loginPageShowProxyDialogHintText =>

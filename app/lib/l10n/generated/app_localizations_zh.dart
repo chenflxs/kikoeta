@@ -326,7 +326,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sheetsLyricsWritebackKey => '歌词写回密钥';
 
   @override
-  String get sheetsLyricsWritebackKeyHint => '16 位英文字母或数字，留空关闭写回';
+  String get sheetsLyricsWritebackKeyHint => '用户验证开启时填写 16 位英文字母或数字';
 
   @override
   String dictationTranslationPageStartAppendLog(String error) {
@@ -880,7 +880,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get loginPageBuildSiteConfigHint3 => '别名，如：家庭 NAS';
 
   @override
-  String get loginPageSaveNewSiteToast => '请填写别名、地址、账号和密码';
+  String get loginPageSaveNewSiteToast => '请填写别名和地址，账号和密码可同时留空';
 
   @override
   String get loginPageShowProxyDialogHintText => '例如 http://代理地址:端口';
@@ -3217,7 +3217,7 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String get sheetsLyricsWritebackKey => '歌詞寫回金鑰';
 
   @override
-  String get sheetsLyricsWritebackKeyHint => '16 位英文字母或數字，留空關閉寫回';
+  String get sheetsLyricsWritebackKeyHint => '使用者驗證開啟時填寫 16 位英文字母或數字';
 
   @override
   String dictationTranslationPageStartAppendLog(String error) {
@@ -3771,7 +3771,7 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String get loginPageBuildSiteConfigHint3 => '別名，如：家庭 NAS';
 
   @override
-  String get loginPageSaveNewSiteToast => '請填寫別名、位址、帳號和密碼';
+  String get loginPageSaveNewSiteToast => '請填寫別名和位址，帳號和密碼可同時留空';
 
   @override
   String get loginPageShowProxyDialogHintText => '例如 http://代理位址:連接埠';
