@@ -394,6 +394,7 @@ void main() {
     ValueChanged<DictationQueueEntry>? onDelete,
     ValueChanged<DictationQueueEntry>? onJump,
     ValueChanged<DictationQueueEntry>? onRetry,
+    ValueChanged<DictationQueueEntry>? onRetryWriteback,
   }) => tester.pumpWidget(
     MaterialApp(
       locale: const Locale('zh', 'CN'),
@@ -409,6 +410,7 @@ void main() {
               onDelete: onDelete ?? queue.remove,
               onJump: onJump,
               onRetry: onRetry,
+              onRetryWriteback: onRetryWriteback,
             ),
           ),
         ),
@@ -452,6 +454,35 @@ void main() {
       queue.remove(b);
       expect(queue.retry(b), isFalse);
       expect(enqueue(queue, 'A').label, 'A-1');
+    },
+  );
+
+  testWidgets(
+    'completed batch retries writeback without requeueing translation',
+    (tester) async {
+      final queue = DictationQueue();
+      addTearDown(queue.dispose);
+      final entry = enqueue(queue, 'RJ111111');
+      await queue.run((_) async => DictationQueueStatus.completed);
+      entry.pendingWritebackPaths.add('01.mp3');
+      var retries = 0;
+      await showQueue(
+        tester,
+        queue,
+        onRetryWriteback: (target) {
+          expect(target, same(entry));
+          retries++;
+          queue.update(() => target.pendingWritebackPaths.clear());
+        },
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, '重试写回'));
+      await tester.pumpAndSettle();
+      expect(retries, 1);
+      expect(entry.status, DictationQueueStatus.completed);
+      expect(queue.hasPending, isFalse);
+      expect(find.text('重试写回'), findsNothing);
+      expect(tester.takeException(), isNull);
     },
   );
 

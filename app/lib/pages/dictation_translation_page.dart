@@ -8,6 +8,9 @@ import 'package:url_launcher/url_launcher.dart';
 import '../data.dart';
 import '../services/api_service.dart';
 import '../services/kikoeru_lyrics_writeback.dart';
+import '../services/kikoeru_writeback_access.dart';
+import '../services/kikoeru_writeback_site.dart';
+import '../l10n/writeback_strings.dart';
 import '../services/kt_service.dart';
 import '../services/dictation_queue.dart';
 import '../widgets/dictation_queue_list.dart';
@@ -373,11 +376,14 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
             sourceBase,
             entry.sourceHeaders,
             key: entry.lyricsWritebackKey,
+            credentials: sourceBase == null
+                ? null
+                : () => writebackCredentialsFor(widget.app, sourceBase),
           )
         : null;
     var saved = 0;
     var wroteToSource = false;
-    var sourceWriteFailed = false;
+    final sourceFailures = <KikoeruWritebackStatus>{};
     try {
       for (
         var index = 0;
@@ -418,8 +424,14 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
             trackPath: track.path,
             content: content,
           );
-          if (written == true) wroteToSource = true;
-          if (written == false) sourceWriteFailed = true;
+          if (written == true) {
+            wroteToSource = true;
+            entry.pendingWritebackPaths.remove(track.path);
+          }
+          if (written == false) {
+            entry.pendingWritebackPaths.add(track.path);
+            sourceFailures.add(writeback.status);
+          }
         }
       }
       return saved;
@@ -428,7 +440,11 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
       if (wroteToSource && sourceBase != null && workId != null) {
         ApiService.invalidateTracks(sourceBase, workId);
       }
-      if (sourceWriteFailed) _appendLog(l10n.dictationSourceWritebackFailed);
+      if (sourceFailures.isNotEmpty) {
+        _appendLog(
+          '${l10n.dictationSourceWritebackFailed} ${sourceFailures.map((status) => status.label(l10n)).join(' / ')}',
+        );
+      }
     }
   }
 
@@ -466,6 +482,61 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
   Future<void> _retryEntry(DictationQueueEntry entry) async {
     if (_syncing || !_session.retry(entry)) return;
     if (!_session.running) await _start();
+  }
+
+  Future<void> _retryWriteback(DictationQueueEntry entry) async {
+    final base = entry.sourceBase;
+    final id = entry.work.apiId;
+    if (base == null || id == null || entry.retryingWriteback) return;
+    final writer = KikoeruLyricsWriteback.connect(
+      base,
+      const {},
+      key: '',
+      credentials: () => writebackCredentialsFor(widget.app, base),
+    );
+    if (writer == null) return;
+    final l10n = context.l10n;
+    _session.update(() => entry.retryingWriteback = true);
+    final failures = <KikoeruWritebackStatus>{};
+    var wrote = false;
+    try {
+      for (final track
+          in entry.tracks
+              .where(
+                (track) => entry.pendingWritebackPaths.contains(track.path),
+              )
+              .toList()) {
+        final local = await LyricsLibraryService.instance.readForTranslation(
+          workId: entry.work.rj,
+          relativePath: ktLyricsRelativePath(entry.work.rj, track.path),
+        );
+        if (local == null) {
+          failures.add(KikoeruWritebackStatus.sourceUnavailable);
+          continue;
+        }
+        final result = await writer.write(
+          workId: id,
+          mediaUrl: track.downloadUrl ?? track.url,
+          trackPath: track.path,
+          content: local.sourceText,
+        );
+        if (result == true) {
+          entry.pendingWritebackPaths.remove(track.path);
+          wrote = true;
+        } else {
+          failures.add(writer.status);
+        }
+      }
+    } catch (_) {
+      failures.add(KikoeruWritebackStatus.failed);
+    } finally {
+      writer.close();
+      if (wrote) ApiService.invalidateTracks(base, id);
+      _session.update(() => entry.retryingWriteback = false);
+      for (final failure in failures) {
+        _appendLog(failure.label(l10n));
+      }
+    }
   }
 
   Future<void> _jumpEntry(DictationQueueEntry entry) async {
@@ -967,6 +1038,7 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
           onDelete: _deleteEntry,
           onJump: _jumpEntry,
           onRetry: _syncing || _session.cancelling ? null : _retryEntry,
+          onRetryWriteback: _retryWriteback,
         ),
         const SizedBox(height: 10),
         SizedBox(

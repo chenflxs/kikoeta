@@ -9,6 +9,57 @@ class AppLocalizationsZh extends AppLocalizations {
   AppLocalizationsZh([String locale = 'zh']) : super(locale);
 
   @override
+  String get writebackCheck => '检查写回权限';
+
+  @override
+  String get writebackChecking => '正在检查写回权限…';
+
+  @override
+  String get writebackUnknown => '尚未检查写回权限';
+
+  @override
+  String get writebackReady => '已允许写回';
+
+  @override
+  String get writebackDisabled => '服务端未开启写回';
+
+  @override
+  String get writebackUnsupported => '服务端暂不支持写回';
+
+  @override
+  String get writebackLoginRequired => '请登录该站或更新登录信息';
+
+  @override
+  String get writebackRoleForbidden => '该账号没有写回权限';
+
+  @override
+  String get writebackKeyRequired => '请填写写回密钥';
+
+  @override
+  String get writebackKeyInvalid => '写回密钥不正确';
+
+  @override
+  String get writebackUnconfigured => '服务端尚未配置写回密钥';
+
+  @override
+  String get writebackSourceUnavailable => '音轨或源目录不可用';
+
+  @override
+  String get writebackDirectoryUnwritable => '音轨目录无法写入';
+
+  @override
+  String get writebackConflict => '已有不同内容的写回歌词';
+
+  @override
+  String get writebackNetworkError => '无法连接写回服务';
+
+  @override
+  String get writebackFailed => '写回验证或保存失败';
+
+  @override
+  String get writebackRetry => '重试写回';
+
+  @override
   String get webdavUploadOverwrite => '上传本地数据覆盖云端';
 
   @override
@@ -326,7 +377,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sheetsLyricsWritebackKey => '歌词写回密钥';
 
   @override
-  String get sheetsLyricsWritebackKeyHint => '用户验证开启时填写 16 位英文字母或数字';
+  String get sheetsLyricsWritebackKeyHint => '16 位英文字母或数字，区分大小写';
 
   @override
   String dictationTranslationPageStartAppendLog(String error) {
@@ -2900,6 +2951,57 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   AppLocalizationsZhHant() : super('zh_Hant');
 
   @override
+  String get writebackCheck => '檢查寫回權限';
+
+  @override
+  String get writebackChecking => '正在檢查寫回權限…';
+
+  @override
+  String get writebackUnknown => '尚未檢查寫回權限';
+
+  @override
+  String get writebackReady => '已允許寫回';
+
+  @override
+  String get writebackDisabled => '伺服器未開啟寫回';
+
+  @override
+  String get writebackUnsupported => '伺服器暫不支援寫回';
+
+  @override
+  String get writebackLoginRequired => '請登入該站或更新登入資訊';
+
+  @override
+  String get writebackRoleForbidden => '此帳號沒有寫回權限';
+
+  @override
+  String get writebackKeyRequired => '請填寫寫回金鑰';
+
+  @override
+  String get writebackKeyInvalid => '寫回金鑰不正確';
+
+  @override
+  String get writebackUnconfigured => '伺服器尚未設定寫回金鑰';
+
+  @override
+  String get writebackSourceUnavailable => '音軌或來源目錄無法使用';
+
+  @override
+  String get writebackDirectoryUnwritable => '音軌目錄無法寫入';
+
+  @override
+  String get writebackConflict => '已有不同內容的寫回歌詞';
+
+  @override
+  String get writebackNetworkError => '無法連線至寫回服務';
+
+  @override
+  String get writebackFailed => '寫回驗證或儲存失敗';
+
+  @override
+  String get writebackRetry => '重試寫回';
+
+  @override
   String get webdavUploadOverwrite => '上傳本機資料覆蓋雲端';
 
   @override
@@ -3217,7 +3319,7 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String get sheetsLyricsWritebackKey => '歌詞寫回金鑰';
 
   @override
-  String get sheetsLyricsWritebackKeyHint => '使用者驗證開啟時填寫 16 位英文字母或數字';
+  String get sheetsLyricsWritebackKeyHint => '16 位英文字母或數字，區分大小寫';
 
   @override
   String dictationTranslationPageStartAppendLog(String error) {

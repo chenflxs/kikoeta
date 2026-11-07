@@ -10,6 +10,7 @@ class DictationQueueList extends StatefulWidget {
   final ValueChanged<DictationQueueEntry> onDelete;
   final ValueChanged<DictationQueueEntry>? onJump;
   final ValueChanged<DictationQueueEntry>? onRetry;
+  final ValueChanged<DictationQueueEntry>? onRetryWriteback;
 
   const DictationQueueList({
     super.key,
@@ -17,6 +18,7 @@ class DictationQueueList extends StatefulWidget {
     required this.onDelete,
     this.onJump,
     this.onRetry,
+    this.onRetryWriteback,
   });
 
   @override
@@ -199,6 +201,24 @@ class _DictationQueueListState extends State<DictationQueueList> {
             ),
           ),
         ),
+        if (entry.status == DictationQueueStatus.completed &&
+            entry.pendingWritebackPaths.isNotEmpty)
+          TextButton(
+            onPressed:
+                entry.retryingWriteback || widget.onRetryWriteback == null
+                ? null
+                : () => widget.onRetryWriteback!(entry),
+            style: TextButton.styleFrom(
+              foregroundColor: p.muted,
+              textStyle: const TextStyle(
+                fontFamily: kAppFontFamily,
+                fontSize: 12,
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: const Size(0, 36),
+            ),
+            child: Text(context.l10n.writebackRetry),
+          ),
         if (entry.status == DictationQueueStatus.failed)
           TextButton(
             onPressed: widget.onRetry == null

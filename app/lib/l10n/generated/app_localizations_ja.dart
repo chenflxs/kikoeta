@@ -9,6 +9,57 @@ class AppLocalizationsJa extends AppLocalizations {
   AppLocalizationsJa([String locale = 'ja']) : super(locale);
 
   @override
+  String get writebackCheck => '書き戻し権限を確認';
+
+  @override
+  String get writebackChecking => '書き戻し権限を確認中…';
+
+  @override
+  String get writebackUnknown => '書き戻し権限は未確認です';
+
+  @override
+  String get writebackReady => '書き戻しが許可されています';
+
+  @override
+  String get writebackDisabled => 'サーバーの書き戻しは無効です';
+
+  @override
+  String get writebackUnsupported => 'このサーバーは書き戻しに対応していません';
+
+  @override
+  String get writebackLoginRequired => 'このサイトにログインするか、認証情報を更新してください';
+
+  @override
+  String get writebackRoleForbidden => 'このアカウントには書き戻し権限がありません';
+
+  @override
+  String get writebackKeyRequired => '書き戻しキーを入力してください';
+
+  @override
+  String get writebackKeyInvalid => '書き戻しキーが正しくありません';
+
+  @override
+  String get writebackUnconfigured => 'サーバーに書き戻しキーが設定されていません';
+
+  @override
+  String get writebackSourceUnavailable => '元の音声またはフォルダーが利用できません';
+
+  @override
+  String get writebackDirectoryUnwritable => '音声フォルダーに書き込めません';
+
+  @override
+  String get writebackConflict => '内容の異なる書き戻し歌詞が既に存在します';
+
+  @override
+  String get writebackNetworkError => '書き戻しサービスに接続できません';
+
+  @override
+  String get writebackFailed => '書き戻しの認証または保存に失敗しました';
+
+  @override
+  String get writebackRetry => '書き戻しを再試行';
+
+  @override
   String get webdavUploadOverwrite => 'ローカルデータでクラウドを上書き';
 
   @override
@@ -334,7 +385,7 @@ class AppLocalizationsJa extends AppLocalizations {
   String get sheetsLyricsWritebackKey => '歌詞の書き戻しキー';
 
   @override
-  String get sheetsLyricsWritebackKeyHint => 'ユーザー認証が有効な場合は半角英数字16文字';
+  String get sheetsLyricsWritebackKeyHint => '半角英数字16文字、大文字と小文字を区別します';
 
   @override
   String dictationTranslationPageStartAppendLog(String error) {

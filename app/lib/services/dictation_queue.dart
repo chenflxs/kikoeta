@@ -17,6 +17,8 @@ class DictationQueueEntry {
   final String lyricsWritebackKey;
   final Map<String, String> sourceHeaders;
   KtJobReference? backendJob;
+  final Set<String> pendingWritebackPaths = {};
+  bool retryingWriteback = false;
   DictationQueueStatus _status = DictationQueueStatus.pending;
 
   DictationQueueEntry._({

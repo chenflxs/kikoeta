@@ -104,6 +104,108 @@ abstract class AppLocalizations {
     Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hant'),
   ];
 
+  /// No description provided for @writebackCheck.
+  ///
+  /// In zh, this message translates to:
+  /// **'检查写回权限'**
+  String get writebackCheck;
+
+  /// No description provided for @writebackChecking.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在检查写回权限…'**
+  String get writebackChecking;
+
+  /// No description provided for @writebackUnknown.
+  ///
+  /// In zh, this message translates to:
+  /// **'尚未检查写回权限'**
+  String get writebackUnknown;
+
+  /// No description provided for @writebackReady.
+  ///
+  /// In zh, this message translates to:
+  /// **'已允许写回'**
+  String get writebackReady;
+
+  /// No description provided for @writebackDisabled.
+  ///
+  /// In zh, this message translates to:
+  /// **'服务端未开启写回'**
+  String get writebackDisabled;
+
+  /// No description provided for @writebackUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'服务端暂不支持写回'**
+  String get writebackUnsupported;
+
+  /// No description provided for @writebackLoginRequired.
+  ///
+  /// In zh, this message translates to:
+  /// **'请登录该站或更新登录信息'**
+  String get writebackLoginRequired;
+
+  /// No description provided for @writebackRoleForbidden.
+  ///
+  /// In zh, this message translates to:
+  /// **'该账号没有写回权限'**
+  String get writebackRoleForbidden;
+
+  /// No description provided for @writebackKeyRequired.
+  ///
+  /// In zh, this message translates to:
+  /// **'请填写写回密钥'**
+  String get writebackKeyRequired;
+
+  /// No description provided for @writebackKeyInvalid.
+  ///
+  /// In zh, this message translates to:
+  /// **'写回密钥不正确'**
+  String get writebackKeyInvalid;
+
+  /// No description provided for @writebackUnconfigured.
+  ///
+  /// In zh, this message translates to:
+  /// **'服务端尚未配置写回密钥'**
+  String get writebackUnconfigured;
+
+  /// No description provided for @writebackSourceUnavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'音轨或源目录不可用'**
+  String get writebackSourceUnavailable;
+
+  /// No description provided for @writebackDirectoryUnwritable.
+  ///
+  /// In zh, this message translates to:
+  /// **'音轨目录无法写入'**
+  String get writebackDirectoryUnwritable;
+
+  /// No description provided for @writebackConflict.
+  ///
+  /// In zh, this message translates to:
+  /// **'已有不同内容的写回歌词'**
+  String get writebackConflict;
+
+  /// No description provided for @writebackNetworkError.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法连接写回服务'**
+  String get writebackNetworkError;
+
+  /// No description provided for @writebackFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'写回验证或保存失败'**
+  String get writebackFailed;
+
+  /// No description provided for @writebackRetry.
+  ///
+  /// In zh, this message translates to:
+  /// **'重试写回'**
+  String get writebackRetry;
+
   /// No description provided for @webdavUploadOverwrite.
   ///
   /// In zh, this message translates to:
@@ -725,7 +827,7 @@ abstract class AppLocalizations {
   /// No description provided for @sheetsLyricsWritebackKeyHint.
   ///
   /// In zh, this message translates to:
-  /// **'用户验证开启时填写 16 位英文字母或数字'**
+  /// **'16 位英文字母或数字，区分大小写'**
   String get sheetsLyricsWritebackKeyHint;
 
   /// pages/dictation_translation_page.dart: _start

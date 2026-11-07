@@ -4,6 +4,7 @@ import 'data.dart';
 import 'services/api_service.dart';
 import 'services/audio_effects.dart';
 import 'services/kikoeru_lyrics_writeback.dart';
+import 'widgets/kikoeru_writeback_settings.dart';
 import 'services/player_service.dart';
 import 'smooth_scroll.dart';
 import 'theme.dart';
@@ -346,12 +347,19 @@ Future<void> showSiteSheet(
             hint: context.l10n.loginPageBuildSiteConfigHint,
             obscure: true,
           ),
-          _field(
-            ctx,
-            context.l10n.sheetsLyricsWritebackKey,
-            writebackKeyCtrl,
-            hint: context.l10n.sheetsLyricsWritebackKeyHint,
-            obscure: true,
+          KikoeruWritebackSettings(
+            app: app,
+            url: urlCtrl,
+            user: userCtrl,
+            password: passCtrl,
+            writebackKey: writebackKeyCtrl,
+            keyField: (fieldContext) => _field(
+              fieldContext,
+              context.l10n.sheetsLyricsWritebackKey,
+              writebackKeyCtrl,
+              hint: context.l10n.sheetsLyricsWritebackKeyHint,
+              obscure: true,
+            ),
           ),
           ElevatedButton(
             onPressed: () async {

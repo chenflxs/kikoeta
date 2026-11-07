@@ -9,6 +9,60 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
+  String get writebackCheck => 'Check writeback permission';
+
+  @override
+  String get writebackChecking => 'Checking writeback permission…';
+
+  @override
+  String get writebackUnknown => 'Writeback permission not checked';
+
+  @override
+  String get writebackReady => 'Writeback allowed';
+
+  @override
+  String get writebackDisabled => 'Writeback is disabled on the server';
+
+  @override
+  String get writebackUnsupported => 'This server does not support writeback';
+
+  @override
+  String get writebackLoginRequired =>
+      'Sign in to this site or update your credentials';
+
+  @override
+  String get writebackRoleForbidden => 'This account cannot write back lyrics';
+
+  @override
+  String get writebackKeyRequired => 'Enter the writeback key';
+
+  @override
+  String get writebackKeyInvalid => 'Incorrect writeback key';
+
+  @override
+  String get writebackUnconfigured =>
+      'The server has no writeback key configured';
+
+  @override
+  String get writebackSourceUnavailable =>
+      'The source track or folder is unavailable';
+
+  @override
+  String get writebackDirectoryUnwritable => 'Cannot write to the track folder';
+
+  @override
+  String get writebackConflict => 'Different writeback lyrics already exist';
+
+  @override
+  String get writebackNetworkError => 'Cannot connect to the writeback service';
+
+  @override
+  String get writebackFailed => 'Writeback verification or saving failed';
+
+  @override
+  String get writebackRetry => 'Retry writeback';
+
+  @override
   String get webdavUploadOverwrite => 'Upload local data and overwrite cloud';
 
   @override
@@ -350,7 +404,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get sheetsLyricsWritebackKeyHint =>
-      '16 letters or digits when user authentication is enabled';
+      '16 ASCII letters or digits, case-sensitive';
 
   @override
   String dictationTranslationPageStartAppendLog(String error) {

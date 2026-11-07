@@ -1,43 +1,36 @@
 import 'dart:async';
 
 import 'package:http/http.dart' as http;
+import 'kikoeru_writeback_access.dart';
 
 /// Writes a copy to the original self-hosted site after the local save.
 class KikoeruLyricsWriteback {
-  KikoeruLyricsWriteback._(this._endpoint, this._headers, this._client);
+  KikoeruLyricsWriteback._(this._access);
 
-  static const _timeout = Duration(seconds: 4);
   static final _mediaRoute = RegExp(r'^(?:download|stream)/([0-9]+)/[0-9]+$');
-  static final _keyPattern = RegExp(r'^[A-Za-z0-9]{16}$');
-  final Uri _endpoint;
-  final Map<String, String> _headers;
-  final http.Client _client;
+  final KikoeruWritebackAccess _access;
+  Uri get _endpoint => _access.endpoint;
+  KikoeruWritebackStatus get status => _access.status;
   Future<bool?>? _supported;
 
   static bool isValidKey(String key) =>
-      key.length == 16 && _keyPattern.hasMatch(key);
+      KikoeruWritebackCredentials.isValidKey(key);
 
   static KikoeruLyricsWriteback? connect(
     String? sourceBase,
     Map<String, String> headers, {
     required String key,
+    KikoeruWritebackCredentials Function()? credentials,
   }) {
-    final base = sourceBase == null ? null : Uri.tryParse(sourceBase);
-    if (base == null ||
-        !const {'http', 'https'}.contains(base.scheme) ||
-        base.host.isEmpty ||
-        base.userInfo.isNotEmpty ||
-        base.hasQuery ||
-        base.hasFragment) {
-      return null;
-    }
-    final path = base.path.replaceFirst(RegExp(r'/+$'), '');
-    final endpoint = base.replace(path: '$path/api/media/kikoeta-lyrics');
-    return KikoeruLyricsWriteback._(endpoint, {
-      if (headers['Authorization']?.isNotEmpty == true)
-        'Authorization': headers['Authorization']!,
-      if (isValidKey(key)) 'X-Kikoeru-Writeback-Key': key,
-    }, http.Client());
+    final access = KikoeruWritebackAccess.connect(
+      sourceBase,
+      credentials ??
+          () => KikoeruWritebackCredentials(
+            authorization: headers['Authorization'],
+            key: key,
+          ),
+    );
+    return access == null ? null : KikoeruLyricsWriteback._(access);
   }
 
   /// null means writeback was skipped for this track or account.
@@ -72,38 +65,32 @@ class KikoeruLyricsWriteback {
       ..headers['Content-Type'] = 'text/plain; charset=utf-8'
       ..body = content;
     try {
-      return (await _send(request)).statusCode == 204;
+      final response = await _access.send(request);
+      if (response.statusCode == 204) {
+        _access.status = KikoeruWritebackStatus.allowed;
+        return true;
+      }
+      _access.status = _access.failure(response);
+      return false;
     } on Exception {
       // A transport failure applies to the site. Keep saving later tracks locally.
       _supported = Future.value(null);
+      _access.status = KikoeruWritebackStatus.networkError;
       return false;
     }
   }
 
   Future<bool?> _probe() async {
-    try {
-      final response = await _send(http.Request('HEAD', _endpoint));
-      if (response.statusCode == 401 || response.statusCode == 403) {
-        return false;
-      }
-      if (response.statusCode == 204 &&
-          response.headers['x-kikoeru-lyrics-writeback'] == '2') {
-        return true;
-      }
-      return null;
-    } on Exception {
+    final result = await _access.check();
+    if (result == KikoeruWritebackStatus.allowed) return true;
+    if (const {
+      KikoeruWritebackStatus.disabled,
+      KikoeruWritebackStatus.unsupported,
+    }.contains(result)) {
       return null;
     }
+    return false;
   }
 
-  Future<http.StreamedResponse> _send(http.Request request) async {
-    request
-      ..followRedirects = false
-      ..headers.addAll(_headers);
-    final response = await _client.send(request).timeout(_timeout);
-    await response.stream.drain<void>().timeout(_timeout);
-    return response;
-  }
-
-  void close() => _client.close();
+  void close() => _access.close();
 }

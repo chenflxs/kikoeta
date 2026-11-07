@@ -9,6 +9,61 @@ class AppLocalizationsRu extends AppLocalizations {
   AppLocalizationsRu([String locale = 'ru']) : super(locale);
 
   @override
+  String get writebackCheck => 'Проверить право записи текстов';
+
+  @override
+  String get writebackChecking => 'Проверка права записи текстов…';
+
+  @override
+  String get writebackUnknown => 'Право записи текстов не проверено';
+
+  @override
+  String get writebackReady => 'Запись текстов разрешена';
+
+  @override
+  String get writebackDisabled => 'Запись текстов отключена на сервере';
+
+  @override
+  String get writebackUnsupported => 'Сервер не поддерживает запись текстов';
+
+  @override
+  String get writebackLoginRequired =>
+      'Войдите на этот сервер или обновите учётные данные';
+
+  @override
+  String get writebackRoleForbidden => 'У аккаунта нет права записи текстов';
+
+  @override
+  String get writebackKeyRequired => 'Введите ключ записи текстов';
+
+  @override
+  String get writebackKeyInvalid => 'Неверный ключ записи текстов';
+
+  @override
+  String get writebackUnconfigured =>
+      'На сервере не настроен ключ записи текстов';
+
+  @override
+  String get writebackSourceUnavailable => 'Исходный трек или папка недоступны';
+
+  @override
+  String get writebackDirectoryUnwritable =>
+      'Невозможно записать файл в папку трека';
+
+  @override
+  String get writebackConflict => 'Уже существует текст с другим содержимым';
+
+  @override
+  String get writebackNetworkError =>
+      'Не удалось подключиться к службе записи текстов';
+
+  @override
+  String get writebackFailed => 'Ошибка проверки доступа или записи текстов';
+
+  @override
+  String get writebackRetry => 'Повторить запись текстов';
+
+  @override
   String get webdavUploadOverwrite =>
       'Загрузить локальные данные поверх облачных';
 
@@ -356,7 +411,7 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get sheetsLyricsWritebackKeyHint =>
-      '16 латинских букв или цифр, если включена авторизация пользователей';
+      '16 латинских букв или цифр с учётом регистра';
 
   @override
   String dictationTranslationPageStartAppendLog(String error) {
