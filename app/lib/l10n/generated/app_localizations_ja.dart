@@ -9,6 +9,25 @@ class AppLocalizationsJa extends AppLocalizations {
   AppLocalizationsJa([String locale = 'ja']) : super(locale);
 
   @override
+  String get cacheWritebackSourceMissing =>
+      '元のサイトが未設定のキャッシュ歌詞は、ローカルにのみ取り込みました。';
+
+  @override
+  String get cacheWritebackLegacyTitle => '旧キャッシュの書き戻し先';
+
+  @override
+  String get cacheWritebackLegacyHint =>
+      '旧キャッシュには元のサイト情報がありません。書き戻し先を選ぶと作品と音声パスを確認します。一致しない歌詞はローカルにのみ取り込みます。';
+
+  @override
+  String get cacheWritebackLocalOnly => 'ローカルにのみ取り込む';
+
+  @override
+  String cacheWritebackSummary(String written, String skipped) {
+    return 'キャッシュ歌詞の書き戻し：$written 件、未書き戻し：$skipped 件。';
+  }
+
+  @override
   String get writebackCheck => '書き戻し権限を確認';
 
   @override

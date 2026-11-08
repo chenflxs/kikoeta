@@ -1,4 +1,9 @@
 {
+  "cacheWritebackSourceMissing": "部分快取的原站點未設定，已僅匯入本機。",
+  "cacheWritebackLegacyTitle": "舊快取寫回目標",
+  "cacheWritebackLegacyHint": "舊快取未記錄原站點。選擇目標後將核對作品與音軌路徑；無法比對時僅匯入本機。",
+  "cacheWritebackLocalOnly": "僅匯入本機",
+  "cacheWritebackSummary": "快取歌詞已寫回 {written} 個，未寫回 {skipped} 個。",
   "writebackCheck": "檢查寫回權限",
   "writebackChecking": "正在檢查寫回權限…",
   "writebackUnknown": "尚未檢查寫回權限",

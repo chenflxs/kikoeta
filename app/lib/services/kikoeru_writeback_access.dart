@@ -45,11 +45,8 @@ class KikoeruWritebackAccess {
 
   KikoeruWritebackAccess._(this.endpoint, this.credentials);
 
-  static KikoeruWritebackAccess? connect(
-    String? sourceBase,
-    KikoeruWritebackCredentials Function() credentials,
-  ) {
-    final base = sourceBase == null ? null : Uri.tryParse(sourceBase);
+  static String? normalizeBase(String? sourceBase) {
+    final base = sourceBase == null ? null : Uri.tryParse(sourceBase.trim());
     if (base == null ||
         !const {'http', 'https'}.contains(base.scheme) ||
         base.host.isEmpty ||
@@ -59,8 +56,18 @@ class KikoeruWritebackAccess {
       return null;
     }
     final path = base.path.replaceFirst(RegExp(r'/+$'), '');
+    return base.replace(path: path).toString();
+  }
+
+  static KikoeruWritebackAccess? connect(
+    String? sourceBase,
+    KikoeruWritebackCredentials Function() credentials,
+  ) {
+    final normalized = normalizeBase(sourceBase);
+    if (normalized == null) return null;
+    final base = Uri.parse(normalized);
     return KikoeruWritebackAccess._(
-      base.replace(path: '$path/api/media/kikoeta-lyrics'),
+      base.replace(path: '${base.path}/api/media/kikoeta-lyrics'),
       credentials,
     );
   }

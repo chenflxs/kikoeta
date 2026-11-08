@@ -1,4 +1,10 @@
 {
+  "cacheWritebackSourceMissing": "部分缓存的原站点未配置，已仅导入本地。",
+  "cacheWritebackLegacyTitle": "旧缓存写回目标",
+  "cacheWritebackLegacyHint": "旧缓存未记录原站点。选择目标后将核对作品和音轨路径；无法匹配时仅导入本地。",
+  "cacheWritebackLocalOnly": "仅导入本地",
+  "cacheWritebackSummary": "缓存歌词写回 {written} 个，未写回 {skipped} 个。",
+  "@cacheWritebackSummary": {"placeholders": {"written": {"type": "String"}, "skipped": {"type": "String"}}},
   "writebackCheck": "检查写回权限",
   "writebackChecking": "正在检查写回权限…",
   "writebackUnknown": "尚未检查写回权限",

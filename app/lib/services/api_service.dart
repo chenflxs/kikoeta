@@ -1441,19 +1441,28 @@ class ApiService {
     AppState app,
     int workApiId, {
     bool forceRefresh = false,
+  }) => fetchTracksFromBase(
+    resolveBase(app),
+    workApiId,
+    forceRefresh: forceRefresh,
+  );
+
+  static Future<List<MediaNode>> fetchTracksFromBase(
+    String base,
+    int workApiId, {
+    bool forceRefresh = false,
   }) async {
-    final key = _tracksKey(app, workApiId);
+    final key = '$base|$workApiId';
     final cached = _tracksCache[key];
     if (!forceRefresh && cached != null) return cached;
-    final json = await apiGetTracks(base: resolveBase(app), rj: '$workApiId');
-    final nodes = parseMediaNodes(jsonDecode(json), base: resolveBase(app));
+    final json = await apiGetTracks(base: base, rj: '$workApiId');
+    final nodes = parseMediaNodes(jsonDecode(json), base: base);
     if (_tracksCache.length >= 10) _tracksCache.remove(_tracksCache.keys.first);
     _tracksCache[key] = nodes;
     return nodes;
   }
 
   static final Map<String, List<MediaNode>> _tracksCache = {};
-  static String _tracksKey(AppState app, int id) => '${resolveBase(app)}|$id';
   static void invalidateTracks(String base, int id) =>
       _tracksCache.remove('$base|$id');
 

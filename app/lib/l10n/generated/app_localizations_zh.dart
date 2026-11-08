@@ -9,6 +9,24 @@ class AppLocalizationsZh extends AppLocalizations {
   AppLocalizationsZh([String locale = 'zh']) : super(locale);
 
   @override
+  String get cacheWritebackSourceMissing => '部分缓存的原站点未配置，已仅导入本地。';
+
+  @override
+  String get cacheWritebackLegacyTitle => '旧缓存写回目标';
+
+  @override
+  String get cacheWritebackLegacyHint =>
+      '旧缓存未记录原站点。选择目标后将核对作品和音轨路径；无法匹配时仅导入本地。';
+
+  @override
+  String get cacheWritebackLocalOnly => '仅导入本地';
+
+  @override
+  String cacheWritebackSummary(String written, String skipped) {
+    return '缓存歌词写回 $written 个，未写回 $skipped 个。';
+  }
+
+  @override
   String get writebackCheck => '检查写回权限';
 
   @override
@@ -2949,6 +2967,24 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
 /// The translations for Chinese, using the Han script (`zh_Hant`).
 class AppLocalizationsZhHant extends AppLocalizationsZh {
   AppLocalizationsZhHant() : super('zh_Hant');
+
+  @override
+  String get cacheWritebackSourceMissing => '部分快取的原站點未設定，已僅匯入本機。';
+
+  @override
+  String get cacheWritebackLegacyTitle => '舊快取寫回目標';
+
+  @override
+  String get cacheWritebackLegacyHint =>
+      '舊快取未記錄原站點。選擇目標後將核對作品與音軌路徑；無法比對時僅匯入本機。';
+
+  @override
+  String get cacheWritebackLocalOnly => '僅匯入本機';
+
+  @override
+  String cacheWritebackSummary(String written, String skipped) {
+    return '快取歌詞已寫回 $written 個，未寫回 $skipped 個。';
+  }
 
   @override
   String get writebackCheck => '檢查寫回權限';

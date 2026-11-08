@@ -12,6 +12,7 @@ import '../services/kikoeru_writeback_access.dart';
 import '../services/kikoeru_writeback_site.dart';
 import '../l10n/writeback_strings.dart';
 import '../services/kt_service.dart';
+import '../services/kt_cache_sync.dart';
 import '../services/dictation_queue.dart';
 import '../widgets/dictation_queue_list.dart';
 import '../l10n/generated/app_localizations.dart';
@@ -237,6 +238,7 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
         sources,
         existingJobId: pausedJob?.jobId,
         cacheWorkId: currentWork.rj,
+        cacheSourceBase: entry.sourceBase,
         cacheTrackPaths: tracks.map((track) => track.path).toList(),
       );
       final jobId = created['job_id']?.toString() ?? '';
@@ -629,6 +631,35 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
     }
   }
 
+  Future<String?> _chooseCachedWritebackSite(List<CustomSite> sites) =>
+      showDialog<String>(
+        context: context,
+        builder: (ctx) => SimpleDialog(
+          title: Text(ctx.l10n.cacheWritebackLegacyTitle),
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+              child: Text(ctx.l10n.cacheWritebackLegacyHint),
+            ),
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(ctx.l10n.cacheWritebackLocalOnly),
+            ),
+            for (final site in sites)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(ctx, site.url),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(site.alias),
+                    Text(site.url, style: Theme.of(ctx).textTheme.bodySmall),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      );
+
   Future<void> _syncCachedResults() async {
     final l10n = context.l10n;
     if (_syncing || _session.running) return;
@@ -636,7 +667,6 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
     var saved = 0;
     var skipped = 0;
     var failed = 0;
-    final targets = <String>{};
     try {
       setState(() => _syncing = true);
       service = _service();
@@ -651,39 +681,57 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
           (entries.length).toString(),
         ),
       );
-      for (final entry in entries) {
-        final workId = entry.workId.trim().toUpperCase();
-        for (final file in entry.files) {
-          if (file.trackPath.isEmpty || file.downloadUrl.isEmpty) {
-            skipped++;
-            continue;
-          }
-          final relativePath = ktLyricsRelativePath(workId, file.trackPath);
-          final key = '$workId\u0000$relativePath';
-          if (!targets.add(key)) {
-            skipped++;
-            continue;
-          }
-          try {
-            final bytes = await service.download(file.downloadUrl);
-            await LyricsLibraryService.instance.saveTranslatedLyrics(
-              workId: workId,
-              relativePath: relativePath,
-              content: utf8.decode(bytes, allowMalformed: true),
-            );
-            saved++;
-          } catch (error) {
-            failed++;
-            _appendLog(
-              l10n.dictationTranslationPageSyncCachedResultsAppendLog2(
-                (entry.jobId).toString(),
-                (file.name).toString(),
-                (error).toString(),
-              ),
-            );
-          }
-        }
+      final sites = app.customSites
+          .where(
+            (site) => KikoeruWritebackAccess.normalizeBase(site.url) != null,
+          )
+          .toList();
+      final hasLegacy = entries.any(
+        (entry) => entry.sourceBase?.trim().isNotEmpty != true,
+      );
+      final legacyBase = hasLegacy && sites.isNotEmpty && mounted
+          ? await _chooseCachedWritebackSite(sites)
+          : null;
+      if (!mounted) return;
+      final connection = service;
+      final report = await KtCacheSync(
+        download: (url) async =>
+            utf8.decode(await connection.download(url), allowMalformed: true),
+        save: (work, path, content) async {
+          await LyricsLibraryService.instance.saveTranslatedLyrics(
+            workId: work,
+            relativePath: path,
+            content: content,
+          );
+        },
+        loadTracks: (base, id) =>
+            ApiService.fetchTracksFromBase(base, id, forceRefresh: true),
+        credentials: (base) => writebackCredentialsFor(app, base),
+        configuredBases: sites.map((site) => site.url),
+        legacySourceBase: legacyBase,
+      ).run(entries);
+      saved = report.saved;
+      skipped = report.skipped;
+      failed = report.failed;
+      for (final error in report.errors) {
+        _appendLog(
+          l10n.dictationTranslationPageSyncCachedResultsAppendLog2(
+            error.jobId,
+            error.name,
+            error.error.toString(),
+          ),
+        );
       }
+      _appendLog(
+        l10n.cacheWritebackSummary(
+          report.written.toString(),
+          report.notWritten.toString(),
+        ),
+      );
+      for (final status in report.failures.keys) {
+        _appendLog(status.label(l10n));
+      }
+      if (report.missingSource) _appendLog(l10n.cacheWritebackSourceMissing);
       _appendLog(
         l10n.dictationTranslationPageSyncCachedResultsAppendLog3(
           (saved).toString(),

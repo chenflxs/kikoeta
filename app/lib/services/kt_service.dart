@@ -56,11 +56,13 @@ class KtCachedLyricsFile {
 class KtCachedResult {
   final String jobId;
   final String workId;
+  final String? sourceBase;
   final List<KtCachedLyricsFile> files;
 
   const KtCachedResult({
     required this.jobId,
     required this.workId,
+    this.sourceBase,
     required this.files,
   });
 
@@ -69,6 +71,9 @@ class KtCachedResult {
     return KtCachedResult(
       jobId: json['job_id']?.toString() ?? '',
       workId: json['work_id']?.toString() ?? '',
+      sourceBase: json['source_base'] is String
+          ? json['source_base'] as String
+          : null,
       files: rawFiles is List
           ? rawFiles
                 .whereType<Map>()
@@ -155,6 +160,7 @@ class KtService {
   Future<Map<String, dynamic>> createJob(
     List<KtSourceFile> files, {
     String? cacheWorkId,
+    String? cacheSourceBase,
     List<String> cacheTrackPaths = const [],
   }) => _postJson('/api/v1/jobs', {
     // A fresh import must not consume another batch's paused checkpoint.
@@ -171,7 +177,12 @@ class KtService {
     if (cacheWorkId != null &&
         cacheWorkId.trim().isNotEmpty &&
         cacheTrackPaths.isNotEmpty)
-      'cache': {'work_id': cacheWorkId.trim(), 'track_paths': cacheTrackPaths},
+      'cache': {
+        'work_id': cacheWorkId.trim(),
+        'track_paths': cacheTrackPaths,
+        if (cacheSourceBase?.trim().isNotEmpty == true)
+          'source_base': cacheSourceBase,
+      },
   });
 
   Future<Map<String, dynamic>> job(String jobId) =>
@@ -183,6 +194,7 @@ class KtService {
     List<KtSourceFile> files, {
     String? existingJobId,
     String? cacheWorkId,
+    String? cacheSourceBase,
     List<String> cacheTrackPaths = const [],
   }) async {
     if (existingJobId != null) {
@@ -213,6 +225,7 @@ class KtService {
     return createJob(
       files,
       cacheWorkId: cacheWorkId,
+      cacheSourceBase: cacheSourceBase,
       cacheTrackPaths: cacheTrackPaths,
     );
   }

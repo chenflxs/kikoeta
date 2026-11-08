@@ -12,6 +12,7 @@ class KikoeruLyricsWriteback {
   Uri get _endpoint => _access.endpoint;
   KikoeruWritebackStatus get status => _access.status;
   Future<bool?>? _supported;
+  Future<bool?> check() => _supported ??= _probe();
 
   static bool isValidKey(String key) =>
       KikoeruWritebackCredentials.isValidKey(key);
@@ -55,7 +56,7 @@ class KikoeruLyricsWriteback {
       media.path.substring(mediaPrefix.length),
     );
     if (route == null || int.tryParse(route[1]!) != workId) return null;
-    final supported = await (_supported ??= _probe());
+    final supported = await check();
     if (supported != true) return supported;
     final uri = _endpoint.replace(
       path: '${_endpoint.path}/$workId',

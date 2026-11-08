@@ -5,11 +5,15 @@ import 'kikoeru_writeback_access.dart';
 /// Always resolves credentials for the job's original site, independently of
 /// the server currently selected in the player.
 KikoeruWritebackCredentials writebackCredentialsFor(AppState app, String base) {
-  final normalized = base.replaceFirst(RegExp(r'/+$'), '');
+  final normalized = KikoeruWritebackAccess.normalizeBase(base) ?? base;
   final site = app.customSites
-      .where((site) => site.url.replaceFirst(RegExp(r'/+$'), '') == normalized)
+      .where(
+        (site) => KikoeruWritebackAccess.normalizeBase(site.url) == normalized,
+      )
       .firstOrNull;
-  final token = ApiService.tokenFor(app, normalized);
+  final tokenBase =
+      site?.url.trim().replaceFirst(RegExp(r'/+$'), '') ?? normalized;
+  final token = ApiService.tokenFor(app, tokenBase);
   return KikoeruWritebackCredentials(
     authorization: token == null || token.isEmpty ? null : 'Bearer $token',
     key: site?.lyricsWritebackKey ?? '',

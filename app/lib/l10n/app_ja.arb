@@ -1,4 +1,9 @@
 {
+  "cacheWritebackSourceMissing": "元のサイトが未設定のキャッシュ歌詞は、ローカルにのみ取り込みました。",
+  "cacheWritebackLegacyTitle": "旧キャッシュの書き戻し先",
+  "cacheWritebackLegacyHint": "旧キャッシュには元のサイト情報がありません。書き戻し先を選ぶと作品と音声パスを確認します。一致しない歌詞はローカルにのみ取り込みます。",
+  "cacheWritebackLocalOnly": "ローカルにのみ取り込む",
+  "cacheWritebackSummary": "キャッシュ歌詞の書き戻し：{written} 件、未書き戻し：{skipped} 件。",
   "writebackCheck": "書き戻し権限を確認",
   "writebackChecking": "書き戻し権限を確認中…",
   "writebackUnknown": "書き戻し権限は未確認です",

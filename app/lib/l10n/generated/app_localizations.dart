@@ -104,6 +104,36 @@ abstract class AppLocalizations {
     Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hant'),
   ];
 
+  /// No description provided for @cacheWritebackSourceMissing.
+  ///
+  /// In zh, this message translates to:
+  /// **'部分缓存的原站点未配置，已仅导入本地。'**
+  String get cacheWritebackSourceMissing;
+
+  /// No description provided for @cacheWritebackLegacyTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'旧缓存写回目标'**
+  String get cacheWritebackLegacyTitle;
+
+  /// No description provided for @cacheWritebackLegacyHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'旧缓存未记录原站点。选择目标后将核对作品和音轨路径；无法匹配时仅导入本地。'**
+  String get cacheWritebackLegacyHint;
+
+  /// No description provided for @cacheWritebackLocalOnly.
+  ///
+  /// In zh, this message translates to:
+  /// **'仅导入本地'**
+  String get cacheWritebackLocalOnly;
+
+  /// No description provided for @cacheWritebackSummary.
+  ///
+  /// In zh, this message translates to:
+  /// **'缓存歌词写回 {written} 个，未写回 {skipped} 个。'**
+  String cacheWritebackSummary(String written, String skipped);
+
   /// No description provided for @writebackCheck.
   ///
   /// In zh, this message translates to:

@@ -1,4 +1,10 @@
 {
+  "cacheWritebackSourceMissing": "Some cached lyrics were imported locally only because their source site is not configured.",
+  "cacheWritebackLegacyTitle": "Writeback destination for older cache",
+  "cacheWritebackLegacyHint": "Older cache has no source site. Select a destination to check the work and track paths. Unmatched lyrics are imported locally only.",
+  "cacheWritebackLocalOnly": "Import locally only",
+  "cacheWritebackSummary": "Cached lyrics written back: {written}; not written back: {skipped}.",
+  "@cacheWritebackSummary": {"placeholders": {"written": {"type": "String"}, "skipped": {"type": "String"}}},
   "writebackCheck": "Check writeback permission",
   "writebackChecking": "Checking writeback permission…",
   "writebackUnknown": "Writeback permission not checked",

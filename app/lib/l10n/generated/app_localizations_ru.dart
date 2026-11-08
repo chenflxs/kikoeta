@@ -9,6 +9,25 @@ class AppLocalizationsRu extends AppLocalizations {
   AppLocalizationsRu([String locale = 'ru']) : super(locale);
 
   @override
+  String get cacheWritebackSourceMissing =>
+      'Часть текстов импортирована только локально: исходный сервер не настроен.';
+
+  @override
+  String get cacheWritebackLegacyTitle => 'Сервер для записи старого кеша';
+
+  @override
+  String get cacheWritebackLegacyHint =>
+      'В старом кеше не указан исходный сервер. После выбора будут проверены произведение и пути треков. При несовпадении тексты сохранятся только локально.';
+
+  @override
+  String get cacheWritebackLocalOnly => 'Импортировать только локально';
+
+  @override
+  String cacheWritebackSummary(String written, String skipped) {
+    return 'Записано текстов из кеша: $written; не записано: $skipped.';
+  }
+
+  @override
   String get writebackCheck => 'Проверить право записи текстов';
 
   @override

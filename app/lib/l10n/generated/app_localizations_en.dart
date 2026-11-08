@@ -9,6 +9,26 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
+  String get cacheWritebackSourceMissing =>
+      'Some cached lyrics were imported locally only because their source site is not configured.';
+
+  @override
+  String get cacheWritebackLegacyTitle =>
+      'Writeback destination for older cache';
+
+  @override
+  String get cacheWritebackLegacyHint =>
+      'Older cache has no source site. Select a destination to check the work and track paths. Unmatched lyrics are imported locally only.';
+
+  @override
+  String get cacheWritebackLocalOnly => 'Import locally only';
+
+  @override
+  String cacheWritebackSummary(String written, String skipped) {
+    return 'Cached lyrics written back: $written; not written back: $skipped.';
+  }
+
+  @override
   String get writebackCheck => 'Check writeback permission';
 
   @override
