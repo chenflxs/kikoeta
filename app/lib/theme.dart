@@ -107,6 +107,37 @@ class Palette {
   final Color stageBottom;
 }
 
+/// 当前路由短距离滑动并淡入淡出，下层页面保持静止，不做整页缩放。
+class AppPageTransitionsBuilder extends PageTransitionsBuilder {
+  const AppPageTransitionsBuilder();
+
+  static final _fade = CurveTween(curve: Curves.easeInOutCubic);
+  static final _slide = Tween<Offset>(
+    begin: const Offset(.10, 0),
+    end: Offset.zero,
+  ).chain(CurveTween(curve: Curves.easeInOutCubic));
+
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 280);
+
+  @override
+  Duration get reverseTransitionDuration => const Duration(milliseconds: 220);
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    return FadeTransition(
+      opacity: animation.drive(_fade),
+      child: SlideTransition(position: animation.drive(_slide), child: child),
+    );
+  }
+}
+
 ThemeData buildTheme(Brightness brightness) {
   final p = brightness == Brightness.dark ? AppColors.dark : AppColors.light;
   final scheme = ColorScheme.fromSeed(
@@ -121,6 +152,12 @@ ThemeData buildTheme(Brightness brightness) {
     brightness: brightness,
     colorScheme: scheme,
     scaffoldBackgroundColor: p.bg,
+    pageTransitionsTheme: const PageTransitionsTheme(
+      builders: {
+        TargetPlatform.android: AppPageTransitionsBuilder(),
+        TargetPlatform.windows: AppPageTransitionsBuilder(),
+      },
+    ),
     fontFamily: kAppFontFamily,
     appBarTheme: AppBarTheme(
       backgroundColor: p.bg,

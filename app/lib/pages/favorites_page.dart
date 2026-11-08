@@ -930,38 +930,38 @@ class _FavoritesPageState extends State<FavoritesPage> {
   Widget _reviewToolbar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 12, 4, 0),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            _reviewFilterButton(),
-            if (_reviewsMode) ...[
-              const SizedBox(width: 8),
-              _reviewSortDropdown(),
-              const SizedBox(width: 8),
-              _reviewOrderButton(),
-            ],
-          ],
-        ),
+      child: Row(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  if (_reviewsMode) ...[
+                    _reviewFilterButton(),
+                    const SizedBox(width: 8),
+                    _reviewSortDropdown(),
+                    const SizedBox(width: 8),
+                    _reviewOrderButton(),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          _ageFilterButton(),
+        ],
       ),
     );
   }
 
   Widget _reviewFilterButton() {
-    final active =
-        (_reviewsMode && _reviewFilter != null) ||
-        (_ageFilters.isNotEmpty && _ageFilters.length < 3);
+    final active = _reviewFilter != null;
     return PopupMenuButton<String>(
-      tooltip: context.l10n.widgetsFilterButtonTooltip,
+      tooltip: context.l10n.favoritesPageReviewFilterButtonTooltip,
       // 悬停高亮跟随 child（MenuItem）的圆角，否则从圆角缺口漏出方形灰影
       borderRadius: BorderRadius.circular(11),
       onSelected: (value) {
-        if (value.startsWith('age:')) {
-          final age = Age.values[int.parse(value.substring(4))];
-          if (!_ageFilters.remove(age)) _ageFilters.add(age);
-          _applyViewFilter();
-          return;
-        }
         final filter = value.isEmpty ? null : value;
         if (_reviewFilter == filter) return;
         setState(() => _reviewFilter = filter);
@@ -970,22 +970,45 @@ class _FavoritesPageState extends State<FavoritesPage> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       color: p.surface,
       itemBuilder: (ctx) => [
-        if (_reviewsMode) ...[
-          ..._reviewFilterLabels.entries.map(
-            (entry) => PopupMenuItem<String>(
-              value: entry.key,
-              height: 42,
-              child: MenuItem(
-                label: entry.value,
-                selected: entry.key.isEmpty
-                    ? _reviewFilter == null
-                    : _reviewFilter == entry.key,
-              ),
+        ..._reviewFilterLabels.entries.map(
+          (entry) => PopupMenuItem<String>(
+            value: entry.key,
+            height: 42,
+            child: MenuItem(
+              label: entry.value,
+              selected: entry.key.isEmpty
+                  ? _reviewFilter == null
+                  : _reviewFilter == entry.key,
             ),
           ),
-          const PopupMenuDivider(),
-        ],
-        PopupMenuItem<String>(
+        ),
+      ],
+      child: Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: p.surface,
+          border: Border.all(color: active ? p.accent : p.line),
+          borderRadius: BorderRadius.circular(11),
+        ),
+        child: Icon(Icons.tune, size: 17, color: active ? p.accent : p.muted),
+      ),
+    );
+  }
+
+  Widget _ageFilterButton() {
+    final active = _ageFilters.isNotEmpty && _ageFilters.length < 3;
+    return PopupMenuButton<Age>(
+      tooltip: context.l10n.ageRating,
+      borderRadius: BorderRadius.circular(11),
+      onSelected: (age) {
+        if (!_ageFilters.remove(age)) _ageFilters.add(age);
+        _applyViewFilter();
+      },
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      color: p.surface,
+      itemBuilder: (ctx) => [
+        PopupMenuItem<Age>(
           enabled: false,
           height: 30,
           child: Text(
@@ -998,8 +1021,8 @@ class _FavoritesPageState extends State<FavoritesPage> {
           ),
         ),
         for (final age in [Age.r18, Age.r15, Age.all])
-          PopupMenuItem<String>(
-            value: 'age:${age.index}',
+          PopupMenuItem<Age>(
+            value: age,
             height: 44,
             child: MenuItem(
               label: age == Age.all
@@ -1018,7 +1041,11 @@ class _FavoritesPageState extends State<FavoritesPage> {
           border: Border.all(color: active ? p.accent : p.line),
           borderRadius: BorderRadius.circular(11),
         ),
-        child: Icon(Icons.tune, size: 17, color: active ? p.accent : p.muted),
+        child: Icon(
+          Icons.filter_alt_outlined,
+          size: 17,
+          color: active ? p.accent : p.muted,
+        ),
       ),
     );
   }

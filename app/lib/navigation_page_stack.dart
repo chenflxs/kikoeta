@@ -19,13 +19,17 @@ class _NavigationPageStackState extends State<NavigationPageStack>
     with SingleTickerProviderStateMixin {
   late final _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 220),
+    duration: const Duration(milliseconds: 240),
     value: 1,
   );
   late final _progress = _controller.drive(
     CurveTween(curve: Curves.easeOutCubic),
   );
-  late final _scale = _progress.drive(Tween<double>(begin: .985, end: 1));
+  final _slideTween = Tween<Offset>(
+    begin: const Offset(.06, 0),
+    end: Offset.zero,
+  );
+  late final _slide = _progress.drive(_slideTween);
   bool _disableAnimations = false;
 
   @override
@@ -39,6 +43,10 @@ class _NavigationPageStackState extends State<NavigationPageStack>
   void didUpdateWidget(covariant NavigationPageStack oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.index != widget.index) {
+      _slideTween.begin = Offset(
+        widget.index > oldWidget.index ? .06 : -.06,
+        0,
+      );
       if (_disableAnimations) {
         _controller.value = 1;
       } else {
@@ -59,8 +67,8 @@ class _NavigationPageStackState extends State<NavigationPageStack>
     // animation ticks do not rebuild page contents or recreate their state.
     return FadeTransition(
       opacity: _progress,
-      child: ScaleTransition(
-        scale: _scale,
+      child: SlideTransition(
+        position: _slide,
         child: IndexedStack(index: widget.index, children: widget.children),
       ),
     );
