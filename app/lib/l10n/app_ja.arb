@@ -881,5 +881,8 @@
   "unlockDesktopLyrics": "歌詞のロックを解除",
   "showDesktopLyrics": "歌詞を表示",
   "hideDesktopLyrics": "歌詞を非表示",
-  "androidLyricsLockDescription": "ロック中はタッチを透過し、縦横の向きで共通"
+  "androidLyricsLockDescription": "ロック中はタッチを透過し、縦横の向きで共通",
+  "homeRandomSort": "ランダム",
+  "favoritesSearch": "お気に入りを検索",
+  "favoritesSearchHint": "タイトルまたはRJ番号で検索"
 }

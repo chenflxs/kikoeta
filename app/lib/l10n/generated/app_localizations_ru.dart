@@ -3166,4 +3166,13 @@ class AppLocalizationsRu extends AppLocalizations {
   @override
   String get androidLyricsLockDescription =>
       'При блокировке касания проходят сквозь текст; одинаково для обеих ориентаций';
+
+  @override
+  String get homeRandomSort => 'Случайный порядок';
+
+  @override
+  String get favoritesSearch => 'Поиск в избранном';
+
+  @override
+  String get favoritesSearchHint => 'Поиск по названию или номеру RJ';
 }

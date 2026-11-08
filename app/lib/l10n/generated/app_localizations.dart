@@ -5421,6 +5421,24 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'锁定后触摸穿透，横竖屏共用'**
   String get androidLyricsLockDescription;
+
+  /// No description provided for @homeRandomSort.
+  ///
+  /// In zh, this message translates to:
+  /// **'随机排序'**
+  String get homeRandomSort;
+
+  /// No description provided for @favoritesSearch.
+  ///
+  /// In zh, this message translates to:
+  /// **'搜索收藏作品'**
+  String get favoritesSearch;
+
+  /// No description provided for @favoritesSearchHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'搜索标题或 RJ 号'**
+  String get favoritesSearchHint;
 }
 
 class _AppLocalizationsDelegate

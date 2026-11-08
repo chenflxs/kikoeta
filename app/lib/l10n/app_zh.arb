@@ -3835,5 +3835,8 @@
   "unlockDesktopLyrics": "解锁歌词",
   "showDesktopLyrics": "开启歌词",
   "hideDesktopLyrics": "关闭歌词",
-  "androidLyricsLockDescription": "锁定后触摸穿透，横竖屏共用"
+  "androidLyricsLockDescription": "锁定后触摸穿透，横竖屏共用",
+  "homeRandomSort": "随机排序",
+  "favoritesSearch": "搜索收藏作品",
+  "favoritesSearchHint": "搜索标题或 RJ 号"
 }

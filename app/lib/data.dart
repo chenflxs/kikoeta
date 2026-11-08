@@ -1816,6 +1816,11 @@ class AppState extends ChangeNotifier {
   }
 
   void setSort(String v) {
+    // 随机排序属于全部作品；one 的热门/推荐是独立的推荐接口。
+    if (v == 'random' && category != 'all') {
+      category = 'all';
+      SettingsStore.set('home_category', category);
+    }
     sort = v;
     SettingsStore.set('home_sort', v);
     notifyListeners();
@@ -1823,9 +1828,21 @@ class AppState extends ChangeNotifier {
 
   void setCategory(String v) {
     if (!const ['all', 'hot', 'rec'].contains(v)) return;
+    if (v != 'all' && sort == 'random') {
+      sort = 'collect';
+      SettingsStore.set('home_sort', sort);
+    }
     category = v;
     SettingsStore.set('home_category', v);
     notifyListeners();
+  }
+
+  int nextRandomSeed(int? previous) {
+    // Express 按 id % seed 排序，沿用 Quasar 的小整数范围；排除 0/1。
+    final limit = customServer ? 100 : 1000000;
+    var next = Random().nextInt(limit - 2) + 2;
+    if (next == previous) next = next == limit - 1 ? 2 : next + 1;
+    return next;
   }
 
   bool get hasAgeFilter => ageFilters.isNotEmpty && ageFilters.length < 3;

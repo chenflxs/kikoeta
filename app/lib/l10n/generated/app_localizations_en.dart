@@ -3146,4 +3146,13 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get androidLyricsLockDescription =>
       'Touch passes through when locked; shared by portrait and landscape';
+
+  @override
+  String get homeRandomSort => 'Random';
+
+  @override
+  String get favoritesSearch => 'Search favorites';
+
+  @override
+  String get favoritesSearchHint => 'Search titles or RJ codes';
 }

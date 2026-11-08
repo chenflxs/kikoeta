@@ -882,5 +882,8 @@
   "unlockDesktopLyrics": "Unlock lyrics",
   "showDesktopLyrics": "Show lyrics",
   "hideDesktopLyrics": "Hide lyrics",
-  "androidLyricsLockDescription": "Touch passes through when locked; shared by portrait and landscape"
+  "androidLyricsLockDescription": "Touch passes through when locked; shared by portrait and landscape",
+  "homeRandomSort": "Random",
+  "favoritesSearch": "Search favorites",
+  "favoritesSearchHint": "Search titles or RJ codes"
 }

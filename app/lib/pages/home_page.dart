@@ -24,6 +24,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   static const _categories = ['all', 'hot', 'rec'];
   String _loadedSig = '';
+  String _homeFilterSig = ''; // 首页数据对应的筛选；搜索期间可能与当前筛选不同
   String _loadedDataSig = ''; // 已渲染的列表数据签名（补页/加载状态变化时刷新）
 
   // 真实搜索状态
@@ -31,6 +32,7 @@ class _HomePageState extends State<HomePage> {
   bool _searchLoading = false;
   bool _searchHasMore = true;
   int _searchPage = 0;
+  int? _searchRandomSeed;
   bool _searchError = false;
   String _searchQuery = '';
   int _searchSeq = 0;
@@ -66,10 +68,12 @@ class _HomePageState extends State<HomePage> {
       '${app.remoteError}|${app.worksHasMore}';
 
   void _onAppChanged() {
+    var reloadHome = false;
     // 清空/新搜索必须优先于首页刷新事件处理，避免刷新分支提前 return
     // 导致搜索状态一直残留。
     if (app.takePendingClear()) {
       _clearSearchState();
+      reloadHome = _homeFilterSig != _filterSig;
       if (mounted) setState(() {});
       // 同一次通知也可能包含「再次点击首页」的刷新请求，继续处理。
     }
@@ -97,6 +101,10 @@ class _HomePageState extends State<HomePage> {
       } else {
         _loadRemote();
       }
+      return;
+    }
+    if (reloadHome) {
+      _loadRemote();
       return;
     }
     // 列表数据/加载状态变化（补页、加载中提示等）时刷新。
@@ -143,14 +151,16 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _loadRemote() async {
     final gen = ++_worksGen;
+    _loadedSig = _filterSig;
+    _homeFilterSig = _loadedSig;
     app.worksLoadingMore = false; // 丢弃在途补页
     // 切换服务器/排序/筛选后先清空旧数据，避免新请求失败时残留上一台服务器的内容
     app.remoteWorks = [];
     app.worksPage = 0;
     app.worksHasMore = true;
     app.remoteError = null;
-    if (app.category == 'rec' && app.randomSeed == null) {
-      app.randomSeed = DateTime.now().millisecondsSinceEpoch % 1000000;
+    if (app.sort == 'random') {
+      app.randomSeed = app.nextRandomSeed(app.randomSeed);
     }
     app.loadingRemote = true;
     app.notify();
@@ -381,9 +391,6 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _changeCategory(String category) {
-    if (category == 'rec') {
-      app.randomSeed = DateTime.now().millisecondsSinceEpoch % 1000000;
-    }
     app.setCategory(category);
   }
 
@@ -430,6 +437,7 @@ class _HomePageState extends State<HomePage> {
     'rating': appL10n.homePageSortLabelsSortLabels,
     'comments': appL10n.favoritesPageReviewSortLabelsReviewSortLabels,
     'rj': appL10n.blacklistPageTypeLabelsTypeLabels,
+    'random': appL10n.homeRandomSort,
   };
 
   Widget _sortDropdown() {
@@ -438,6 +446,10 @@ class _HomePageState extends State<HomePage> {
       // 悬停高亮跟随 child（MenuItem）的圆角，否则从圆角缺口漏出方形灰影
       borderRadius: BorderRadius.circular(11),
       onSelected: (v) {
+        if (v == 'random' && app.sort == v) {
+          _refreshRandom();
+          return;
+        }
         app.setSort(v);
       },
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -475,23 +487,40 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _orderButton() {
-    return GestureDetector(
-      onTap: () => app.setOrderAsc(!app.orderAsc),
+    final random = app.sort == 'random';
+    final ascending = !random && app.orderAsc;
+    final button = GestureDetector(
+      onTap: random ? _refreshRandom : () => app.setOrderAsc(!app.orderAsc),
       child: Container(
         width: 34,
         height: 34,
         decoration: BoxDecoration(
           color: p.surface,
-          border: Border.all(color: app.orderAsc ? p.accent : p.line),
+          border: Border.all(color: ascending ? p.accent : p.line),
           borderRadius: BorderRadius.circular(11),
         ),
         child: Icon(
-          app.orderAsc ? Icons.arrow_upward : Icons.arrow_downward,
+          random
+              ? Icons.refresh
+              : app.orderAsc
+              ? Icons.arrow_upward
+              : Icons.arrow_downward,
           size: 16,
-          color: app.orderAsc ? p.accent : p.muted,
+          color: ascending ? p.accent : p.muted,
         ),
       ),
     );
+    return random
+        ? Tooltip(message: context.l10n.refresh, child: button)
+        : button;
+  }
+
+  void _refreshRandom() {
+    if (_searchQuery.isNotEmpty) {
+      _runSearch(_searchQuery);
+    } else {
+      _loadRemote();
+    }
   }
 
   Widget _grid() {
@@ -635,10 +664,14 @@ class _HomePageState extends State<HomePage> {
     final query = q.trim();
     if (query.isEmpty) {
       _clearSearchState();
+      if (_homeFilterSig != _filterSig) _loadRemote();
       if (mounted) setState(() {});
       return;
     }
     if (!reset && (_searchLoading || !_searchHasMore)) return;
+    if (reset && app.sort == 'random') {
+      _searchRandomSeed = app.nextRandomSeed(_searchRandomSeed);
+    }
     final seq = ++_searchSeq;
     setState(() {
       _searchQuery = query;
@@ -652,7 +685,12 @@ class _HomePageState extends State<HomePage> {
     });
     final targetPage = reset ? 1 : _searchPage + 1;
     try {
-      final list = await ApiService.searchWorks(app, query, page: targetPage);
+      final list = await ApiService.searchWorks(
+        app,
+        query,
+        page: targetPage,
+        randomSeed: _searchRandomSeed,
+      );
       if (!mounted || seq != _searchSeq) return;
       setState(() {
         _searchResults.addAll(list.works);

@@ -3007,4 +3007,13 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get androidLyricsLockDescription => 'ロック中はタッチを透過し、縦横の向きで共通';
+
+  @override
+  String get homeRandomSort => 'ランダム';
+
+  @override
+  String get favoritesSearch => 'お気に入りを検索';
+
+  @override
+  String get favoritesSearchHint => 'タイトルまたはRJ番号で検索';
 }

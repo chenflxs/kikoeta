@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -13,6 +14,7 @@ import '../theme.dart';
 import '../widgets.dart';
 import '../widgets/playlist_picker.dart';
 import '../widgets/dictation_batch_import_dialog.dart';
+import '../widgets/favorites_search_field.dart';
 import '../l10n/strings.dart';
 import 'dictation_translation_page.dart';
 
@@ -33,6 +35,12 @@ String favoritesWorkSignature(Work w) => [
   w.apiId?.toString() ?? '',
   w.hasReview?.toString() ?? '',
 ].join('\u0001');
+
+bool _matchesFavorite(Work work, Set<Age> ages, String query) =>
+    (ages.isEmpty || ages.contains(work.age)) &&
+    (query.isEmpty ||
+        work.rj.toLowerCase().contains(query) ||
+        work.title.toLowerCase().contains(query));
 
 /// 进入收藏页时，判断后台重新拉取到的第一页是否与当前展示的数据存在差异。
 ///
@@ -74,6 +82,14 @@ class _FavoritesPageState extends State<FavoritesPage> {
   PlaylistInfo? _playlist; // 当前歌单（null = 我的评价/收藏）
   bool _reviewsMode = true; // 默认展示「收藏」（GET /api/review）
   final List<Work> _works = [];
+  final List<Work> _visibleWorks = [];
+  final Set<Age> _ageFilters = {};
+  final _search = TextEditingController();
+  final _searchFocus = FocusNode();
+  Timer? _filterTimer;
+  String _query = '';
+  bool _searching = false;
+  int _visibleTarget = 20;
   bool _loading = false;
   bool _error = false;
   bool _hasMore = true;
@@ -108,8 +124,61 @@ class _FavoritesPageState extends State<FavoritesPage> {
 
   @override
   void dispose() {
+    _filterTimer?.cancel();
+    _search.dispose();
+    _searchFocus.dispose();
     app.removeListener(_onAppChanged);
     super.dispose();
+  }
+
+  bool get _hasViewFilter =>
+      _query.isNotEmpty || (_ageFilters.isNotEmpty && _ageFilters.length < 3);
+
+  bool _matchesWork(Work work) => _matchesFavorite(work, _ageFilters, _query);
+
+  void _clearWorks() {
+    _works.clear();
+    _visibleWorks.clear();
+  }
+
+  void _appendWorks(List<Work> works) {
+    _works.addAll(works);
+    _visibleWorks.addAll(works.where(_matchesWork));
+  }
+
+  void _applyViewFilter() {
+    _filterTimer?.cancel();
+    setState(() {
+      _query = _search.text.trim().toLowerCase();
+      _visibleTarget = 20;
+      _visibleWorks
+        ..clear()
+        ..addAll(_works.where(_matchesWork));
+      _selected.retainAll(_visibleWorks.map((work) => work.rj));
+    });
+    // 输入期间复用已加载数据，停止输入后再补拉不足的一页。
+    _filterTimer = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      setState(() => _filterTimer = null);
+      _maybeRefill();
+    });
+  }
+
+  void _maybeRefill() {
+    if (!mounted || app.sfwMode || _filterTimer?.isActive == true) return;
+    if (_hasViewFilter &&
+        !_loading &&
+        !_error &&
+        _hasMore &&
+        _visibleWorks.length < _visibleTarget) {
+      _loadData(reset: false);
+    }
+  }
+
+  void _loadMore() {
+    if (_loading || !_hasMore || _filterTimer?.isActive == true) return;
+    _visibleTarget = _visibleWorks.length + 20;
+    _loadData(reset: false);
   }
 
   void _onAppChanged() {
@@ -131,7 +200,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
           _playlist = null;
           _selecting = false;
           _selected.clear();
-          _works.clear();
+          _clearWorks();
           _loading = false;
           _error = false;
           _page = 0;
@@ -200,15 +269,16 @@ class _FavoritesPageState extends State<FavoritesPage> {
       }
       if (!favoritesListChanged(_works, _totalCount, fresh)) return; // 无差异
       setState(() {
-        _works
-          ..clear()
-          ..addAll(fresh.works);
+        _clearWorks();
+        _appendWorks(fresh.works);
+        _visibleTarget = 20;
         _page = 1;
-        _hasMore = fresh.hasMore;
+        _hasMore = fresh.hasMore && fresh.works.isNotEmpty;
         _totalCount = fresh.totalCount;
         _error = false;
       });
       if (reviewsMode) app.syncFavorites(_works); // 有新数据才同步收藏状态
+      _maybeRefill();
     } catch (_) {
       // 静默刷新失败：继续显示旧数据
     } finally {
@@ -217,10 +287,11 @@ class _FavoritesPageState extends State<FavoritesPage> {
   }
 
   Future<void> _loadData({bool reset = true}) async {
+    if (!mounted) return;
+    if (reset) _visibleTarget = 20;
     if (app.sfwMode) {
-      if (!mounted) return;
       setState(() {
-        _works.clear();
+        _clearWorks();
         _loading = false;
         _error = false;
         _page = 0;
@@ -233,6 +304,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
     } else {
       await _loadPlaylist(reset: reset);
     }
+    _maybeRefill();
   }
 
   Future<void> _loadReviews({bool reset = true}) async {
@@ -241,9 +313,9 @@ class _FavoritesPageState extends State<FavoritesPage> {
     final page = reset ? 1 : _page + 1;
     setState(() {
       _loading = true;
+      _error = false;
       if (reset) {
-        _error = false;
-        _works.clear();
+        _clearWorks();
         _page = 0;
         _hasMore = true;
       }
@@ -259,9 +331,9 @@ class _FavoritesPageState extends State<FavoritesPage> {
       );
       if (!mounted || gen != _gen) return;
       setState(() {
-        _works.addAll(list.works);
+        _appendWorks(list.works);
         _page = page;
-        _hasMore = list.hasMore;
+        _hasMore = list.hasMore && list.works.isNotEmpty;
         _totalCount = list.totalCount;
         _loading = false;
       });
@@ -285,9 +357,9 @@ class _FavoritesPageState extends State<FavoritesPage> {
     final page = reset ? 1 : _page + 1;
     setState(() {
       _loading = true;
+      _error = false;
       if (reset) {
-        _error = false;
-        _works.clear();
+        _clearWorks();
         _page = 0;
         _hasMore = true;
       }
@@ -301,9 +373,9 @@ class _FavoritesPageState extends State<FavoritesPage> {
       );
       if (!mounted || gen != _gen) return;
       setState(() {
-        _works.addAll(list.works);
+        _appendWorks(list.works);
         _page = page;
-        _hasMore = list.hasMore;
+        _hasMore = list.hasMore && list.works.isNotEmpty;
         _totalCount = list.totalCount;
         _loading = false;
       });
@@ -370,6 +442,8 @@ class _FavoritesPageState extends State<FavoritesPage> {
     final sort = _reviewOrderAsc ? 'asc' : 'desc';
     final filter = _reviewFilter;
     final token = ApiService.tokenFor(app, base);
+    final ages = Set<Age>.of(_ageFilters);
+    final query = _query;
     bool sourceChanged() =>
         !mounted ||
         app.serverEpoch != epoch ||
@@ -392,19 +466,23 @@ class _FavoritesPageState extends State<FavoritesPage> {
                 )
               : ApiService.fetchPlaylistWorks(app, playlistId, page: page),
           fetchTracks: (work) {
+            if (!_matchesFavorite(work, ages, query)) {
+              return Future.value(const <MediaNode>[]);
+            }
             final id = work.apiId;
             if (id == null) throw StateError('Missing work ID: ${work.rj}');
             return ApiService.fetchTracks(app, id, forceRefresh: true);
           },
           fetchLocalLyrics: (work) async => [
-            for (final file in await LyricsLibraryService.instance.listFiles(
-              workId: work.rj,
-            ))
-              MediaNode(
-                title: file.name,
-                type: 'file',
-                path: file.relativePath,
-              ),
+            if (_matchesFavorite(work, ages, query))
+              for (final file in await LyricsLibraryService.instance.listFiles(
+                workId: work.rj,
+              ))
+                MediaNode(
+                  title: file.name,
+                  type: 'file',
+                  path: file.relativePath,
+                ),
           ],
         ),
       );
@@ -563,7 +641,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
       setState(() {
         _reviewsMode = true;
         _playlist = null;
-        _works.clear();
+        _clearWorks();
       });
       _loadData(reset: true);
     } catch (e) {
@@ -603,12 +681,12 @@ class _FavoritesPageState extends State<FavoritesPage> {
 
   void _selectAll() {
     setState(() {
-      if (_selected.length == _works.length) {
+      if (_selected.length == _visibleWorks.length) {
         _selected.clear();
       } else {
         _selected
           ..clear()
-          ..addAll(_works.map((w) => w.rj));
+          ..addAll(_visibleWorks.map((w) => w.rj));
       }
     });
   }
@@ -697,7 +775,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
         ? context.l10n.favorites
         : (_playlist?.name ?? context.l10n.favorites);
     if (_selected.isNotEmpty) {
-      _selected.retainAll(_works.map((w) => w.rj));
+      _selected.retainAll(_visibleWorks.map((w) => w.rj));
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -723,20 +801,36 @@ class _FavoritesPageState extends State<FavoritesPage> {
                     ],
                   ),
                 ),
+                IconButton(
+                  tooltip: _searching
+                      ? context.l10n.downloadsPageBuildTooltip
+                      : context.l10n.favoritesSearch,
+                  icon: Icon(_searching ? Icons.close : Icons.search),
+                  onPressed: () {
+                    setState(() => _searching = !_searching);
+                    if (!_searching) {
+                      _searchFocus.unfocus();
+                      _search.clear();
+                      _applyViewFilter();
+                    }
+                  },
+                ),
                 if (!_reviewsMode && _playlist != null)
                   ..._playlistHeaderActions(),
                 if (app.customServer &&
                     app.customSites.isNotEmpty &&
                     !app.sfwMode)
                   IconButton(
-                    onPressed: _batchOpening || _works.isEmpty
+                    onPressed: _batchOpening || _visibleWorks.isEmpty
                         ? null
                         : _openBatchTranslation,
                     tooltip: context.l10n.batchTranslation,
                     icon: Icon(
                       Icons.translate,
                       size: 22,
-                      color: _batchOpening || _works.isEmpty ? p.dim : p.accent,
+                      color: _batchOpening || _visibleWorks.isEmpty
+                          ? p.dim
+                          : p.accent,
                     ),
                   ),
                 IconButton(
@@ -747,7 +841,16 @@ class _FavoritesPageState extends State<FavoritesPage> {
               ],
             ),
           ),
-          if (_reviewsMode) _reviewToolbar(),
+          _reviewToolbar(),
+          if (_searching)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 10, 4, 0),
+              child: FavoritesSearchField(
+                controller: _search,
+                focusNode: _searchFocus,
+                onChanged: _applyViewFilter,
+              ),
+            ),
         ],
         Expanded(child: _body()),
       ],
@@ -756,7 +859,8 @@ class _FavoritesPageState extends State<FavoritesPage> {
 
   Widget _selectionBar() {
     final count = _selected.length;
-    final allSelected = _works.isNotEmpty && count == _works.length;
+    final allSelected =
+        _visibleWorks.isNotEmpty && count == _visibleWorks.length;
     final label = _reviewsMode
         ? context.l10n.favoritesPageLabelLabel
         : context.l10n.favoritesPageLabelLabel2;
@@ -776,7 +880,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
             ),
           ),
           IconButton(
-            onPressed: _works.isEmpty ? null : _selectAll,
+            onPressed: _visibleWorks.isEmpty ? null : _selectAll,
             tooltip: allSelected
                 ? context.l10n.deselectAll
                 : context.l10n.selectAll,
@@ -831,10 +935,12 @@ class _FavoritesPageState extends State<FavoritesPage> {
         child: Row(
           children: [
             _reviewFilterButton(),
-            const SizedBox(width: 8),
-            _reviewSortDropdown(),
-            const SizedBox(width: 8),
-            _reviewOrderButton(),
+            if (_reviewsMode) ...[
+              const SizedBox(width: 8),
+              _reviewSortDropdown(),
+              const SizedBox(width: 8),
+              _reviewOrderButton(),
+            ],
           ],
         ),
       ),
@@ -842,12 +948,20 @@ class _FavoritesPageState extends State<FavoritesPage> {
   }
 
   Widget _reviewFilterButton() {
+    final active =
+        (_reviewsMode && _reviewFilter != null) ||
+        (_ageFilters.isNotEmpty && _ageFilters.length < 3);
     return PopupMenuButton<String>(
-      tooltip: context.l10n.favoritesPageReviewFilterButtonTooltip,
+      tooltip: context.l10n.widgetsFilterButtonTooltip,
       // 悬停高亮跟随 child（MenuItem）的圆角，否则从圆角缺口漏出方形灰影
       borderRadius: BorderRadius.circular(11),
-      initialValue: _reviewFilter ?? '',
       onSelected: (value) {
+        if (value.startsWith('age:')) {
+          final age = Age.values[int.parse(value.substring(4))];
+          if (!_ageFilters.remove(age)) _ageFilters.add(age);
+          _applyViewFilter();
+          return;
+        }
         final filter = value.isEmpty ? null : value;
         if (_reviewFilter == filter) return;
         setState(() => _reviewFilter = filter);
@@ -855,8 +969,9 @@ class _FavoritesPageState extends State<FavoritesPage> {
       },
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       color: p.surface,
-      itemBuilder: (ctx) => _reviewFilterLabels.entries
-          .map(
+      itemBuilder: (ctx) => [
+        if (_reviewsMode) ...[
+          ..._reviewFilterLabels.entries.map(
             (entry) => PopupMenuItem<String>(
               value: entry.key,
               height: 42,
@@ -867,21 +982,43 @@ class _FavoritesPageState extends State<FavoritesPage> {
                     : _reviewFilter == entry.key,
               ),
             ),
-          )
-          .toList(),
+          ),
+          const PopupMenuDivider(),
+        ],
+        PopupMenuItem<String>(
+          enabled: false,
+          height: 30,
+          child: Text(
+            context.l10n.ageRating,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: p.dim,
+            ),
+          ),
+        ),
+        for (final age in [Age.r18, Age.r15, Age.all])
+          PopupMenuItem<String>(
+            value: 'age:${age.index}',
+            height: 44,
+            child: MenuItem(
+              label: age == Age.all
+                  ? context.l10n.allAges
+                  : age.name.toUpperCase(),
+              selected: _ageFilters.contains(age),
+              checkbox: true,
+            ),
+          ),
+      ],
       child: Container(
         width: 34,
         height: 34,
         decoration: BoxDecoration(
           color: p.surface,
-          border: Border.all(color: _reviewFilter != null ? p.accent : p.line),
+          border: Border.all(color: active ? p.accent : p.line),
           borderRadius: BorderRadius.circular(11),
         ),
-        child: Icon(
-          Icons.tune,
-          size: 17,
-          color: _reviewFilter != null ? p.accent : p.muted,
-        ),
+        child: Icon(Icons.tune, size: 17, color: active ? p.accent : p.muted),
       ),
     );
   }
@@ -891,7 +1028,6 @@ class _FavoritesPageState extends State<FavoritesPage> {
       tooltip: context.l10n.favoritesPageReviewSortDropdownTooltip,
       // 悬停高亮跟随 child（MenuItem）的圆角，否则从圆角缺口漏出方形灰影
       borderRadius: BorderRadius.circular(11),
-      initialValue: _reviewSort,
       onSelected: (value) {
         if (_reviewSort == value) return;
         setState(() => _reviewSort = value);
@@ -965,7 +1101,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
         ),
       );
     }
-    if (_loading && _works.isEmpty) {
+    if ((_loading || _filterTimer?.isActive == true) && _visibleWorks.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -987,7 +1123,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
         ),
       );
     }
-    if (_error && _works.isEmpty) {
+    if (_error && _visibleWorks.isEmpty) {
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => _loadData(reset: true),
@@ -1011,10 +1147,12 @@ class _FavoritesPageState extends State<FavoritesPage> {
         ),
       );
     }
-    if (_works.isEmpty) {
+    if (_visibleWorks.isEmpty) {
       return Center(
         child: Text(
-          _reviewsMode
+          _hasViewFilter
+              ? context.l10n.homePageSearchResultsViewText2
+              : _reviewsMode
               ? context.l10n.favoritesPageBodyText3
               : context.l10n.favoritesPageBodyText4,
           style: TextStyle(fontSize: 13, color: p.dim),
@@ -1027,7 +1165,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
           child: NotificationListener<ScrollNotification>(
             onNotification: (n) {
               if (n.metrics.pixels >= n.metrics.maxScrollExtent - 240) {
-                _loadData(reset: false);
+                _loadMore();
               }
               return false;
             },
@@ -1036,9 +1174,9 @@ class _FavoritesPageState extends State<FavoritesPage> {
               child: ResponsiveGrid(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.only(top: 12, bottom: 30),
-                itemCount: _works.length,
+                itemCount: _visibleWorks.length,
                 itemBuilder: (ctx, i) {
-                  final w = _works[i];
+                  final w = _visibleWorks[i];
                   final selected = _selected.contains(w.rj);
                   return GestureDetector(
                     onLongPress: !_selecting && _canManageWorks

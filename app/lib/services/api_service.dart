@@ -143,11 +143,12 @@ class ApiService {
         sort: app.orderAsc ? 'asc' : 'desc',
         nsfw: customNsfw(app.ageFilters),
         lyric: app.subtitleFilter == SubtitleFilter.online ? 'ai_local' : null,
-        seed: app.category == 'rec' ? app.randomSeed?.toString() : null,
+        seed: app.sort == 'random' ? app.randomSeed?.toString() : null,
       );
       return parseWorks(json, base: base, perPage: perPage);
     }
-    if (app.category == 'hot' || app.category == 'rec') {
+    if (app.sort != 'random' &&
+        (app.category == 'hot' || app.category == 'rec')) {
       final json = await _fetchOneCategoryWorks(
         app,
         page: page,
@@ -166,7 +167,7 @@ class ApiService {
         order: orderParam(app),
         sort: app.orderAsc ? 'asc' : 'desc',
         subtitle: app.subtitleFilter == SubtitleFilter.online ? true : null,
-        seed: app.category == 'rec' ? app.randomSeed?.toString() : null,
+        seed: app.sort == 'random' ? app.randomSeed?.toString() : null,
       );
       return parseWorks(json, base: base, perPage: perPage);
     }
@@ -177,7 +178,7 @@ class ApiService {
       order: orderParam(app),
       sort: app.orderAsc ? 'asc' : 'desc',
       subtitle: app.subtitleFilter == SubtitleFilter.online ? true : null,
-      seed: app.category == 'rec' ? app.randomSeed?.toString() : null,
+      seed: app.sort == 'random' ? app.randomSeed?.toString() : null,
     );
     return parseWorks(json, base: base, perPage: perPage);
   }
@@ -213,6 +214,8 @@ class ApiService {
     String query, {
     int page = 1,
     int perPage = 20,
+    // 搜索结果持有自己的 seed，避免刷新搜索打乱首页后续分页。
+    int? randomSeed,
   }) async {
     final base = resolveBase(app);
     if (app.customServer) {
@@ -239,7 +242,9 @@ class ApiService {
         order: orderParam(app),
         sort: app.orderAsc ? 'asc' : 'desc',
         nsfw: customNsfw(app.ageFilters),
-        seed: app.category == 'rec' ? app.randomSeed?.toString() : null,
+        seed: app.sort == 'random'
+            ? (randomSeed ?? app.randomSeed)?.toString()
+            : null,
       );
       return parseWorks(json, base: base, perPage: perPage);
     }
@@ -254,7 +259,9 @@ class ApiService {
       order: orderParam(app),
       sort: app.orderAsc ? 'asc' : 'desc',
       subtitle: app.subtitleFilter == SubtitleFilter.online ? true : null,
-      seed: app.category == 'rec' ? app.randomSeed?.toString() : null,
+      seed: app.sort == 'random'
+          ? (randomSeed ?? app.randomSeed)?.toString()
+          : null,
     );
     return parseWorks(json, base: base, perPage: perPage);
   }
@@ -442,6 +449,7 @@ class ApiService {
       'rating' => 'rate_average_2dp',
       'comments' => 'review_count',
       'rj' => 'id',
+      'random' => 'random',
       _ => 'release',
     };
   }

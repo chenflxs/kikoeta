@@ -2957,6 +2957,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get androidLyricsLockDescription => '锁定后触摸穿透，横竖屏共用';
+
+  @override
+  String get homeRandomSort => '随机排序';
+
+  @override
+  String get favoritesSearch => '搜索收藏作品';
+
+  @override
+  String get favoritesSearchHint => '搜索标题或 RJ 号';
 }
 
 /// The translations for Chinese, as used in China (`zh_CN`).
@@ -5918,4 +5927,13 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get androidLyricsLockDescription => '鎖定後觸控穿透，橫直向共用';
+
+  @override
+  String get homeRandomSort => '隨機排序';
+
+  @override
+  String get favoritesSearch => '搜尋收藏作品';
+
+  @override
+  String get favoritesSearchHint => '搜尋標題或 RJ 編號';
 }

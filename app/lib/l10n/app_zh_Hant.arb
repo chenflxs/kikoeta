@@ -881,5 +881,8 @@
   "unlockDesktopLyrics": "解鎖歌詞",
   "showDesktopLyrics": "開啟歌詞",
   "hideDesktopLyrics": "關閉歌詞",
-  "androidLyricsLockDescription": "鎖定後觸控穿透，橫直向共用"
+  "androidLyricsLockDescription": "鎖定後觸控穿透，橫直向共用",
+  "homeRandomSort": "隨機排序",
+  "favoritesSearch": "搜尋收藏作品",
+  "favoritesSearchHint": "搜尋標題或 RJ 編號"
 }
