@@ -65,10 +65,13 @@ class DictationQueue extends ChangeNotifier {
 
   bool get hasPending =>
       _entries.any((e) => e.status == DictationQueueStatus.pending);
+  bool get canStart =>
+      hasPending ||
+      _entries.any((e) => e.status == DictationQueueStatus.cancelled);
   List<MediaNode> get tracks => current?.tracks ?? const [];
 
-  /// Only unfinished batches reserve tracks; completed work can be translated
-  /// again. Use source paths, not expiring URLs or version-matched titles.
+  /// Restartable cancelled batches also reserve tracks; completed work can be
+  /// translated again. Use source paths, not expiring URLs or matched titles.
   DictationQueueEntry? enqueue({
     required Work work,
     required List<MediaNode> tracks,
@@ -82,7 +85,8 @@ class DictationQueue extends ChangeNotifier {
       for (final entry in _entries)
         if (entry.work.rj.toUpperCase() == id &&
             (entry.status == DictationQueueStatus.pending ||
-                entry.status == DictationQueueStatus.running))
+                entry.status == DictationQueueStatus.running ||
+                entry.status == DictationQueueStatus.cancelled))
           for (final track in entry.tracks) track.path,
     };
     final addedTracks = tracks
@@ -153,6 +157,24 @@ class DictationQueue extends ChangeNotifier {
     pendingRevision++;
     notifyListeners();
     return true;
+  }
+
+  /// Explicit Start restarts cancelled batches in their original queue order.
+  /// Use the current connection and a fresh KT job, not the cancelled job's
+  /// server or checkpoint. Failed retries retain their recovery reference.
+  void restartCancelled() {
+    if (running || cancelling) return;
+    var changed = false;
+    for (final entry in _entries) {
+      if (entry.status != DictationQueueStatus.cancelled) continue;
+      entry._status = DictationQueueStatus.pending;
+      entry.backendJob = null;
+      changed = true;
+    }
+    if (changed) {
+      pendingRevision++;
+      notifyListeners();
+    }
   }
 
   bool remove(DictationQueueEntry entry) {

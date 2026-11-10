@@ -173,15 +173,19 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
     }
   }
 
-  Future<void> _start() async {
+  Future<void> _start({bool restartCancelled = true}) async {
     final l10n = context.l10n;
-    if (_session.running || !_session.hasPending) return;
+    if (_session.running ||
+        !(restartCancelled ? _session.canStart : _session.hasPending)) {
+      return;
+    }
     KtService? service;
     try {
       final connection = _service();
       service = connection;
       _session.activeService = connection;
       _persistConnection();
+      if (restartCancelled) _session.restartCancelled();
       await _session.run((entry) => _processEntry(connection, entry, l10n));
     } catch (error) {
       _appendLog(l10n.dictationTranslationPageStartAppendLog(error.toString()));
@@ -483,7 +487,7 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
 
   Future<void> _retryEntry(DictationQueueEntry entry) async {
     if (_syncing || !_session.retry(entry)) return;
-    if (!_session.running) await _start();
+    if (!_session.running) await _start(restartCancelled: false);
   }
 
   Future<void> _retryWriteback(DictationQueueEntry entry) async {
@@ -1106,7 +1110,7 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
             ),
             onPressed: _session.running
                 ? (_session.cancelling ? null : _cancel)
-                : (_syncing || !_session.hasPending ? null : _start),
+                : (_syncing || !_session.canStart ? null : _start),
             icon: Icon(
               _session.running ? Icons.stop_circle_outlined : Icons.graphic_eq,
             ),
