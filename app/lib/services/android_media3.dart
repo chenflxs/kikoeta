@@ -30,13 +30,6 @@ class AndroidMedia3 {
     });
   }
 
-  /// 启动媒体会话前台服务（应用启动时调用一次）
-  static Future<void> ensureSession() async {
-    try {
-      await _ch.invokeMethod('ensureSession');
-    } catch (_) {}
-  }
-
   /// 上报播放状态（刷新通知/锁屏卡片）
   static Future<void> updateState({
     required bool isPlaying,
@@ -50,15 +43,13 @@ class AndroidMedia3 {
     bool logoCover = false,
     double playbackRate = 1.0,
     bool playbackSpeedEnabled = false,
+    bool activityVisible = false,
+    bool activityResumed = false,
     bool lyricsEnabled = false,
     bool lyricsLocked = false,
     String lyricsLockLabel = 'Lock lyrics',
     String lyricsToggleLabel = 'Show lyrics',
   }) async {
-    // ignore: avoid_print
-    print(
-      '[media3] updateState playing=$isPlaying pos=$positionMs title=$title',
-    );
     try {
       await _ch.invokeMethod('updateState', {
         'isPlaying': isPlaying,
@@ -72,6 +63,8 @@ class AndroidMedia3 {
         'logoCover': logoCover,
         'playbackRate': playbackRate,
         'playbackSpeedEnabled': playbackSpeedEnabled,
+        'activityVisible': activityVisible,
+        'activityResumed': activityResumed,
         'lyricsEnabled': lyricsEnabled,
         'lyricsLocked': lyricsLocked,
         'lyricsLockLabel': lyricsLockLabel,
@@ -86,13 +79,11 @@ class AndroidMedia3 {
   /// 传递已由 Flutter/Rust 下载到本地缓存的封面文件。
   /// 原图不通过 MethodChannel 传输，避免 Binder 的事务大小限制。
   static Future<void> updateArtwork({
-    required String mediaId,
     required String artworkKey,
     required String artworkPath,
   }) async {
     try {
       await _ch.invokeMethod('updateArtwork', {
-        'mediaId': mediaId,
         'artworkKey': artworkKey,
         'artworkPath': artworkPath,
       });

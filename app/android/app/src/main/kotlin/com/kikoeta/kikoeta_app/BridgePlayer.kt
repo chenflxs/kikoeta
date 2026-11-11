@@ -46,34 +46,25 @@ class BridgePlayer(context: Context) : SimpleBasePlayer(context.mainLooper) {
     }
 
     /** Dart 上报播放状态，刷新会话（通知/锁屏卡片） */
-    fun updateState(
-        playing: Boolean,
-        positionMs: Long,
-        durationMs: Long,
-        title: String,
-        artist: String,
-        artworkKey: String?,
-        mediaId: String,
-        logoCover: Boolean,
-        playbackRate: Float,
-        playbackSpeedEnabled: Boolean,
-    ) {
-        this.isPlaying = playing
-        this.positionMs = positionMs
-        this.bufferedMs = positionMs
-        this.durationMs = if (durationMs > 0) durationMs else C.TIME_UNSET
-        this.playbackRate = if (playbackRate.isFinite() && playbackRate > 0f) playbackRate else 1f
-        this.playbackSpeedEnabled = playbackSpeedEnabled
-        this.title = title
-        this.artist = artist
-        if (this.mediaId != mediaId || this.artworkKey != artworkKey ||
-            this.logoCover != logoCover
-        ) {
+    fun updateState(state: Media3Bridge.PendingState) {
+        if (state.hideCard) {
+            if (mediaId.isNotEmpty()) clearSession()
+            return
+        }
+        isPlaying = state.isPlaying
+        positionMs = state.positionMs
+        bufferedMs = state.positionMs
+        durationMs = if (state.durationMs > 0) state.durationMs else C.TIME_UNSET
+        playbackRate = state.playbackRate.takeIf { it.isFinite() && it > 0f } ?: 1f
+        playbackSpeedEnabled = state.playbackSpeedEnabled
+        title = state.title
+        artist = state.artist
+        if (artworkKey != state.artworkKey || logoCover != state.logoCover) {
             artworkData = null
         }
-        this.artworkKey = artworkKey
-        this.mediaId = mediaId
-        this.logoCover = logoCover
+        artworkKey = state.artworkKey
+        mediaId = state.mediaId
+        logoCover = state.logoCover
         if (logoCover && artworkData == null) {
             artworkData = loadLogoArtwork()
         }
@@ -195,20 +186,21 @@ class BridgePlayer(context: Context) : SimpleBasePlayer(context.mainLooper) {
                 val metadata = MediaMetadata.Builder()
                     .setTitle(title)
                     .setArtist(artist)
-                artworkData?.let {
-                    metadata.setArtworkData(it, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
-                }
+                    .apply { artworkData?.let { setArtworkData(it, MediaMetadata.PICTURE_TYPE_FRONT_COVER) } }
+                    .build()
+                val itemId = mediaId.ifEmpty { title }
                 val mediaItem = MediaItem.Builder()
-                    .setMediaId(mediaId.ifEmpty { title })
-                    .setMediaMetadata(metadata.build())
+                    .setMediaId(itemId)
+                    .setMediaMetadata(metadata)
                     .build()
                 builder
                     .setPlaylist(
                         listOf(
-                            MediaItemData.Builder(Any())
+                            // Media3 uses the UID to detect track transitions.
+                            MediaItemData.Builder(itemId)
                                 .setMediaItem(mediaItem)
                                 // SimpleBasePlayer 的 Timeline 使用这里的 metadata，而非仅 MediaItem 内部字段。
-                                .setMediaMetadata(metadata.build())
+                                .setMediaMetadata(metadata)
                                 .setIsSeekable(durationMs != C.TIME_UNSET && durationMs > 0)
                                 .setIsDynamic(false)
                                 .setDurationUs(

@@ -202,12 +202,6 @@ class MainActivity : FlutterActivity() {
         Media3Bridge.player?.onPlaybackRateChanged = Media3Bridge.playbackRateSender
         ch.setMethodCallHandler { call, result ->
             when (call.method) {
-                "ensureSession" -> {
-                    // 与 Kikoeru 一致：先在前台 Activity 中创建 MediaSessionService，
-                    // 再由 Media3 Provider 在真实播放状态到达时提升为前台服务。
-                    appContext.startService(Intent(appContext, KikoetaMediaSessionService::class.java))
-                    result.success(null)
-                }
                 "updateState" -> {
                     val a = call.arguments as Map<*, *>
                     val playing = a["isPlaying"] == true
@@ -231,32 +225,22 @@ class MainActivity : FlutterActivity() {
                             toggleLabel = a["lyricsToggleLabel"] as String? ?: "Show lyrics",
                         ),
                     )
-                    // 始终保留最近状态：服务刚创建时需要回放，而异步封面也需要据此丢弃旧结果。
-                    Media3Bridge.pendingState = state
-                    Media3Bridge.onLyricsStateChanged?.invoke(state.lyrics)
-                    val p = Media3Bridge.player
-                    if (p != null) {
-                        // 隐藏卡片时让 Media3 看到空播放列表，由 Provider 自行移除通知。
-                        p.updateState(
-                            playing, pos, dur,
-                            if (hideCard) "" else title,
-                            artist, artworkKey, mediaId, logoCover,
-                            playbackRate, playbackSpeedEnabled,
-                        )
-                    }
+                    Media3Bridge.publishState(
+                        appContext, state,
+                        activityVisible = a["activityVisible"] == true,
+                        activityResumed = a["activityResumed"] == true,
+                    )
                     result.success(null)
                 }
                 "updateArtwork" -> {
                     val a = call.arguments as Map<*, *>
-                    val mediaId = a["mediaId"] as String? ?: ""
                     val artworkKey = a["artworkKey"] as String? ?: ""
                     val artworkPath = a["artworkPath"] as String? ?: ""
-                    Media3Bridge.onArtworkCached?.invoke(mediaId, artworkKey, artworkPath)
+                    Media3Bridge.publishArtwork(artworkKey, artworkPath)
                     result.success(null)
                 }
                 "clearSession" -> {
-                    Media3Bridge.player?.clearSession()
-                    Media3Bridge.pendingState = null
+                    Media3Bridge.clearSession()
                     result.success(null)
                 }
                 else -> result.notImplemented()

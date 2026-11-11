@@ -1,10 +1,14 @@
 package com.kikoeta.kikoeta_app
 
+import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Handler
 import android.os.Looper
 import android.os.Bundle
+import android.os.SystemClock
+import android.util.Log
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -26,31 +30,24 @@ class KikoetaMediaSessionService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var lyricsState: LyricsMediaState? = null
+    private var foregroundStartDeferred = false
 
     override fun onCreate() {
         super.onCreate()
+        setListener(object : MediaSessionService.Listener {
+            override fun onForegroundServiceStartNotAllowedException() {
+                foregroundStartDeferred = true
+            }
+        })
         LyricsMediaNotificationProvider(this).also { provider ->
             provider.setSmallIcon(R.drawable.ic_play_arrow)
             setMediaNotificationProvider(provider)
         }
         try {
-            val player = BridgePlayer(this).also { Media3Bridge.player = it }
+            val player = BridgePlayer(this)
             player.onCommand = Media3Bridge.commandSender
             player.onPlaybackRateChanged = Media3Bridge.playbackRateSender
-            Media3Bridge.pendingState?.let { state ->
-                player.updateState(
-                    state.isPlaying,
-                    state.positionMs,
-                    state.durationMs,
-                    if (state.hideCard) "" else state.title,
-                    state.artist,
-                    state.artworkKey,
-                    state.mediaId,
-                    state.logoCover,
-                    state.playbackRate,
-                    state.playbackSpeedEnabled,
-                )
-            }
+            Media3Bridge.pendingState?.let(player::updateState)
             val session = MediaSession.Builder(this, player)
                 .setSessionActivity(createSessionPendingIntent())
                 .setCallback(object : MediaSession.Callback {
@@ -97,24 +94,45 @@ class KikoetaMediaSessionService : MediaSessionService() {
             }
             // Provider 只跟踪显式加入服务的会话；仅从 onGetSession 返回不会触发前台媒体通知。
             addSession(session)
-        } catch (_: Throwable) {
+            Media3Bridge.player = player
+            Media3Bridge.onActivityResumed = {
+                if (foregroundStartDeferred && session.player.isPlaying) {
+                    try {
+                        onUpdateNotification(session, /* startInForegroundRequired = */ true)
+                        foregroundStartDeferred = false
+                    } catch (e: IllegalStateException) {
+                        Log.w("KikoetaMedia3", "Media session foreground promotion deferred", e)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("KikoetaMedia3", "Could not initialize media session", e)
+            mediaSession?.release()
             Media3Bridge.player = null
             mediaSession = null
+            stopSelf()
+            return
         }
 
-        Media3Bridge.onArtworkCached = { mediaId, artworkKey, artworkPath ->
+        Media3Bridge.onArtworkCached = { artworkKey, artworkPath ->
             loadArtworkFromCache(artworkPath) { bitmap ->
                 mainHandler.post {
                     val state = Media3Bridge.pendingState
                     if (bitmap == null || state == null || state.hideCard || state.logoCover ||
-                        mediaId != state.mediaId || artworkKey != state.artworkKey
+                        artworkKey != state.artworkKey
                     ) {
+                        bitmap?.recycle()
                         return@post
                     }
-                    Media3Bridge.player?.updateArtwork(artworkKey, bitmap)
+                    try {
+                        Media3Bridge.player?.updateArtwork(artworkKey, bitmap)
+                    } finally {
+                        bitmap.recycle()
+                    }
                 }
             }
         }
+        Media3Bridge.replayArtwork()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
@@ -160,6 +178,7 @@ class KikoetaMediaSessionService : MediaSessionService() {
         Media3Bridge.player = null
         Media3Bridge.onArtworkCached = null
         Media3Bridge.onLyricsStateChanged = null
+        Media3Bridge.onActivityResumed = null
         super.onDestroy()
     }
 }
@@ -167,15 +186,19 @@ class KikoetaMediaSessionService : MediaSessionService() {
 /** 会话桥接的静态持有：MainActivity 注入状态与命令回调。 */
 object Media3Bridge {
     var player: BridgePlayer? = null
+    private var nextStartAttemptMs = 0L
+    private var backgroundStartDeferred = false
+    private var cachedArtwork: Pair<String, String>? = null
 
     /** 把 MediaSession 控制命令转发给 Dart（mpv 执行）。 */
     var commandSender: ((String, Long) -> Unit)? = null
 
     var playbackRateSender: ((Float) -> Unit)? = null
     var onLyricsStateChanged: ((LyricsMediaState) -> Unit)? = null
+    var onActivityResumed: (() -> Unit)? = null
 
     /** Flutter/Rust 写完封面缓存后的本地路径。 */
-    var onArtworkCached: ((mediaId: String, artworkKey: String, artworkPath: String) -> Unit)? =
+    var onArtworkCached: ((artworkKey: String, artworkPath: String) -> Unit)? =
         null
 
     /** 最近一次状态，既用于服务延迟创建时回放，也用于过滤异步封面结果。 */
@@ -195,4 +218,56 @@ object Media3Bridge {
     )
 
     var pendingState: PendingState? = null
+        private set
+
+    fun publishState(
+        context: Context,
+        state: PendingState,
+        activityVisible: Boolean,
+        activityResumed: Boolean,
+    ) {
+        pendingState = state
+        if (state.hideCard || state.logoCover || cachedArtwork?.first != state.artworkKey) {
+            cachedArtwork = null
+        }
+        val activePlayer = player
+        if (activePlayer != null) {
+            onLyricsStateChanged?.invoke(state.lyrics)
+            activePlayer.updateState(state)
+            if (activityResumed) onActivityResumed?.invoke()
+            return
+        }
+        if (activityVisible) backgroundStartDeferred = false
+        if (state.hideCard ||
+            (!activityVisible && (!state.isPlaying || backgroundStartDeferred))
+        ) return
+        // startService is asynchronous. Coalesce requests until onCreate, and allow a fresh
+        // attempt on foreground return if Android denied starting from the background.
+        val now = SystemClock.elapsedRealtime()
+        if (!activityResumed && now < nextStartAttemptMs) return
+        nextStartAttemptMs = now + 2000
+        try {
+            context.startService(Intent(context, KikoetaMediaSessionService::class.java))
+        } catch (e: IllegalStateException) {
+            backgroundStartDeferred = !activityVisible
+            Log.w("KikoetaMedia3", "Media session start deferred", e)
+        }
+    }
+
+    fun publishArtwork(artworkKey: String, path: String) {
+        val state = pendingState ?: return
+        if (state.hideCard || state.logoCover || state.artworkKey != artworkKey) return
+        cachedArtwork = artworkKey to path
+        onArtworkCached?.invoke(artworkKey, path)
+    }
+
+    fun replayArtwork() {
+        cachedArtwork?.let { (key, path) -> onArtworkCached?.invoke(key, path) }
+    }
+
+    fun clearSession() {
+        pendingState = null
+        cachedArtwork = null
+        player?.clearSession()
+    }
 }

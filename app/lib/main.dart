@@ -367,8 +367,8 @@ Future<void> _advanceAfterCompletion() async {
 
 int _lastMedia3Pos = -1;
 DateTime _lastMedia3Sync = DateTime.fromMillisecondsSinceEpoch(0);
-bool _media3SessionStarted = false;
-// 「不显示通知栏媒体卡片」开关的上次状态（用于切回显示时重新拉起会话服务）
+MediaNode? _media3Track;
+// 「不显示通知栏媒体卡片」开关的上次状态，用于立即同步隐私设置。
 bool _media3Hidden = false;
 // 最近一次已下发到原生层的封面隐私选项，用于让切换绕过常规状态同步节流。
 bool _media3LogoCover = false;
@@ -476,45 +476,51 @@ void _showMediaBoundaryToast(String message) {
 }
 
 /// 上报当前播放状态到 MediaSession（通知/锁屏卡片）
-void _syncMedia3State() {
+void _syncMedia3State({bool activityResumed = false}) {
   if (kIsWeb || !Platform.isAndroid) return;
   final hideCard = appState.lsCover;
   final w = appState.currentWork;
   final q = appState.queue;
   final t = q.isEmpty ? null : q[appState.trackIdx.clamp(0, q.length - 1)];
-  final title = t?.title ?? '';
-  if (w == null || title.isEmpty) {
+  _media3Track = t;
+  if (w == null || t == null) {
     _media3Hidden = hideCard;
     _media3LogoCover = appState.notifCover;
     _media3ArtworkLoadKey = '';
+    _lastMedia3Pos = -1;
     AndroidMedia3.clearSession();
     return;
   }
   final artworkUrl = w.coverUrl;
   final artworkKey = '${w.rj}\n${artworkUrl ?? ''}';
-  // 首次有播放内容时才启动媒体会话服务（避免启动即拉前台服务）；
-  // 从「隐藏卡片」切回显示时若服务已被系统回收，重新拉起
-  if (!_media3SessionStarted || (_media3Hidden && !hideCard)) {
-    _media3SessionStarted = true;
-    AndroidMedia3.ensureSession();
-  }
+  final title = t.title.trim().isNotEmpty
+      ? t.title
+      : (w.title.trim().isNotEmpty ? w.title : w.rj);
+  final lifecycle = WidgetsBinding.instance.lifecycleState;
+  final player = AppPlayer.instance;
+  _lastMedia3Pos = player.currentPosition;
   _media3Hidden = hideCard;
   _media3LogoCover = appState.notifCover;
   _media3PlaybackRate = appState.playbackRate;
   _media3SpeedEnabled = appState.playbackSpeedEnabled;
   _media3LyricsState = _media3LyricsStateKey;
   AndroidMedia3.updateState(
-    isPlaying: AppPlayer.instance.isNowPlaying,
-    positionMs: AppPlayer.instance.currentPosition * 1000,
-    durationMs: AppPlayer.instance.currentDuration * 1000,
+    isPlaying: player.isNowPlaying,
+    positionMs: _lastMedia3Pos * 1000,
+    durationMs: player.currentDuration * 1000,
     playbackRate: appState.playbackRate,
     playbackSpeedEnabled: appState.playbackSpeedEnabled,
     title: title,
     artist: w.title,
     artworkKey: artworkKey,
-    mediaId: w.rj,
+    mediaId: '${w.rj}\n${t.path.isEmpty ? appState.trackIdx : t.path}',
     hideCard: hideCard,
     logoCover: appState.notifCover,
+    activityVisible:
+        activityResumed ||
+        lifecycle == AppLifecycleState.resumed ||
+        lifecycle == AppLifecycleState.inactive,
+    activityResumed: activityResumed,
     lyricsEnabled: appState.desktopLyricsOn,
     lyricsLocked: _androidLyricsLocked,
     lyricsLockLabel: _lyricsLockLabel,
@@ -529,18 +535,14 @@ void _syncMedia3State() {
   if (_media3ArtworkLoadKey != loadKey) {
     _media3ArtworkLoadKey = loadKey;
     if (shouldLoadArtwork) {
-      unawaited(_cacheMedia3Artwork(w.rj, artworkKey, artworkUrl));
+      unawaited(_cacheMedia3Artwork(artworkKey, artworkUrl));
     }
   }
 }
 
 /// 复用 Rust 网络层下载封面，交给原生层的是本地缓存路径而非远程 URL。
 /// 这样私有服务器的鉴权和 Rust 的 TLS 兼容策略也会作用于媒体卡片封面。
-Future<void> _cacheMedia3Artwork(
-  String mediaId,
-  String artworkKey,
-  String artworkUrl,
-) async {
+Future<void> _cacheMedia3Artwork(String artworkKey, String artworkUrl) async {
   try {
     final bytes = await apiGetBytes(url: artworkUrl);
     if (_media3ArtworkLoadKey != artworkKey || bytes.isEmpty) return;
@@ -551,7 +553,6 @@ Future<void> _cacheMedia3Artwork(
     await file.writeAsBytes(bytes, flush: true);
     if (_media3ArtworkLoadKey != artworkKey) return;
     await AndroidMedia3.updateArtwork(
-      mediaId: mediaId,
       artworkKey: artworkKey,
       artworkPath: file.path,
     );
@@ -571,9 +572,9 @@ int _stableArtworkId(String value) {
 /// 绑定播放事件与全局状态变化 → 同步 MediaSession
 void _bindMedia3Sync() {
   AppPlayer.instance.playing.listen((_) => _syncMedia3State());
+  AppPlayer.instance.duration.distinct().listen((_) => _syncMedia3State());
   AppPlayer.instance.position.listen((d) {
-    if (d - _lastMedia3Pos >= 5) {
-      _lastMedia3Pos = d;
+    if (_media3Track != null && (d - _lastMedia3Pos).abs() >= 5) {
       _syncMedia3State();
     }
   });
@@ -586,7 +587,12 @@ void _bindMedia3Sync() {
     final speedSettingChanged =
         appState.playbackRate != _media3PlaybackRate ||
         appState.playbackSpeedEnabled != _media3SpeedEnabled;
-    if (privacySettingChanged ||
+    final queue = appState.queue;
+    final track = queue.isEmpty
+        ? null
+        : queue[appState.trackIdx.clamp(0, queue.length - 1)];
+    if (!identical(track, _media3Track) ||
+        privacySettingChanged ||
         speedSettingChanged ||
         _media3LyricsState != _media3LyricsStateKey ||
         now.difference(_lastMedia3Sync).inMilliseconds > 1000) {
@@ -734,6 +740,9 @@ class _KikoetaAppState extends State<KikoetaApp>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _syncMedia3State(activityResumed: true);
+    }
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached ||
