@@ -24,6 +24,7 @@ import '../sheets.dart';
 import '../smooth_scroll.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import '../widgets/lyrics_translation_dialog.dart';
 import '../l10n/strings.dart';
 
 class PlayerPage extends StatefulWidget {
@@ -161,13 +162,15 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     );
     _applyVolume();
     // 重启恢复：有上次播放记录时打开并停在保存位置（默认暂停，不自动播放）
-    final targetUrl = app.queue.isEmpty ? null : track.url;
+    final player = AppPlayer.instance;
     final needsOpen =
-        !AppPlayer.instance.opened || AppPlayer.instance.openedUrl != targetUrl;
-    if (!app.playing && app.queue.isNotEmpty && needsOpen) {
+        app.queue.isNotEmpty &&
+        (!player.opened ||
+            player.openedUrl != (_localTrackPath(track) ?? track.url));
+    if (!app.playing && needsOpen) {
       final resume = app.resumePosition;
       _restoreFuture = _restorePlayback(resume);
-    } else if (app.playing && app.queue.isNotEmpty && needsOpen) {
+    } else if (needsOpen) {
       // 全局播放器可能仍打开着上一部作品；目标媒体不同也必须重新打开。
       _openCurrent();
     }
@@ -295,6 +298,17 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     _dur = duration;
   }
 
+  String? _localTrackPath(MediaNode node) {
+    final work = app.currentWork;
+    return work == null
+        ? null
+        : DownloadManager.instance.localPathFor(
+            server: ApiService.resolveBase(app),
+            work: work,
+            node: node,
+          );
+  }
+
   Future<void> _openCurrent({bool autoplay = true}) async {
     final l10n = context.l10n;
     final request = ++_openRequest;
@@ -306,14 +320,8 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
         identical(app.queue, queue) &&
         app.queue.isNotEmpty &&
         identical(track, selectedTrack);
-    final localPath = app.currentWork == null
-        ? null
-        : DownloadManager.instance.localPathFor(
-            server: ApiService.resolveBase(app),
-            work: app.currentWork!,
-            node: track,
-          );
-    final url = track.url;
+    final localPath = _localTrackPath(selectedTrack);
+    final url = selectedTrack.url;
     if (localPath == null && (url == null || url.isEmpty)) {
       app.playing = false;
       app.notify();
@@ -1963,164 +1971,199 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
           child: StatefulBuilder(
-            builder: (ctx, setDlg) => Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.lyrics_outlined, size: 18, color: p.accent),
-                    const SizedBox(width: 8),
-                    Text(
-                      context.l10n.playerPageShowLyricSettingsText3,
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        color: p.text,
-                      ),
-                    ),
-                    const Spacer(),
-                    GestureDetector(
-                      onTap: () => Navigator.pop(ctx),
-                      child: Icon(Icons.close, size: 18, color: p.dim),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  context.l10n.playerPageShowLyricSettingsText2,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: p.muted,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    _convPill(ctx, setDlg, 'orig', context.l10n.close),
-                    const SizedBox(width: 8),
-                    _convPill(
-                      ctx,
-                      setDlg,
-                      'tw',
-                      context.l10n.simplifiedToTraditional,
-                    ),
-                    const SizedBox(width: 8),
-                    _convPill(
-                      ctx,
-                      setDlg,
-                      'zh',
-                      context.l10n.traditionalToSimplified,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                _lyricSwitchTile(
-                  icon: Icons.filter_alt_outlined,
-                  title: context.l10n.lyricsSkipEmpty,
-                  sub: context.l10n.lyricsSkipEmptyDescription,
-                  value: app.lyricsSkipEmpty,
-                  onChanged: (value) {
-                    app.setLyricsSkipEmpty(value);
-                    setDlg(() {});
-                  },
-                ),
-                Row(
-                  children: [
-                    Text(
-                      context.l10n.playerPageShowLyricSettingsText4,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: p.muted,
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      '${_lrcOffsetMs > 0 ? '+' : ''}${(_lrcOffsetMs / 1000).toStringAsFixed(1)} s',
-                      style: TextStyle(fontSize: 13, color: p.text),
-                    ),
-                    const SizedBox(width: 6),
-                    if (_lrcOffsetMs != 0)
-                      GestureDetector(
-                        onTap: () => setDlg(() => _lrcOffsetMs = 0),
-                        child: Text(
-                          context.l10n.playerPageShowLyricSettingsText,
-                          style: TextStyle(fontSize: 12, color: p.accent),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    _offsetBtn(ctx, setDlg, Icons.remove, -100),
-                    Expanded(
-                      child: Slider(
-                        value: _lrcOffsetMs.toDouble().clamp(-10000, 10000),
-                        min: -10000,
-                        max: 10000,
-                        divisions: 200,
-                        activeColor: p.accent,
-                        inactiveColor: p.track,
-                        onChanged: (v) => setDlg(
-                          () => _lrcOffsetMs = (v / 100).round() * 100,
-                        ),
-                      ),
-                    ),
-                    _offsetBtn(ctx, setDlg, Icons.add, 100),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  decoration: BoxDecoration(
-                    color: p.surface2.withValues(alpha: .55),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: p.line),
-                  ),
-                  child: Column(
+            builder: (ctx, setDlg) => SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
                     children: [
-                      _lyricSettingTile(
-                        icon: Icons.cloud_download_outlined,
-                        title: context.l10n.playerPagePickOnlineLyricText,
-                        sub: _lyricSourceName ?? context.l10n.autoMatch,
-                        onTap: () => _pickOnlineLyric(ctx),
-                      ),
-                      Divider(height: 1, indent: 52, color: p.line),
-                      _lyricSettingTile(
-                        icon: Icons.folder_open_outlined,
-                        title: context.l10n.playerPageShowLyricSettingsTitle,
-                        sub: _lyricSourceName != null
-                            ? context.l10n.lyricsLibraryPageBuildNavItem2
-                            : context.l10n.playerPageShowLyricSettingsSub2,
-                        onTap: _pickOfflineLyric,
-                      ),
-                      Divider(height: 1, indent: 52, color: p.line),
-                      _libraryAutoTile(setDlg),
-                      if (app.lyricsLibraryAuto) ...[
-                        Divider(height: 1, indent: 52, color: p.line),
-                        _lyricSettingTile(
-                          icon: Icons.library_music_outlined,
-                          title: context.l10n.playerPageShowLyricSettingsTitle2,
-                          sub: app.playWork == null
-                              ? context.l10n.playerPageShowLyricSettingsSub
-                              : context.l10n.playerPageShowLyricSettingsSub3,
-                          onTap: app.playWork == null
-                              ? null
-                              : () => _pickLibraryLyric(),
+                      Icon(Icons.lyrics_outlined, size: 18, color: p.accent),
+                      const SizedBox(width: 8),
+                      Text(
+                        context.l10n.playerPageShowLyricSettingsText3,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: p.text,
                         ),
-                      ],
+                      ),
+                      const Spacer(),
+                      GestureDetector(
+                        onTap: () => Navigator.pop(ctx),
+                        child: Icon(Icons.close, size: 18, color: p.dim),
+                      ),
                     ],
                   ),
-                ),
-                const SizedBox(height: 4),
-              ],
+                  const SizedBox(height: 16),
+                  Text(
+                    context.l10n.playerPageShowLyricSettingsText2,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: p.muted,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      _convPill(ctx, setDlg, 'orig', context.l10n.close),
+                      const SizedBox(width: 8),
+                      _convPill(
+                        ctx,
+                        setDlg,
+                        'tw',
+                        context.l10n.simplifiedToTraditional,
+                      ),
+                      const SizedBox(width: 8),
+                      _convPill(
+                        ctx,
+                        setDlg,
+                        'zh',
+                        context.l10n.traditionalToSimplified,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  _lyricSwitchTile(
+                    icon: Icons.filter_alt_outlined,
+                    title: context.l10n.lyricsSkipEmpty,
+                    sub: context.l10n.lyricsSkipEmptyDescription,
+                    value: app.lyricsSkipEmpty,
+                    onChanged: (value) {
+                      app.setLyricsSkipEmpty(value);
+                      setDlg(() {});
+                    },
+                  ),
+                  Row(
+                    children: [
+                      Text(
+                        context.l10n.playerPageShowLyricSettingsText4,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: p.muted,
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        '${_lrcOffsetMs > 0 ? '+' : ''}${(_lrcOffsetMs / 1000).toStringAsFixed(1)} s',
+                        style: TextStyle(fontSize: 13, color: p.text),
+                      ),
+                      const SizedBox(width: 6),
+                      if (_lrcOffsetMs != 0)
+                        GestureDetector(
+                          onTap: () => setDlg(() => _lrcOffsetMs = 0),
+                          child: Text(
+                            context.l10n.playerPageShowLyricSettingsText,
+                            style: TextStyle(fontSize: 12, color: p.accent),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      _offsetBtn(ctx, setDlg, Icons.remove, -100),
+                      Expanded(
+                        child: Slider(
+                          value: _lrcOffsetMs.toDouble().clamp(-10000, 10000),
+                          min: -10000,
+                          max: 10000,
+                          divisions: 200,
+                          activeColor: p.accent,
+                          inactiveColor: p.track,
+                          onChanged: (v) => setDlg(
+                            () => _lrcOffsetMs = (v / 100).round() * 100,
+                          ),
+                        ),
+                      ),
+                      _offsetBtn(ctx, setDlg, Icons.add, 100),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: p.surface2.withValues(alpha: .55),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: p.line),
+                    ),
+                    child: Column(
+                      children: [
+                        _lyricSettingTile(
+                          icon: Icons.cloud_download_outlined,
+                          title: context.l10n.playerPagePickOnlineLyricText,
+                          sub: _lyricSourceName ?? context.l10n.autoMatch,
+                          onTap: () => _pickOnlineLyric(ctx),
+                        ),
+                        Divider(height: 1, indent: 52, color: p.line),
+                        _lyricSettingTile(
+                          icon: Icons.folder_open_outlined,
+                          title: context.l10n.playerPageShowLyricSettingsTitle,
+                          sub: _lyricSourceName != null
+                              ? context.l10n.lyricsLibraryPageBuildNavItem2
+                              : context.l10n.playerPageShowLyricSettingsSub2,
+                          onTap: _pickOfflineLyric,
+                        ),
+                        Divider(height: 1, indent: 52, color: p.line),
+                        _libraryAutoTile(setDlg),
+                        Divider(height: 1, indent: 52, color: p.line),
+                        _lyricSettingTile(
+                          icon: Icons.translate,
+                          title: context.l10n.lyricsTranslate,
+                          sub: context.l10n.lyricsTranslateDescription,
+                          onTap:
+                              LyricsHub.instance.allLyrics.isEmpty ||
+                                  LyricsHub.instance.loading
+                              ? null
+                              : () {
+                                  Navigator.pop(ctx);
+                                  _translateLyrics();
+                                },
+                        ),
+                        if (app.lyricsLibraryAuto) ...[
+                          Divider(height: 1, indent: 52, color: p.line),
+                          _lyricSettingTile(
+                            icon: Icons.library_music_outlined,
+                            title:
+                                context.l10n.playerPageShowLyricSettingsTitle2,
+                            sub: app.playWork == null
+                                ? context.l10n.playerPageShowLyricSettingsSub
+                                : context.l10n.playerPageShowLyricSettingsSub3,
+                            onTap: app.playWork == null
+                                ? null
+                                : () => _pickLibraryLyric(),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                ],
+              ),
             ),
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _translateLyrics() async {
+    final hub = LyricsHub.instance;
+    final selection = hub.captureSelection();
+    if (selection == null || hub.allLyrics.isEmpty || hub.loading) return;
+    final source = hub.allLyrics;
+    final l10n = context.l10n;
+    final saved = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => LyricsTranslationDialog(
+        app: app,
+        selection: selection,
+        source: source,
+      ),
+    );
+    if (mounted && saved != null) _toast(l10n.lyricsTranslationSaved(saved));
   }
 
   Widget _convPill(

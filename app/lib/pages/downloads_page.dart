@@ -6,6 +6,7 @@ import '../data.dart';
 import '../routes.dart';
 import '../services/download_service.dart';
 import '../services/media_tree.dart';
+import '../services/player_service.dart';
 import '../smooth_scroll.dart';
 import '../widgets/media_tree_sliver.dart';
 import '../theme.dart';
@@ -1176,7 +1177,14 @@ class _VoiceDetailPageState extends State<VoiceDetailPage> {
   void _playLocal(BuildContext context, MediaNode node) {
     final path = manager.localPath(item, node);
     if (!File(path).existsSync()) return;
-    app.startPlayback(item.work, [node]);
+    final player = AppPlayer.instance;
+    final sameTrack =
+        player.opened &&
+        player.openedUrl == path &&
+        app.currentWork?.rj == item.work.rj &&
+        app.queue.isNotEmpty &&
+        app.queue[app.trackIdx].path == node.path;
+    if (!sameTrack) app.startPlayback(item.work, [node]);
     Navigator.of(context).pushNamed('/player');
   }
 }

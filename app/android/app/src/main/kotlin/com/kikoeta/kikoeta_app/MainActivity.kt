@@ -58,6 +58,7 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         FlutterEngineCache.getInstance().put(PLAYBACK_ENGINE, flutterEngine)
         PlaybackAudioControl.register(applicationContext, flutterEngine)
+        DefaultNetworkObserver.register(applicationContext, flutterEngine)
         registerMedia3(flutterEngine)
         lyricsFolderImport = LyricsFolderImport(this).also { it.register(flutterEngine) }
         val channel = MethodChannel(

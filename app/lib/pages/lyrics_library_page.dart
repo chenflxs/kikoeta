@@ -29,6 +29,7 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
   Timer? _searchTimer;
   Map<String, int> _directoryCounts = {};
   Set<String> _aiWorkIds = {};
+  Set<String> _translatedWorkIds = {};
   Set<String> _onlineWorkIds = {};
   Map<String, List<LyricsLibraryFile>> _files = {};
   String _source = 'local';
@@ -167,9 +168,11 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
   void _applyRecords(List<LyricsLibraryRecord> records) {
     final directoryCounts = <String, int>{};
     final aiWorkIds = <String>{};
+    final translatedWorkIds = <String>{};
     final onlineWorkIds = <String>{};
     for (final record in records) {
       if (record.online != (_source == 'remote')) continue;
+      if (record.isTranslated) translatedWorkIds.add(record.workId);
       final firstForWork = !directoryCounts.containsKey(record.workId);
       directoryCounts.update(
         record.workId,
@@ -190,6 +193,7 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
       _filteredWorkIds = filtered;
       _directoryCounts = directoryCounts;
       _aiWorkIds = aiWorkIds;
+      _translatedWorkIds = translatedWorkIds;
       _onlineWorkIds = onlineWorkIds;
       _files = {};
       _fileCounts.clear();
@@ -889,6 +893,9 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
                               final fileCount = _fileCounts[id];
                               final directoryCount = _directoryCounts[id] ?? 0;
                               final isAi = _aiWorkIds.contains(id);
+                              final isTranslated = _translatedWorkIds.contains(
+                                id,
+                              );
                               final isOnline = _onlineWorkIds.contains(id);
                               return Stack(
                                 children: [
@@ -985,13 +992,16 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
                                               ],
                                             ),
                                           ),
-                                          if (isAi || isOnline)
+                                          if (isAi || isOnline || isTranslated)
                                             Column(
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
-                                                if (isAi)
+                                                if (isTranslated)
+                                                  _sourceBadge('TL', p.accent)
+                                                else if (isAi)
                                                   _sourceBadge('AI', p.accent),
-                                                if (isOnline) ...[
+                                                if (isOnline &&
+                                                    !isTranslated) ...[
                                                   if (isAi)
                                                     const SizedBox(height: 3),
                                                   _sourceBadge(

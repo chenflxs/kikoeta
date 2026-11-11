@@ -122,6 +122,7 @@ class LyricsHub extends ChangeNotifier {
   bool _libraryRefreshPending = false;
 
   List<LyricLine> get lyrics => _visibleLyrics;
+  List<LyricLine> get allLyrics => _lyrics;
   String? get sourceName => _sourceName;
   bool get loading => _loading;
 

@@ -10,7 +10,7 @@ use tiny_http::{Header, Method, Response, Server, StatusCode};
 use crate::api::kikoeru_api;
 
 static PROXY_PORT: Mutex<Option<u16>> = Mutex::new(None);
-type StreamClient = (Option<String>, reqwest::blocking::Client);
+type StreamClient = (Option<String>, usize, reqwest::blocking::Client);
 
 static CLIENT: OnceLock<Mutex<Option<StreamClient>>> = OnceLock::new();
 
@@ -21,8 +21,9 @@ fn proxy_client() -> Result<reqwest::blocking::Client, String> {
         .lock()
         .map_err(|e| e.to_string())?;
 
-    if let Some((proxy, client)) = cached.as_ref() {
-        if *proxy == configured_proxy {
+    let generation = super::http_client::network_generation();
+    if let Some((proxy, cached_generation, client)) = cached.as_ref() {
+        if *proxy == configured_proxy && *cached_generation == generation {
             return Ok(client.clone());
         }
     }
@@ -32,7 +33,7 @@ fn proxy_client() -> Result<reqwest::blocking::Client, String> {
             .user_agent("Kikoeta/0.1 (stream proxy)")
             .connect_timeout(Duration::from_secs(20));
         // 注意：不能设总超时/读超时——长音频流的 body 读取会持续数十分钟。
-        // 同一代理配置下复用连接池；配置变更时立即换用新的客户端。
+        // 代理配置和默认网络都相同时复用连接池。
         if let Some(proxy_url) = configured_proxy.as_deref() {
             let proxy = reqwest::Proxy::all(proxy_url)
                 .map_err(|e| format!("HTTP 代理地址无效: {e}"))?;
@@ -42,7 +43,7 @@ fn proxy_client() -> Result<reqwest::blocking::Client, String> {
             .build()
             .map_err(|e| format!("创建流媒体 HTTP 客户端失败: {e}"))?
     };
-    *cached = Some((configured_proxy, client.clone()));
+    *cached = Some((configured_proxy, generation, client.clone()));
     Ok(client)
 }
 

@@ -10,11 +10,13 @@ const lyricsLibraryApiPath = 'api/lyrics-library/v1';
 class RemoteLibraryWork {
   final String workId;
   final bool isAi;
+  final bool isTranslated;
   final int fileCount;
 
   const RemoteLibraryWork({
     required this.workId,
     required this.isAi,
+    this.isTranslated = false,
     required this.fileCount,
   });
 }
@@ -24,12 +26,14 @@ class RemoteLibraryFileInfo {
   final String name;
   final String extension;
   final bool isAi;
+  final bool isTranslated;
 
   const RemoteLibraryFileInfo({
     required this.relativePath,
     required this.name,
     required this.extension,
     required this.isAi,
+    this.isTranslated = false,
   });
 }
 
@@ -37,11 +41,13 @@ class RemoteLibraryFile {
   final String relativePath;
   final List<int> bytes;
   final bool isAi;
+  final bool isTranslated;
 
   const RemoteLibraryFile({
     required this.relativePath,
     required this.bytes,
     required this.isAi,
+    this.isTranslated = false,
   });
 }
 
@@ -154,6 +160,7 @@ class LyricsLibraryRemoteClient {
         return RemoteLibraryWork(
           workId: id,
           isAi: raw['isAi'] == true,
+          isTranslated: raw['isTranslated'] == true,
           fileCount: count is num ? count.toInt().clamp(0, 100000) : 0,
         );
       })
@@ -179,6 +186,7 @@ class LyricsLibraryRemoteClient {
             name: name,
             extension: extension,
             isAi: raw['isAi'] == true,
+            isTranslated: raw['isTranslated'] == true,
           );
         })
         .where((file) => file.relativePath.isNotEmpty)
@@ -208,6 +216,7 @@ class LyricsLibraryRemoteClient {
             relativePath: path,
             bytes: base64Decode(encoded),
             isAi: raw['isAi'] == true,
+            isTranslated: raw['isTranslated'] == true,
           ),
         );
       } on FormatException {

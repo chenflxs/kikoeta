@@ -69,7 +69,9 @@ class LyricsLibraryBroadcastService {
           return;
         }
         final aiById = <String, bool>{};
+        final translatedIds = <String>{};
         for (final record in records) {
+          if (record.isTranslated) translatedIds.add(record.workId);
           aiById[record.workId] =
               (aiById[record.workId] ?? false) || record.isAi;
         }
@@ -85,6 +87,7 @@ class LyricsLibraryBroadcastService {
                 (id) => {
                   'workId': id,
                   'isAi': aiById[id] ?? false,
+                  'isTranslated': translatedIds.contains(id),
                   'fileCount': counts[id] ?? 0,
                 },
               )
@@ -162,10 +165,13 @@ class LyricsLibraryBroadcastService {
         ? file.relativePath.substring(prefix.length)
         : file.name;
     return {
-      'relativePath': relativePath,
+      'relativePath': owner?.isTranslated == true
+          ? '${file.workId}-ru/$relativePath'
+          : relativePath,
       'name': file.name,
       'extension': file.extension,
       'isAi': owner?.isAi ?? false,
+      'isTranslated': owner?.isTranslated ?? false,
     };
   }
 

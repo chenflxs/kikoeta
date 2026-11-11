@@ -31,6 +31,7 @@ import 'services/desktop_lyrics_overlay.dart';
 import 'services/android_audio.dart';
 import 'services/android_lyrics_overlay.dart';
 import 'services/android_media3.dart';
+import 'services/android_network.dart';
 import 'services/android_notification.dart';
 import 'services/windows_tray_service.dart';
 import 'services/lyrics_hub.dart';
@@ -53,6 +54,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   StartupTrace.initialize();
   await StartupTrace.stage('settings', SettingsStore.init);
+  AndroidNetwork.init();
   await StartupTrace.stage('downloads', DownloadManager.instance.init);
   await StartupTrace.stage('state', appState.loadFromRust);
   if (appState.lyricsLibraryBroadcastOn) {

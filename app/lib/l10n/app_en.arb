@@ -885,5 +885,11 @@
   "androidLyricsLockDescription": "Touch passes through when locked; shared by portrait and landscape",
   "homeRandomSort": "Random",
   "favoritesSearch": "Search favorites",
-  "favoritesSearchHint": "Search titles or RJ codes"
+  "favoritesSearchHint": "Search titles or RJ codes",
+  "lyricsTranslate": "Translate lyrics",
+  "translatedSubtitleBadge": "Translated subs",
+  "lyricsTranslateDescription": "Use translation settings; save to RJ number-ru",
+  "lyricsTranslationProgress": "Translated {completed}/{total} lines",
+  "lyricsTranslationSaved": "Translation saved: {path}",
+  "lyricsTranslationInvalidResponse": "The translation has missing or empty lines. Retry or switch translation engines."
 }

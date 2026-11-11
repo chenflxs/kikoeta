@@ -66,6 +66,9 @@ class _SettingsPageState extends State<SettingsPage> {
 
   AppState get app => widget.app;
 
+  List<String> get _activeAiModels =>
+      app.engine == 'index' ? app.indexModels : app.openAiModels;
+
   String? get _sectionKey => widget.sectionKey;
 
   @override
@@ -74,9 +77,9 @@ class _SettingsPageState extends State<SettingsPage> {
     // 设置页大量控件直接渲染 AppState 字段（开关、分段按钮等），
     // 自行监听以在状态变化时刷新（此前依赖根级全树重建）
     app.addListener(_onAppChanged);
-    _aiBase = TextEditingController(text: app.activeAiConfig['base']);
+    _aiBase = TextEditingController(text: app.aiConfig['base']);
     _aiModel = TextEditingController(text: app.activeAiConfig['model']);
-    _aiKey = TextEditingController(text: app.activeAiConfig['key']);
+    _aiKey = TextEditingController(text: app.aiConfig['key']);
     _deeplKey = TextEditingController(text: app.deeplKey);
     _colorHexCtrl = TextEditingController(text: _toHex(app.lyricsColor));
     _outlineHexCtrl = TextEditingController(
@@ -224,17 +227,19 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _detectOpenAiModels() async {
     final l10n = context.l10n;
-    final base = _aiBase.text.trim().replaceFirst(RegExp(r'/+$'), '');
+    final engine = app.engine;
+    final config = Map.of(app.activeAiConfig);
+    final base = config['base']!.trim().replaceFirst(RegExp(r'/+$'), '');
     if (base.isEmpty) {
       _toast(l10n.settingsPageDetectOpenAiModelsToast2);
       return;
     }
     _toast(l10n.settingsPageDetectOpenAiModelsToast);
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 12);
     try {
-      final client = HttpClient()
-        ..connectionTimeout = const Duration(seconds: 12);
       final request = await client.getUrl(Uri.parse('$base/models'));
-      final key = _aiKey.text.trim();
+      final key = config['key']!.trim();
       if (base.contains('index-translate.bilibili.com')) {
         request.headers.set('User-Agent', 'Index-Translate-Client/1.0');
       } else if (key.isNotEmpty) {
@@ -242,7 +247,6 @@ class _SettingsPageState extends State<SettingsPage> {
       }
       final response = await request.close();
       final body = await utf8.decodeStream(response);
-      client.close(force: true);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw HttpException('HTTP ${response.statusCode}');
       }
@@ -259,17 +263,33 @@ class _SettingsPageState extends State<SettingsPage> {
           l10n.settingsPageDetectOpenAiModelsFormatException,
         );
       }
-      app.openAiModels
+      if (!mounted ||
+          engine != app.engine ||
+          config['base'] != app.activeAiConfig['base'] ||
+          config['key'] != app.activeAiConfig['key']) {
+        return;
+      }
+      _activeAiModels
         ..clear()
         ..addAll(models);
-      if (_aiModel.text.trim().isEmpty) _aiModel.text = models.first;
-      app.setAiConfig(_aiBase.text, _aiModel.text, _aiKey.text);
-      if (mounted) setState(() {});
+      if (_aiModel.text.trim().isEmpty) {
+        _aiModel.text = models.first;
+        _saveAiModel(models.first);
+      }
+      setState(() {});
       _toast(
         l10n.settingsPageDetectOpenAiModelsToast4((models.length).toString()),
       );
     } catch (e) {
-      _toast(l10n.settingsPageDetectOpenAiModelsToast3((e).toString()));
+      if (mounted && engine == app.engine) {
+        _toast(
+          l10n.settingsPageDetectOpenAiModelsToast3(
+            engine == 'index' ? 'Index-Translate' : e.toString(),
+          ),
+        );
+      }
+    } finally {
+      client.close(force: true);
     }
   }
 
@@ -489,11 +509,12 @@ class _SettingsPageState extends State<SettingsPage> {
                       padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
                       child: Column(
                         children: [
-                          _input(
-                            _aiBase,
-                            context.l10n.settingsPageSectionsInput2,
-                            context.l10n.settingsPageSectionsInput5,
-                          ),
+                          if (app.engine == 'openai')
+                            _input(
+                              _aiBase,
+                              context.l10n.settingsPageSectionsInput2,
+                              context.l10n.settingsPageSectionsInput5,
+                            ),
                           _aiModelInput(),
                           Row(
                             children: [
@@ -513,29 +534,34 @@ class _SettingsPageState extends State<SettingsPage> {
                             ],
                           ),
                           const SizedBox(height: 8),
-                          _input(
-                            _aiKey,
-                            context.l10n.settingsPageSectionsInput,
-                            'sk-...',
-                            obscure: true,
-                          ),
+                          if (app.engine == 'openai')
+                            _input(
+                              _aiKey,
+                              context.l10n.settingsPageSectionsInput,
+                              'sk-...',
+                              obscure: true,
+                            ),
                           OutlinedButton(
                             onPressed: () async {
                               final l10n = context.l10n;
+                              final isIndex = app.engine == 'index';
+                              final config = app.activeAiConfig;
                               _toast(l10n.settingsPageSectionsToast2);
                               try {
                                 final r = await apiTranslateTest(
-                                  baseUrl: _aiBase.text,
-                                  model: _aiModel.text,
-                                  apiKey: _aiKey.text,
+                                  baseUrl: config['base']!,
+                                  model: config['model']!,
+                                  apiKey: config['key']!,
                                 );
                                 if (mounted) _toast(r);
                               } catch (e) {
                                 if (mounted) {
                                   _toast(
-                                    l10n.settingsPageSectionsToast(
-                                      (e).toString(),
-                                    ),
+                                    isIndex
+                                        ? l10n.settingsPageAutoCheckSetState2
+                                        : l10n.settingsPageSectionsToast(
+                                            e.toString(),
+                                          ),
                                   );
                                 }
                               }
@@ -1957,10 +1983,18 @@ class _SettingsPageState extends State<SettingsPage> {
 
   void _selectEngine(String engine) {
     app.setEngine(engine);
-    _aiBase.text = app.activeAiConfig['base']!;
+    _aiBase.text = app.aiConfig['base']!;
     _aiModel.text = app.activeAiConfig['model']!;
-    _aiKey.text = app.activeAiConfig['key']!;
+    _aiKey.text = app.aiConfig['key']!;
     setState(() {});
+  }
+
+  void _saveAiModel(String model) {
+    if (app.engine == 'index') {
+      app.setIndexModel(model);
+    } else {
+      app.setAiConfig(_aiBase.text, model, _aiKey.text);
+    }
   }
 
   Widget _engineDropdown() {
@@ -2243,7 +2277,8 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Widget _aiModelInput() {
-    final hasModels = app.openAiModels.isNotEmpty;
+    final models = _activeAiModels;
+    final hasModels = models.isNotEmpty;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: MenuAnchor(
@@ -2259,12 +2294,12 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         ),
         menuChildren: hasModels
-            ? app.openAiModels
+            ? models
                   .map(
                     (model) => MenuItemButton(
                       onPressed: () {
                         _aiModel.text = model;
-                        app.setAiConfig(_aiBase.text, model, _aiKey.text);
+                        _saveAiModel(model);
                         _aiModelMenu.close();
                       },
                       child: SizedBox(
@@ -2282,19 +2317,19 @@ class _SettingsPageState extends State<SettingsPage> {
         builder: (_, menuController, _) => TextField(
           controller: _aiModel,
           style: TextStyle(fontSize: 13, color: p.text),
-          onChanged: (_) {
-            app.setAiConfig(_aiBase.text, _aiModel.text, _aiKey.text);
-          },
+          onChanged: _saveAiModel,
           decoration: InputDecoration(
             labelText: context.l10n.settingsPageAiModelInputLabelText,
             labelStyle: TextStyle(fontSize: 11.5, color: p.muted),
             hintText: hasModels
                 ? context.l10n.settingsPageAiModelInputHintText
+                : app.engine == 'index'
+                ? AppState.defaultIndexModel
                 : context.l10n.settingsPageAiModelInputHintText2,
             hintStyle: TextStyle(fontSize: 12, color: p.dim),
             helperText: hasModels
                 ? context.l10n.settingsPageAiModelInputHelperText(
-                    (app.openAiModels.length).toString(),
+                    models.length.toString(),
                   )
                 : null,
             helperStyle: TextStyle(fontSize: 10.5, color: p.dim),

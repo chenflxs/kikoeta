@@ -25,6 +25,10 @@ void clearAllSettings() =>
 
 String rustPlatform() => RustLib.instance.api.crateApiSimpleRustPlatform();
 
+/// Android's default network changed, so subsequent HTTP requests need new connections.
+void notifyDefaultNetworkChanged() =>
+    RustLib.instance.api.crateApiSimpleNotifyDefaultNetworkChanged();
+
 /// 按服务器保存登录 token（本地 SQLite）
 Future<void> saveTokenForBase({required String base, required String token}) =>
     RustLib.instance.api.crateApiSimpleSaveTokenForBase(

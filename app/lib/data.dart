@@ -417,7 +417,7 @@ class AppState extends ChangeNotifier {
   bool lyricsLockedAndroid = false;
 
   // 翻译引擎
-  String engine = 'google'; // google / deepl / openai
+  String engine = 'google'; // google / microsoft / deepl / index / openai
   String translationTarget = 'zh-CN'; // ui / zh-CN / zh-TW / en
   String translationSource = 'auto'; // auto / ja / zh / en
   String get uiLanguage => AppLanguage.preference;
@@ -425,12 +425,10 @@ class AppState extends ChangeNotifier {
       ? AppLanguage.translationTarget
       : translationTarget;
   final List<String> openAiModels = [];
+  final List<String> indexModels = [];
   final Map<String, String> aiConfig = {'base': '', 'model': '', 'key': ''};
-  final Map<String, String> indexConfig = {
-    'base': 'https://index-translate.bilibili.com/v1',
-    'model': 'Index-Translate-35B-A3B',
-    'key': 'index',
-  };
+  static const defaultIndexModel = 'Index-Translate-35B-A3B';
+  String _indexModel = defaultIndexModel;
   String deeplKey = '';
 
   // Windows 关闭窗口后的行为
@@ -1336,12 +1334,17 @@ class AppState extends ChangeNotifier {
       } catch (_) {}
     }
     final indexRaw = SettingsStore.get('index_config');
+    _indexModel = defaultIndexModel;
     if (indexRaw != null && indexRaw.isNotEmpty) {
       try {
         final raw = jsonDecode(indexRaw) as Map<String, dynamic>;
-        indexConfig['base'] = raw['base'] as String? ?? indexConfig['base']!;
-        indexConfig['model'] = raw['model'] as String? ?? indexConfig['model']!;
-        indexConfig['key'] = raw['key'] as String? ?? indexConfig['key']!;
+        final model = raw['model'];
+        if (model is String && model.trim().isNotEmpty) {
+          _indexModel = model.trim();
+        }
+        if (raw.containsKey('base') || raw.containsKey('key')) {
+          _persistIndexModel();
+        }
       } catch (_) {}
     }
     final dk = SettingsStore.get('deepl_key');
@@ -1558,25 +1561,27 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Map<String, String> get activeAiConfig =>
-      engine == 'index' ? indexConfig : aiConfig;
+  Map<String, String> get activeAiConfig => engine == 'index'
+      ? {
+          'base': 'https://index-translate.bilibili.com/v1',
+          'model': _indexModel,
+          'key': '',
+        }
+      : aiConfig;
 
-  void setIndexConfig(String base, String model, String key) {
-    indexConfig['base'] = base;
-    indexConfig['model'] = model;
-    indexConfig['key'] = key;
-    SettingsStore.set(
-      'index_config',
-      jsonEncode({'base': base, 'model': model, 'key': key}),
-    );
+  void setIndexModel(String model) {
+    final trimmed = model.trim();
+    final normalized = trimmed.isEmpty ? defaultIndexModel : trimmed;
+    if (_indexModel == normalized) return;
+    _indexModel = normalized;
+    _persistIndexModel();
     notifyListeners();
   }
 
+  void _persistIndexModel() =>
+      SettingsStore.set('index_config', jsonEncode({'model': _indexModel}));
+
   void setAiConfig(String base, String model, String key) {
-    if (engine == 'index') {
-      setIndexConfig(base, model, key);
-      return;
-    }
     aiConfig['base'] = base;
     aiConfig['model'] = model;
     aiConfig['key'] = key;
@@ -2105,13 +2110,8 @@ class AppState extends ChangeNotifier {
     aiConfig
       ..clear()
       ..addAll({'base': '', 'model': '', 'key': ''});
-    indexConfig
-      ..clear()
-      ..addAll({
-        'base': 'https://index-translate.bilibili.com/v1',
-        'model': 'Index-Translate-35B-A3B',
-        'key': 'index',
-      });
+    _indexModel = defaultIndexModel;
+    indexModels.clear();
     deeplKey = '';
     sleepMode = 'after';
     sleepPlayEndArmed = false;

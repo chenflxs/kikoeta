@@ -1,0 +1,63 @@
+name: 问题反馈与功能建议
+description: 反馈 Kikoeta 的故障、使用问题，或提出功能建议。
+body:
+  - type: dropdown
+    id: category
+    attributes:
+      label: 反馈类型
+      options:
+        - 故障反馈
+        - 功能建议
+        - 使用问题
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: 涉及功能
+      multiple: true
+      options:
+        - 首页、搜索与作品详情
+        - 播放、下载与离线播放
+        - 收藏、历史与歌单
+        - 歌词显示、桌面与悬浮歌词
+        - 歌词库导入与远程歌词库
+        - 翻译与听写翻译
+        - 登录、自建站点与网络代理
+        - 安装、更新或其他
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题或建议
+      description: 请说明实际发生了什么、你原本期望什么，或你希望新增什么功能以及使用场景。
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤
+      description: 如能复现，可写出操作入口和步骤。涉及特定作品或文件时，可附上 RJ 号、曲目名、文件格式或目录结构。
+      placeholder: |
+        1. 从哪个页面进入
+        2. 进行哪些操作
+        3. 在哪一步出现问题，是否每次都能复现
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 使用环境
+      description: 可补充 Kikoeta 版本、系统版本和设备型号。若与内容来源或外部服务有关，也可写明是 asmr.one、自建站点还是本地下载，以及相关服务的版本。
+
+  - type: textarea
+    id: attachments
+    attributes:
+      label: 日志与附件
+      description: 可粘贴报错或相关日志片段，也可上传截图、录屏或能复现问题的示例文件。
+
+  - type: markdown
+    attributes:
+      value: |
+        **邮件补交附件**
+
+        如果日志、视频、问题文件等无法上传到 GitHub，请先提交 Issue，再将这些文件打包成压缩包（如 ZIP），作为附件发送至 [debug@elaina.us.kg](mailto:debug@elaina.us.kg)。请在邮件中附上 Issue 链接或编号，方便对应反馈。

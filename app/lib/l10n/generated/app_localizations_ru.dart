@@ -3175,4 +3175,28 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get favoritesSearchHint => 'Поиск по названию или номеру RJ';
+
+  @override
+  String get lyricsTranslate => 'Перевести субтитры';
+
+  @override
+  String get translatedSubtitleBadge => 'Перевод';
+
+  @override
+  String get lyricsTranslateDescription =>
+      'Использовать настройки перевода; сохранить в RJномер-ru';
+
+  @override
+  String lyricsTranslationProgress(int completed, int total) {
+    return 'Переведено строк: $completed/$total';
+  }
+
+  @override
+  String lyricsTranslationSaved(String path) {
+    return 'Перевод сохранён: $path';
+  }
+
+  @override
+  String get lyricsTranslationInvalidResponse =>
+      'В переводе есть пропущенные или пустые строки. Повторите попытку или смените движок перевода.';
 }

@@ -884,5 +884,11 @@
   "androidLyricsLockDescription": "鎖定後觸控穿透，橫直向共用",
   "homeRandomSort": "隨機排序",
   "favoritesSearch": "搜尋收藏作品",
-  "favoritesSearchHint": "搜尋標題或 RJ 編號"
+  "favoritesSearchHint": "搜尋標題或 RJ 編號",
+  "lyricsTranslate": "翻譯歌詞",
+  "translatedSubtitleBadge": "翻譯字幕",
+  "lyricsTranslateDescription": "使用翻譯設定，儲存至 RJ號-ru",
+  "lyricsTranslationProgress": "已翻譯 {completed}/{total} 行",
+  "lyricsTranslationSaved": "譯文已儲存：{path}",
+  "lyricsTranslationInvalidResponse": "翻譯結果缺行或為空，請重試或切換翻譯引擎。"
 }

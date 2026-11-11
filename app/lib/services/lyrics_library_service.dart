@@ -25,6 +25,7 @@ class LyricsLibraryRecord {
   final String workId;
   final String relativePath;
   final bool isAi;
+  final bool isTranslated;
   final bool online;
   final String remoteUrl;
   final int fileCount;
@@ -32,6 +33,7 @@ class LyricsLibraryRecord {
     required this.workId,
     required this.relativePath,
     this.isAi = false,
+    this.isTranslated = false,
     this.online = false,
     this.remoteUrl = '',
     this.fileCount = 0,
@@ -41,6 +43,7 @@ class LyricsLibraryRecord {
     'workId': workId,
     'relativePath': relativePath,
     'isAi': isAi,
+    if (isTranslated) 'isTranslated': true,
     'online': online,
     if (remoteUrl.isNotEmpty) 'remoteUrl': remoteUrl,
     if (online) 'fileCount': fileCount,
@@ -51,6 +54,11 @@ class LyricsLibraryRecord {
         workId: (json['workId'] as String? ?? '').toUpperCase(),
         relativePath: _normalizeRelative(json['relativePath'] as String? ?? ''),
         isAi: json['isAi'] == true,
+        isTranslated:
+            json['isTranslated'] == true ||
+            (json['relativePath'] as String? ?? '').toLowerCase().endsWith(
+              '-ru',
+            ),
         online: json['online'] == true || json['isOnline'] == true,
         remoteUrl: json['remoteUrl'] as String? ?? '',
         fileCount: json['fileCount'] is num
@@ -96,7 +104,7 @@ class LyricsTranslationInput {
 
 enum LyricsImportConflict { skip, overwrite, cancel }
 
-enum LyricsLibraryStatus { none, local, online, ai }
+enum LyricsLibraryStatus { none, local, online, ai, translated }
 
 class LyricsImportProgress {
   final String phase;
@@ -498,6 +506,7 @@ class LyricsLibraryService {
           workId: work.workId,
           relativePath: work.workId,
           isAi: work.isAi,
+          isTranslated: work.isTranslated,
           online: true,
           remoteUrl: url,
           fileCount: work.fileCount,
@@ -645,6 +654,7 @@ class LyricsLibraryService {
     );
     await stage.create(recursive: true);
     var hasAi = false;
+    var hasTranslated = false;
     try {
       for (final file in files) {
         final clean = _cleanRelative(file.relativePath);
@@ -653,10 +663,14 @@ class LyricsLibraryService {
             !supportedExtensions.contains(_extension(clean))) {
           continue;
         }
-        final target = File(_join(stage.path, clean));
+        final output = file.isTranslated && !clean.startsWith('$id-ru/')
+            ? '$id-ru/$clean'
+            : clean;
+        final target = File(_join(stage.path, output));
         await target.parent.create(recursive: true);
         await target.writeAsBytes(file.bytes, flush: true);
         hasAi = hasAi || file.isAi;
+        hasTranslated = hasTranslated || file.isTranslated;
       }
       if (!(await _containsSupportedFile(stage))) {
         throw FormatException(
@@ -675,6 +689,15 @@ class LyricsLibraryService {
       _records
         ..removeWhere((record) => record.workId == id)
         ..add(LyricsLibraryRecord(workId: id, relativePath: id, isAi: hasAi));
+      if (hasTranslated) {
+        _records.add(
+          LyricsLibraryRecord(
+            workId: id,
+            relativePath: '$id/$id-ru',
+            isTranslated: true,
+          ),
+        );
+      }
       await _save(changedWorkIds: {id});
       _notifyChanged();
     } finally {
@@ -752,6 +775,10 @@ class LyricsLibraryService {
     final discovered = <LyricsLibraryRecord>[];
     final discoveredPaths = <String>{};
     final onlineRecords = _records.where((record) => record.online).toList();
+    final existingTranslatedPaths = {
+      for (final record in _records)
+        if (!record.online && record.isTranslated) record.relativePath,
+    };
     final existingAiPaths = {
       for (final record in _records)
         if (!record.online)
@@ -799,6 +826,9 @@ class LyricsLibraryService {
             workId: workId,
             relativePath: rel,
             isAi: existingAiPaths['$workId\u0000$rel'] ?? false,
+            isTranslated:
+                existingTranslatedPaths.contains(rel) ||
+                rel.toLowerCase().endsWith('-ru'),
           ),
         );
       }
@@ -951,6 +981,7 @@ class LyricsLibraryService {
   ) async {
     _onFileScan?.call(id);
     final out = <LyricsLibraryFile>[];
+    final seen = <String>{};
     for (final record in records.where((r) => !r.online)) {
       final dir = Directory(_join(base, record.relativePath));
       if (!await dir.exists()) continue;
@@ -962,6 +993,7 @@ class LyricsLibraryService {
         final ext = _extension(entity.path);
         if (!supportedExtensions.contains(ext)) continue;
         final relative = _relative(base, entity.path);
+        if (!seen.add(relative)) continue;
         final title = entity.path.split(Platform.pathSeparator).last;
         out.add(
           LyricsLibraryFile(
@@ -987,6 +1019,9 @@ class LyricsLibraryService {
     await _load();
     final id = workId.toUpperCase();
     final records = _workRecords(id);
+    if (records.any((record) => record.isTranslated)) {
+      return LyricsLibraryStatus.translated;
+    }
     final localRecords = records.where((record) => !record.online);
     if (localRecords.isNotEmpty) {
       return localRecords.any((record) => record.isAi)
@@ -1012,10 +1047,24 @@ class LyricsLibraryService {
       files = await listFiles(workId: workId);
     }
     final candidates = files.map((f) => _candidate(f)).toList();
+    final translatedRoots = _workRecords(workId.toUpperCase())
+        .where((record) => record.isTranslated && !record.online)
+        .map((record) => '${record.relativePath}/')
+        .toList();
+    final translatedFiles = candidates
+        .where(
+          (file) =>
+              translatedRoots.any((root) => file.relativePath.startsWith(root)),
+        )
+        .toSet();
     candidates.sort((a, b) {
       final ma = _matchScore(a, trackTitle, trackPath);
       final mb = _matchScore(b, trackTitle, trackPath);
-      return mb.compareTo(ma);
+      final score = mb.compareTo(ma);
+      if (score != 0) return score;
+      return (translatedFiles.contains(b) ? 1 : 0).compareTo(
+        translatedFiles.contains(a) ? 1 : 0,
+      );
     });
     return candidates;
   }
@@ -1057,16 +1106,27 @@ class LyricsLibraryService {
     required String workId,
     required String relativePath,
     required String content,
+    bool isTranslated = false,
   }) async {
     final base = await root;
     final id = workId.toUpperCase();
     final clean = _cleanRelative(relativePath);
+    if (!_isWorkId(id) ||
+        clean.split('/').any((part) => part == '..' || part == '.')) {
+      throw ArgumentError(
+        appL10n.lyricsLibraryServiceSaveTranslatedLyricsArgumentError3,
+      );
+    }
     final target = File(_join(base, clean));
     await _load();
-    final workDirs = _workRecords(
-      id,
-    ).where((r) => !r.online).map((r) => _join(base, r.relativePath)).toList();
-    if (workDirs.isEmpty) workDirs.add(_join(base, id));
+    final workDirs = isTranslated
+        ? [_join(base, '$id-ru')]
+        : [
+            _join(base, id),
+            ..._workRecords(id)
+                .where((r) => !r.online && !r.isTranslated)
+                .map((r) => _join(base, r.relativePath)),
+          ];
     if (!workDirs.any((dir) => _isWithin(target.path, dir))) {
       throw ArgumentError(
         appL10n.lyricsLibraryServiceSaveTranslatedLyricsArgumentError3,
@@ -1083,7 +1143,15 @@ class LyricsLibraryService {
       );
     }
     await target.parent.create(recursive: true);
-    await target.writeAsString(content, flush: true);
+    final staging = File(
+      '${target.path}.${DateTime.now().microsecondsSinceEpoch}.tmp',
+    );
+    try {
+      await staging.writeAsString(content, flush: true);
+      await staging.rename(target.path);
+    } finally {
+      if (await staging.exists()) await staging.delete();
+    }
     final workDir = workDirs.firstWhere((dir) => _isWithin(target.path, dir));
     final relDir = _relative(base, workDir);
     final index = _records.indexWhere(
@@ -1092,7 +1160,8 @@ class LyricsLibraryService {
     final record = LyricsLibraryRecord(
       workId: id,
       relativePath: relDir,
-      isAi: true,
+      isAi: !isTranslated,
+      isTranslated: isTranslated,
     );
     if (index >= 0) {
       _records[index] = record;
@@ -1103,6 +1172,29 @@ class LyricsLibraryService {
     await _save(changedWorkIds: {id});
     _notifyChanged();
     return record;
+  }
+
+  /// Same nested track layout as KT output, with a separate translation root.
+  static String translationPath(String workId, String trackPath) {
+    final parts = trackPath
+        .replaceAll('\\', '/')
+        .split('/')
+        .where((part) => part.isNotEmpty && part != '.' && part != '..')
+        .map(
+          (part) => _shortenPathPart(
+            part
+                .replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '_')
+                .replaceAll(RegExp(r'[. ]+$'), ''),
+          ),
+        )
+        .where((part) => part.isNotEmpty)
+        .toList();
+    final leaf = parts.isEmpty ? 'track' : parts.removeLast();
+    return [
+      '${workId.toUpperCase()}-ru',
+      ...parts,
+      '${_fileStem(leaf)}.lrc',
+    ].join('/');
   }
 
   Future<void> importDirectory(
@@ -1124,7 +1216,8 @@ class LyricsLibraryService {
     if (!await sourceDir.exists()) return _LyricsImportResult({});
     final base = await root;
     final sourceName = sourceDir.path
-        .split(Platform.pathSeparator)
+        .replaceAll('\\', '/')
+        .split('/')
         .where((e) => e.isNotEmpty)
         .last;
     final sourceWorkId = _workIdFromName(sourceName);
@@ -1133,7 +1226,7 @@ class LyricsLibraryService {
       if (sourceWorkId != null) {
         await _copyTree(
           sourceDir,
-          Directory(_join(base, sourceWorkId)),
+          Directory(_join(base, _normalizedFolderName(sourceName))),
           conflict,
           onProgress: onProgress,
           touchedWorkIds: touched,
@@ -1162,25 +1255,31 @@ class LyricsLibraryService {
     final base = await root;
     final replacements = <LyricsLibraryRecord>[];
     for (final id in workIds) {
-      final dir = Directory(_join(base, id));
-      if (!await dir.exists() || !await _containsSupportedFile(dir)) continue;
       final previous = _workRecords(id);
-      replacements.add(
-        LyricsLibraryRecord(
-          workId: id,
-          relativePath: id,
-          isAi: previous.any(
-            (record) =>
-                !record.online && record.relativePath == id && record.isAi,
+      for (final relative in [id, '$id-ru']) {
+        final dir = Directory(_join(base, relative));
+        if (!await dir.exists() || !await _containsSupportedFile(dir)) continue;
+        replacements.add(
+          LyricsLibraryRecord(
+            workId: id,
+            relativePath: relative,
+            isAi: previous.any(
+              (record) =>
+                  !record.online &&
+                  record.relativePath == relative &&
+                  record.isAi,
+            ),
+            isTranslated: relative.endsWith('-ru'),
           ),
-        ),
-      );
+        );
+      }
     }
     final rootIds = replacements.map((record) => record.workId).toSet();
+    final paths = replacements.map((record) => record.relativePath).toSet();
     _records.removeWhere(
       (record) =>
           rootIds.contains(record.workId) &&
-          (record.online || record.relativePath == record.workId),
+          (record.online || paths.contains(record.relativePath)),
     );
     _records.addAll(replacements);
     await _save(changedWorkIds: workIds);
@@ -1201,7 +1300,7 @@ class LyricsLibraryService {
       if (workId != null) {
         await _copyTree(
           entity,
-          Directory(_join(target.path, workId)),
+          Directory(_join(target.path, _normalizedFolderName(name))),
           conflict,
           onProgress: onProgress,
           touchedWorkIds: touchedWorkIds,
@@ -1292,7 +1391,8 @@ class LyricsLibraryService {
     List<String> conflicts,
   ) async {
     final name = source.path
-        .split(Platform.pathSeparator)
+        .replaceAll('\\', '/')
+        .split('/')
         .where((e) => e.isNotEmpty)
         .last;
     final workId = _workIdFromName(name);
@@ -1312,7 +1412,9 @@ class LyricsLibraryService {
           for (var i = 0; i < parts.length; i++)
             _directoryImportPathPart(parts[i], directory: i < parts.length - 1),
         ].join('/');
-        final target = File(_join(base, '$workId/$outputPath'));
+        final target = File(
+          _join(base, '${_normalizedFolderName(name)}/$outputPath'),
+        );
         if (await target.exists()) conflicts.add(_relative(base, target.path));
       }
       return;
@@ -1653,7 +1755,11 @@ class LyricsLibraryService {
   }
 
   static String _normalizedFolderName(String name) {
-    return _workIdFromName(name) ?? name;
+    final id = _workIdFromName(name);
+    if (id != null && name.trim().toLowerCase() == '${id.toLowerCase()}-ru') {
+      return '$id-ru';
+    }
+    return id ?? name;
   }
 
   // Preflight and copying must map to the same destination. Only directory
@@ -1955,7 +2061,10 @@ class LyricsLibraryService {
       if (isFile && index == parts.length - 1) {
         return '$workId/${parts.last}';
       }
-      return [workId, ...parts.skip(index + 1)].join('/');
+      return [
+        _normalizedFolderName(parts[index]),
+        ...parts.skip(index + 1),
+      ].join('/');
     }
     if (isFile && _isLyricFile(clean) && workIds.length == 1) {
       return '${workIds.first}/$clean';

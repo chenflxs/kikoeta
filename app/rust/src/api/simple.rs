@@ -65,6 +65,12 @@ pub fn rust_platform() -> String {
     format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH)
 }
 
+/// Android's default network changed, so subsequent HTTP requests need new connections.
+#[flutter_rust_bridge::frb(sync)]
+pub fn notify_default_network_changed() {
+    super::http_client::default_network_changed();
+}
+
 /// 按服务器保存登录 token（本地 SQLite）
 pub fn save_token_for_base(base: &str, token: &str) -> Result<(), String> {
     let key = format!("token:{}", base);

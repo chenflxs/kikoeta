@@ -1,6 +1,7 @@
 //! Shared asynchronous HTTP clients. Authentication remains per request.
 
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use crate::api::simple;
@@ -13,6 +14,16 @@ const TRANSLATION_TIMEOUT: Duration = Duration::from_secs(30);
 static API_CLIENT: ClientPool = ClientPool::new(API_USER_AGENT, API_TIMEOUT);
 static TRANSLATION_CLIENT: ClientPool =
     ClientPool::new(TRANSLATION_USER_AGENT, TRANSLATION_TIMEOUT);
+static NETWORK_GENERATION: AtomicUsize = AtomicUsize::new(0);
+
+pub(super) fn network_generation() -> usize {
+    NETWORK_GENERATION.load(Ordering::Relaxed)
+}
+
+pub(super) fn default_network_changed() {
+    // The next request gets a new pool. Existing requests own client clones.
+    NETWORK_GENERATION.fetch_add(1, Ordering::Relaxed);
+}
 
 pub(super) fn api_client() -> Result<reqwest::Client, String> {
     API_CLIENT.client_for_proxy(simple::http_proxy_config())
@@ -23,7 +34,7 @@ pub(super) fn translation_client() -> Result<reqwest::Client, String> {
 }
 
 pub(super) struct ClientPool {
-    cached: Mutex<Option<(Option<String>, reqwest::Client)>>,
+    cached: Mutex<Option<(Option<String>, usize, reqwest::Client)>>,
     user_agent: &'static str,
     timeout: Duration,
     #[cfg(test)]
@@ -51,8 +62,9 @@ impl ClientPool {
             .and_then(|url| reqwest::Proxy::all(&url).ok().map(|proxy| (url, proxy)));
         let key = proxy.as_ref().map(|(url, _)| url.clone());
         let mut cached = self.cached.lock().map_err(|e| e.to_string())?;
-        if let Some((cached_proxy, client)) = cached.as_ref() {
-            if *cached_proxy == key {
+        let generation = network_generation();
+        if let Some((cached_proxy, cached_generation, client)) = cached.as_ref() {
+            if *cached_proxy == key && *cached_generation == generation {
                 return Ok(client.clone());
             }
         }
@@ -70,7 +82,7 @@ impl ClientPool {
             .build()
             .map_err(|e| format!("创建 HTTP 客户端失败: {e}"))?;
         // Running requests keep clones of the previous client and its pool.
-        *cached = Some((key, client.clone()));
+        *cached = Some((key, generation, client.clone()));
         Ok(client)
     }
 

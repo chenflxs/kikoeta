@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
                     default_rust_auto_opaque = RustAutoOpaqueMoi,
                 );
                 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-                pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -188842808;
+                pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 100510428;
             
 
 // Section: executor
@@ -533,6 +533,14 @@ let api_api_key = <String>::sse_decode(&mut deserializer);deserializer.end(); mo
                          let output_ok = Result::<_,()>::Ok({ crate::api::simple::init_app(); })?;   Ok(output_ok)
                     })())
                 } })
+            }fn wire__crate__api__simple__notify_default_network_changed_impl(ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+                FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "notify_default_network_changed", port: None, mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync }, move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+                transform_result_sse::<_, ()>((move || {
+                     let output_ok = Result::<_,()>::Ok({ crate::api::simple::notify_default_network_changed(); })?;   Ok(output_ok)
+                })()) })
             }fn wire__crate__api__simple__open_settings_impl(ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
                 FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "open_settings", port: None, mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync }, move || { 
             let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
@@ -751,9 +759,9 @@ return crate::api::textcodec::DecodedText{encoding: var_encoding, text: var_text
 39 => wire__crate__api__translate__api_translate_test_impl(port, ptr, rust_vec_len, data_len),
 44 => wire__crate__api__simple__http_proxy_config_impl(port, ptr, rust_vec_len, data_len),
 45 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
-47 => wire__crate__api__proxy__proxy_port_impl(port, ptr, rust_vec_len, data_len),
-49 => wire__crate__api__simple__save_token_for_base_impl(port, ptr, rust_vec_len, data_len),
-51 => wire__crate__api__simple__token_for_base_impl(port, ptr, rust_vec_len, data_len),
+48 => wire__crate__api__proxy__proxy_port_impl(port, ptr, rust_vec_len, data_len),
+50 => wire__crate__api__simple__save_token_for_base_impl(port, ptr, rust_vec_len, data_len),
+52 => wire__crate__api__simple__token_for_base_impl(port, ptr, rust_vec_len, data_len),
                         _ => unreachable!(),
                     }
                 }
@@ -773,9 +781,10 @@ return crate::api::textcodec::DecodedText{encoding: var_encoding, text: var_text
 41 => wire__crate__api__simple__get_setting_impl(ptr, rust_vec_len, data_len),
 42 => wire__crate__api__simple__get_token_impl(ptr, rust_vec_len, data_len),
 43 => wire__crate__api__simple__greet_impl(ptr, rust_vec_len, data_len),
-46 => wire__crate__api__simple__open_settings_impl(ptr, rust_vec_len, data_len),
-48 => wire__crate__api__simple__rust_platform_impl(ptr, rust_vec_len, data_len),
-50 => wire__crate__api__simple__set_setting_impl(ptr, rust_vec_len, data_len),
+46 => wire__crate__api__simple__notify_default_network_changed_impl(ptr, rust_vec_len, data_len),
+47 => wire__crate__api__simple__open_settings_impl(ptr, rust_vec_len, data_len),
+49 => wire__crate__api__simple__rust_platform_impl(ptr, rust_vec_len, data_len),
+51 => wire__crate__api__simple__set_setting_impl(ptr, rust_vec_len, data_len),
                         _ => unreachable!(),
                     }
                 }

@@ -87,9 +87,10 @@ class LyricsOverlay(
         }.getOrNull()
     }
 
-    // 当前窗口坐标（CENTER_HORIZONTAL 下 x 为相对水平中心的偏移）
+    // 坐标随悬浮窗实例保留，切歌时临时隐藏后重新挂载也使用同一位置。
+    // CENTER_HORIZONTAL 下 x 为相对水平中心的偏移。
     private var winX = 0
-    private var winY = 0
+    private var winY = dp(90)
     // 拖动状态
     private var touchStartX = 0f
     private var touchStartY = 0f
@@ -195,9 +196,6 @@ class LyricsOverlay(
         textView?.setTextColor(this.color)
         textView?.setShadowLayer(this.outlineWidth, 0f, 0f, this.outlineColor)
         if (!visible) {
-            // 仅首次显示时初始化位置；之后歌词行更新不重置拖动位置
-            winX = 0
-            winY = dp(90)
             constrainPosition()
             wm.addView(root, params())
             visible = true

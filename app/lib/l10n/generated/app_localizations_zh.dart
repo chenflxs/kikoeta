@@ -2966,6 +2966,28 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get favoritesSearchHint => '搜索标题或 RJ 号';
+
+  @override
+  String get lyricsTranslate => '翻译歌词';
+
+  @override
+  String get translatedSubtitleBadge => '翻译字幕';
+
+  @override
+  String get lyricsTranslateDescription => '使用翻译设置，保存到 RJ号-ru';
+
+  @override
+  String lyricsTranslationProgress(int completed, int total) {
+    return '已翻译 $completed/$total 行';
+  }
+
+  @override
+  String lyricsTranslationSaved(String path) {
+    return '译文已保存：$path';
+  }
+
+  @override
+  String get lyricsTranslationInvalidResponse => '翻译结果缺行或为空，请重试或切换翻译引擎。';
 }
 
 /// The translations for Chinese, as used in China (`zh_CN`).
@@ -5936,4 +5958,26 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get favoritesSearchHint => '搜尋標題或 RJ 編號';
+
+  @override
+  String get lyricsTranslate => '翻譯歌詞';
+
+  @override
+  String get translatedSubtitleBadge => '翻譯字幕';
+
+  @override
+  String get lyricsTranslateDescription => '使用翻譯設定，儲存至 RJ號-ru';
+
+  @override
+  String lyricsTranslationProgress(int completed, int total) {
+    return '已翻譯 $completed/$total 行';
+  }
+
+  @override
+  String lyricsTranslationSaved(String path) {
+    return '譯文已儲存：$path';
+  }
+
+  @override
+  String get lyricsTranslationInvalidResponse => '翻譯結果缺行或為空，請重試或切換翻譯引擎。';
 }

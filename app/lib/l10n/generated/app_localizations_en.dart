@@ -3155,4 +3155,28 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get favoritesSearchHint => 'Search titles or RJ codes';
+
+  @override
+  String get lyricsTranslate => 'Translate lyrics';
+
+  @override
+  String get translatedSubtitleBadge => 'Translated subs';
+
+  @override
+  String get lyricsTranslateDescription =>
+      'Use translation settings; save to RJ number-ru';
+
+  @override
+  String lyricsTranslationProgress(int completed, int total) {
+    return 'Translated $completed/$total lines';
+  }
+
+  @override
+  String lyricsTranslationSaved(String path) {
+    return 'Translation saved: $path';
+  }
+
+  @override
+  String get lyricsTranslationInvalidResponse =>
+      'The translation has missing or empty lines. Retry or switch translation engines.';
 }

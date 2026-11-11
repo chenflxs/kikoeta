@@ -3016,4 +3016,27 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get favoritesSearchHint => 'タイトルまたはRJ番号で検索';
+
+  @override
+  String get lyricsTranslate => '歌詞を翻訳';
+
+  @override
+  String get translatedSubtitleBadge => '翻訳字幕';
+
+  @override
+  String get lyricsTranslateDescription => '翻訳設定を使用し、RJ番号-ru に保存';
+
+  @override
+  String lyricsTranslationProgress(int completed, int total) {
+    return '$completed/$total 行を翻訳済み';
+  }
+
+  @override
+  String lyricsTranslationSaved(String path) {
+    return '翻訳を保存しました：$path';
+  }
+
+  @override
+  String get lyricsTranslationInvalidResponse =>
+      '翻訳結果に欠落または空行があります。再試行するか翻訳エンジンを変更してください。';
 }

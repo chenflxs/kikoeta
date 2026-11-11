@@ -416,6 +416,10 @@ class _LyricsStatusBadgeState extends State<LyricsStatusBadge> {
       builder: (context, snapshot) {
         final localStatus = snapshot.data ?? LyricsLibraryStatus.none;
         final (label, color) = switch (localStatus) {
+          LyricsLibraryStatus.translated => (
+            context.l10n.translatedSubtitleBadge,
+            p.accent,
+          ),
           LyricsLibraryStatus.ai => (
             context.l10n.widgetsBuildBuilder,
             p.accent,

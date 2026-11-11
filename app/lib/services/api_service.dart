@@ -1347,13 +1347,13 @@ class ApiService {
 
   static List<LyricLine> parseLrc(String text) {
     final lines = <LyricLine>[];
-    final re = RegExp(r'\[(\d{1,2}):(\d{1,2})(?:[.:](\d{1,3}))?\]');
+    final re = RegExp(r'\[(\d+):(\d{1,2})(?:[.:](\d{1,3}))?\]');
     for (final raw in text.split('\n')) {
       final line = raw.trim();
       if (line.isEmpty) continue;
       final matches = re.allMatches(line).toList();
       if (matches.isEmpty) continue;
-      final content = line.substring(line.lastIndexOf(']') + 1).trim();
+      final content = line.substring(matches.last.end).trim();
       for (final m in matches) {
         final mm = int.parse(m.group(1)!);
         final ss = int.parse(m.group(2)!);

@@ -884,5 +884,11 @@
   "androidLyricsLockDescription": "При блокировке касания проходят сквозь текст; одинаково для обеих ориентаций",
   "homeRandomSort": "Случайный порядок",
   "favoritesSearch": "Поиск в избранном",
-  "favoritesSearchHint": "Поиск по названию или номеру RJ"
+  "favoritesSearchHint": "Поиск по названию или номеру RJ",
+  "lyricsTranslate": "Перевести субтитры",
+  "translatedSubtitleBadge": "Перевод",
+  "lyricsTranslateDescription": "Использовать настройки перевода; сохранить в RJномер-ru",
+  "lyricsTranslationProgress": "Переведено строк: {completed}/{total}",
+  "lyricsTranslationSaved": "Перевод сохранён: {path}",
+  "lyricsTranslationInvalidResponse": "В переводе есть пропущенные или пустые строки. Повторите попытку или смените движок перевода."
 }

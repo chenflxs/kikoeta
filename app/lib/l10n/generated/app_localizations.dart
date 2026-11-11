@@ -5439,6 +5439,42 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'搜索标题或 RJ 号'**
   String get favoritesSearchHint;
+
+  /// No description provided for @lyricsTranslate.
+  ///
+  /// In zh, this message translates to:
+  /// **'翻译歌词'**
+  String get lyricsTranslate;
+
+  /// No description provided for @translatedSubtitleBadge.
+  ///
+  /// In zh, this message translates to:
+  /// **'翻译字幕'**
+  String get translatedSubtitleBadge;
+
+  /// No description provided for @lyricsTranslateDescription.
+  ///
+  /// In zh, this message translates to:
+  /// **'使用翻译设置，保存到 RJ号-ru'**
+  String get lyricsTranslateDescription;
+
+  /// No description provided for @lyricsTranslationProgress.
+  ///
+  /// In zh, this message translates to:
+  /// **'已翻译 {completed}/{total} 行'**
+  String lyricsTranslationProgress(int completed, int total);
+
+  /// No description provided for @lyricsTranslationSaved.
+  ///
+  /// In zh, this message translates to:
+  /// **'译文已保存：{path}'**
+  String lyricsTranslationSaved(String path);
+
+  /// No description provided for @lyricsTranslationInvalidResponse.
+  ///
+  /// In zh, this message translates to:
+  /// **'翻译结果缺行或为空，请重试或切换翻译引擎。'**
+  String get lyricsTranslationInvalidResponse;
 }
 
 class _AppLocalizationsDelegate
