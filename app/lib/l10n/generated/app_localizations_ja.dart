@@ -1743,6 +1743,18 @@ class AppLocalizationsJa extends AppLocalizations {
   String get translationTargetTraditionalChinese => '繁体字中国語';
 
   @override
+  String get translationTargetRussian => 'ロシア語';
+
+  @override
+  String get translationTargetCustom => 'カスタム言語';
+
+  @override
+  String get translationTargetCodeHint => '例：fr または pt-BR';
+
+  @override
+  String get translationTargetCodeInvalid => '有効な言語コードを入力してください';
+
+  @override
   String get settingsPageSectionsText9 => 'カスタムサイトを追加';
 
   @override

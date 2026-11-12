@@ -28,6 +28,7 @@ import '../widgets/playback_seek_seconds_control.dart';
 import '../widgets/data_sync_settings.dart';
 import '../l10n/strings.dart';
 import '../l10n/app_language.dart';
+import '../l10n/translation_language.dart';
 
 class SettingsPage extends StatefulWidget {
   final AppState app;
@@ -117,9 +118,11 @@ class _SettingsPageState extends State<SettingsPage> {
 
   String _translationTargetLabel(String code) => switch (code) {
     'ui' => context.l10n.followInterfaceLanguage,
+    'zh-CN' => context.l10n.simplifiedChineseShort,
     'zh-TW' => context.l10n.traditionalChineseShort,
     'en' => context.l10n.englishLanguage,
-    _ => context.l10n.simplifiedChineseShort,
+    'ru' => context.l10n.translationTargetRussian,
+    _ => code,
   };
 
   void _onAppChanged() {
@@ -603,9 +606,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     title: context.l10n.translationTargetLanguage,
                     sub: context.l10n.settingsPageSectionsSub11(
                       _translationSourceLabel(app.translationSource),
-                      (_translationTargetLabel(
-                        app.translationTarget,
-                      )).toString(),
+                      _translationTargetLabel(app.translationTarget),
                     ),
                     trailing: _translationTargetDropdown(),
                     showDivider: false,
@@ -2060,13 +2061,14 @@ class _SettingsPageState extends State<SettingsPage> {
       'zh-CN': context.l10n.translationTargetSimplifiedChinese,
       'zh-TW': context.l10n.translationTargetTraditionalChinese,
       'en': context.l10n.englishLanguage,
+      'ru': context.l10n.translationTargetRussian,
     };
-    final selectedLabel = switch (app.translationTarget) {
+    final target = app.translationTarget;
+    final isCustom = !labels.containsKey(target);
+    final selectedLabel = switch (target) {
       'ui' => context.l10n.followInterfaceLanguageShort,
-      'zh-CN' => 'ZH-CN',
-      'zh-TW' => 'ZH-TW',
-      'en' => 'EN',
-      _ => labels[app.translationTarget]!,
+      'zh-CN' || 'zh-TW' || 'en' || 'ru' => target.toUpperCase(),
+      _ => target,
     };
     return _translationDropdown(
       label: selectedLabel,
@@ -2078,15 +2080,83 @@ class _SettingsPageState extends State<SettingsPage> {
           (e) => PopupMenuItem(
             value: e.key,
             height: 42,
-            child: MenuItem(
-              label: e.value,
-              selected: app.translationTarget == e.key,
-            ),
+            child: MenuItem(label: e.value, selected: target == e.key),
+          ),
+        ),
+        PopupMenuItem(
+          value: 'custom',
+          height: 42,
+          child: MenuItem(
+            label: context.l10n.translationTargetCustom,
+            selected: isCustom,
           ),
         ),
       ],
-      onSelected: app.setTranslationTarget,
+      onSelected: (value) {
+        if (value == 'custom') {
+          _editTranslationTarget(isCustom ? target : '');
+        } else {
+          app.setTranslationTarget(value);
+        }
+      },
     );
+  }
+
+  Future<void> _editTranslationTarget(String initialValue) async {
+    final l10n = context.l10n;
+    final colors = p;
+    final form = GlobalKey<FormState>();
+    String? code;
+    final target = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        void submit() {
+          final state = form.currentState!;
+          if (!state.validate()) return;
+          state.save();
+          Navigator.pop(ctx, code);
+        }
+
+        return AlertDialog(
+          backgroundColor: colors.surface,
+          title: Text(l10n.translationTargetCustom),
+          content: Form(
+            key: form,
+            child: TextFormField(
+              initialValue: initialValue,
+              autofocus: true,
+              autocorrect: false,
+              textInputAction: TextInputAction.done,
+              style: TextStyle(fontSize: 13, color: colors.text),
+              decoration: InputDecoration(
+                hintText: l10n.translationTargetCodeHint,
+                hintStyle: TextStyle(fontSize: 13, color: colors.dim),
+                filled: true,
+                fillColor: colors.surface2,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(11),
+                ),
+              ),
+              validator: (value) =>
+                  TranslationLanguage.normalizeCode(value) == null
+                  ? l10n.translationTargetCodeInvalid
+                  : null,
+              onSaved: (value) =>
+                  code = TranslationLanguage.normalizeCode(value),
+              onFieldSubmitted: (_) => submit(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(l10n.cancel),
+            ),
+            TextButton(onPressed: submit, child: Text(l10n.save)),
+          ],
+        );
+      },
+    );
+    if (mounted && target != null) app.setTranslationTarget(target);
   }
 
   String _translationSourceLabel(String code) => switch (code) {

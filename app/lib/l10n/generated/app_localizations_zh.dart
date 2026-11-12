@@ -1719,6 +1719,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get translationTargetTraditionalChinese => '繁体中文';
 
   @override
+  String get translationTargetRussian => '俄语';
+
+  @override
+  String get translationTargetCustom => '自定义语言';
+
+  @override
+  String get translationTargetCodeHint => '例如 fr 或 pt-BR';
+
+  @override
+  String get translationTargetCodeInvalid => '请输入有效的语言代码';
+
+  @override
   String get settingsPageSectionsText9 => '添加自建站点';
 
   @override
@@ -4729,6 +4741,18 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get translationTargetTraditionalChinese => '繁體中文';
+
+  @override
+  String get translationTargetRussian => '俄語';
+
+  @override
+  String get translationTargetCustom => '自訂語言';
+
+  @override
+  String get translationTargetCodeHint => '例如 fr 或 pt-BR';
+
+  @override
+  String get translationTargetCodeInvalid => '請輸入有效的語言代碼';
 
   @override
   String get settingsPageSectionsText9 => '新增自建站台';

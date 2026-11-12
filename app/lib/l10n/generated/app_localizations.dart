@@ -3226,6 +3226,30 @@ abstract class AppLocalizations {
   /// **'繁体中文'**
   String get translationTargetTraditionalChinese;
 
+  /// No description provided for @translationTargetRussian.
+  ///
+  /// In zh, this message translates to:
+  /// **'俄语'**
+  String get translationTargetRussian;
+
+  /// No description provided for @translationTargetCustom.
+  ///
+  /// In zh, this message translates to:
+  /// **'自定义语言'**
+  String get translationTargetCustom;
+
+  /// No description provided for @translationTargetCodeHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'例如 fr 或 pt-BR'**
+  String get translationTargetCodeHint;
+
+  /// No description provided for @translationTargetCodeInvalid.
+  ///
+  /// In zh, this message translates to:
+  /// **'请输入有效的语言代码'**
+  String get translationTargetCodeInvalid;
+
   /// pages/settings_page.dart: sections
   ///
   /// In zh, this message translates to:

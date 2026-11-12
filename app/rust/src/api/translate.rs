@@ -12,10 +12,13 @@ fn translation_prompt(source_language: &str, target_language: &str) -> String {
         _ => "自动识别语言的",
     };
     let language = match target_language.trim() {
-        "zh-TW" => "繁体中文",
+        "zh-TW" | "zh-Hant" => "繁体中文",
+        "zh-CN" | "zh-Hans" | "zh" => "简体中文",
         "en" => "English",
         "ja" => "日文",
         "ru" => "俄文",
+        code if !code.is_empty()
+            && code.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-') => code,
         _ => "简体中文",
     };
     format!(

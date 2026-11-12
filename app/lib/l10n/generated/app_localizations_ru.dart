@@ -1818,6 +1818,18 @@ class AppLocalizationsRu extends AppLocalizations {
   String get translationTargetTraditionalChinese => 'Китайский (традиционный)';
 
   @override
+  String get translationTargetRussian => 'Русский';
+
+  @override
+  String get translationTargetCustom => 'Другой язык';
+
+  @override
+  String get translationTargetCodeHint => 'Например, fr или pt-BR';
+
+  @override
+  String get translationTargetCodeInvalid => 'Введите допустимый код языка';
+
+  @override
   String get settingsPageSectionsText9 => 'Добавить свой сайт';
 
   @override

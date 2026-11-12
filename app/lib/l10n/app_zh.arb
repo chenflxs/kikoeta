@@ -2142,6 +2142,10 @@
   "followInterfaceLanguageShort": "跟随界面",
   "translationTargetSimplifiedChinese": "简体中文",
   "translationTargetTraditionalChinese": "繁体中文",
+  "translationTargetRussian": "俄语",
+  "translationTargetCustom": "自定义语言",
+  "translationTargetCodeHint": "例如 fr 或 pt-BR",
+  "translationTargetCodeInvalid": "请输入有效的语言代码",
   "@followInterfaceLanguage": {
     "description": "pages/settings_page.dart: _translationTargetLabel"
   },

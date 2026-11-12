@@ -8,6 +8,7 @@ import 'services/android_audio.dart';
 import 'services/app_log.dart';
 import 'services/audio_effects.dart';
 import 'l10n/app_language.dart';
+import 'l10n/translation_language.dart';
 import 'l10n/tag_names.dart';
 import 'services/player_service.dart';
 import 'services/settings_store.dart';
@@ -421,7 +422,7 @@ class AppState extends ChangeNotifier {
 
   // 翻译引擎
   String engine = 'google'; // google / microsoft / deepl / index / openai
-  String translationTarget = 'zh-CN'; // ui / zh-CN / zh-TW / en
+  String translationTarget = 'zh-CN'; // ui or a language tag
   String translationSource = 'auto'; // auto / ja / zh / en
   String get uiLanguage => AppLanguage.preference;
   String get resolvedTranslationTarget => translationTarget == 'ui'
@@ -1366,11 +1367,11 @@ class AppState extends ChangeNotifier {
         const ['auto', 'ja', 'zh', 'en'].contains(translationSource)
         ? translationSource!
         : 'auto';
-    final translationTarget = SettingsStore.get('translation_target');
-    if (translationTarget != null &&
-        const ['ui', 'zh-CN', 'zh-TW', 'en'].contains(translationTarget)) {
-      this.translationTarget = translationTarget;
-    }
+    translationTarget =
+        TranslationLanguage.normalizeSetting(
+          SettingsStore.get('translation_target'),
+        ) ??
+        'zh-CN';
     final tray = SettingsStore.get('keep_tray_on_close');
     if (tray != null) keepTrayOnClose = tray == '1';
     final se = SettingsStore.get('sleep_end_at');
@@ -1492,9 +1493,10 @@ class AppState extends ChangeNotifier {
   }
 
   void setTranslationTarget(String value) {
-    if (!const ['ui', 'zh-CN', 'zh-TW', 'en'].contains(value)) return;
-    translationTarget = value;
-    _writeLanguageSetting('translation_target', value);
+    final target = TranslationLanguage.normalizeSetting(value);
+    if (target == null || target == translationTarget) return;
+    translationTarget = target;
+    _writeLanguageSetting('translation_target', target);
     notifyListeners();
   }
 

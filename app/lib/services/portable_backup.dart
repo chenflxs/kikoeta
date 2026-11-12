@@ -4,6 +4,8 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 
+import '../l10n/translation_language.dart';
+
 /// Explicit portable scope. Never copy the database, tokens, credentials,
 /// downloads, lyric files/indexes, caches, or a device's active playback queue.
 class PortableBackup {
@@ -396,7 +398,6 @@ class PortableBackup {
     const choices = {
       'theme': ['system', 'light', 'dark'],
       'ui_language': ['system', 'zh-CN', 'zh-TW', 'en'],
-      'translation_target': ['ui', 'zh-CN', 'zh-TW', 'en'],
       'translation_source': ['auto', 'ja', 'zh', 'en'],
       'audio_channel_mode': ['stereo', 'swap', 'mono'],
       'initial_path_behavior': ['auto', 'root'],
@@ -406,6 +407,10 @@ class PortableBackup {
     };
     for (final entry in choices.entries) {
       if (!entry.value.contains(values[entry.key])) invalid();
+    }
+    if (TranslationLanguage.normalizeSetting(values['translation_target']) ==
+        null) {
+      invalid();
     }
   }
 }

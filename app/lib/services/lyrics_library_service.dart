@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart';
 
 import '../data.dart';
 import '../l10n/app_language.dart';
+import '../l10n/translation_language.dart';
 import 'api_service.dart';
 import 'app_paths.dart';
 import 'settings_store.dart';
@@ -1235,13 +1236,15 @@ class LyricsLibraryService {
     String trackPath, {
     required String targetLanguage,
   }) {
-    final directory = translatedDirectoryName(
-      workId,
-      '$workId-$targetLanguage',
-    );
-    if (directory == null) {
+    final code = TranslationLanguage.normalizeCode(targetLanguage);
+    if (code == null) {
       throw ArgumentError.value(targetLanguage, 'targetLanguage');
     }
+    final knownSuffix = _translatedSuffixes[code.toLowerCase()];
+    final suffix = knownSuffix == null || knownSuffix == 'tl'
+        ? 'tl-$code'
+        : knownSuffix;
+    final directory = '${workId.toUpperCase()}-$suffix';
     final parts = trackPath
         .replaceAll('\\', '/')
         .split('/')
@@ -1779,10 +1782,12 @@ class LyricsLibraryService {
     for (final folder in parts.reversed) {
       final translated = translatedDirectoryName(file.workId, folder);
       if (translated != null) {
-        return translated.substring(file.workId.length + 1);
+        final suffix = translated.substring(file.workId.length + 1);
+        if (suffix.startsWith('tl-')) return suffix.substring(3);
+        return suffix == 'tl' ? 'und' : suffix;
       }
     }
-    return file.isTranslated ? 'tl' : null;
+    return file.isTranslated ? 'und' : null;
   }
 
   int _matchScore(LyricsLibraryFile file, String? path) {
@@ -1823,14 +1828,18 @@ class LyricsLibraryService {
     return translatedDirectoryName(id, name) ?? id;
   }
 
-  /// Recognize only known language suffixes, so names such as RJ123-ai stay
-  /// ordinary work directories. Keep conventional casing for language tags.
+  /// Custom targets use an explicit tl- prefix so folders such as RJ123-ai
+  /// keep their existing meaning.
   static String? translatedDirectoryName(String workId, String name) {
     final prefix = '${workId.toLowerCase()}-';
     final normalized = name.trim().toLowerCase();
     if (!normalized.startsWith(prefix)) return null;
-    final suffix = _translatedSuffixes[normalized.substring(prefix.length)];
-    return suffix == null ? null : '${workId.toUpperCase()}-$suffix';
+    final suffix = normalized.substring(prefix.length);
+    final knownSuffix = _translatedSuffixes[suffix];
+    if (knownSuffix != null) return '${workId.toUpperCase()}-$knownSuffix';
+    if (!suffix.startsWith('tl-')) return null;
+    final code = TranslationLanguage.normalizeCode(suffix.substring(3));
+    return code == null ? null : '${workId.toUpperCase()}-tl-$code';
   }
 
   // Preflight and copying must map to the same destination. Only directory

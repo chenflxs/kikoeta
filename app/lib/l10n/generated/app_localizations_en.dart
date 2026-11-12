@@ -1803,6 +1803,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get translationTargetTraditionalChinese => 'Traditional Chinese';
 
   @override
+  String get translationTargetRussian => 'Russian';
+
+  @override
+  String get translationTargetCustom => 'Custom language';
+
+  @override
+  String get translationTargetCodeHint => 'For example, fr or pt-BR';
+
+  @override
+  String get translationTargetCodeInvalid => 'Enter a valid language code';
+
+  @override
   String get settingsPageSectionsText9 => 'Add custom site';
 
   @override

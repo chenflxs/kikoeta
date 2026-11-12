@@ -1277,6 +1277,7 @@ class ApiService {
       'eng' || 'english' || '英文' || '英语' => 'en',
       'jp' || 'jpn' || '日本語' || '日语' || '日文' => 'ja',
       'kr' => 'ko',
+      'tl' => 'und',
       _ => tag?.split('-').first,
     };
   }
@@ -1291,12 +1292,16 @@ class ApiService {
       name.trim().toLowerCase(),
       _lyricExtensions,
     );
+    final directoryTag = directoryLanguage?.toLowerCase();
     final tag =
         _lyricLanguage(stem) ??
         _lyricLanguage(_stripKnownExtension(stem, _audioExtensions)) ??
-        directoryLanguage?.toLowerCase();
-    if (tag == target && tag != 'tl') return 3;
+        (directoryTag != null && directoryTag.startsWith('zh-')
+            ? _lyricLanguage('work-$directoryTag') ?? directoryTag
+            : directoryTag);
+    if (tag == target && tag != 'und') return 3;
     if (tag == 'zh' && target.startsWith('zh-')) return 2;
+    if (!target.contains('-') && tag?.startsWith('$target-') == true) return 2;
     return tag == null ? 1 : 0;
   }
 
