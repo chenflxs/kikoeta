@@ -56,24 +56,15 @@ Future<void> main() async {
   StartupTrace.initialize();
   await StartupTrace.stage('settings', SettingsStore.init);
   AppLog.setEnabled(SettingsStore.get(AppLog.settingKey) == '1');
-  final flutterOnError = FlutterError.onError;
-  FlutterError.onError = (details) {
-    AppLog.record('flutter framework error', error: details.exception);
-    flutterOnError?.call(details);
-  };
-  final dispatcher = ui.PlatformDispatcher.instance;
-  final platformOnError = dispatcher.onError;
-  dispatcher.onError = (error, stack) {
-    AppLog.record('dart unhandled error', error: error);
-    return platformOnError?.call(error, stack) ?? false;
-  };
+  AppLog.installFlutterHooks();
   AndroidNetwork.init();
   await StartupTrace.stage('downloads', DownloadManager.instance.init);
   await StartupTrace.stage('state', appState.loadFromRust);
   if (appState.lyricsLibraryBroadcastOn) {
     try {
       await LyricsLibraryBroadcastService.instance.start();
-    } catch (_) {
+    } catch (error, stack) {
+      AppLog.recordError('lyrics library broadcast startup', error, stack);
       appState.setLyricsLibraryBroadcastOn(false);
     }
   }

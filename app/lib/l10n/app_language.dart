@@ -71,11 +71,16 @@ class AppLanguage {
   static Locale get resolvedLocale =>
       resolveLocale(PlatformDispatcher.instance.locales);
 
-  static String get translationTarget {
-    final locale = resolvedLocale;
+  static String get translationTarget => _translationTag(resolvedLocale);
+
+  static String get systemTranslationTag =>
+      _translationTag(WidgetsBinding.instance.platformDispatcher.locale);
+
+  static String _translationTag(Locale locale) {
     if (locale.languageCode == 'zh') {
-      return locale.scriptCode == 'Hant' ||
-              const ['TW', 'HK', 'MO'].contains(locale.countryCode)
+      return (locale.scriptCode == 'Hant' ||
+              (locale.scriptCode == null &&
+                  const ['TW', 'HK', 'MO'].contains(locale.countryCode)))
           ? 'zh-TW'
           : 'zh-CN';
     }

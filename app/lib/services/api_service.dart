@@ -1,15 +1,13 @@
 import 'dart:convert';
 import 'dart:ui' show Locale;
 
-import 'package:flutter/foundation.dart';
-
 import '../data.dart';
+import '../l10n/app_language.dart';
 import '../src/rust/api/kikoeru_api.dart';
 import '../src/rust/api/simple.dart';
 import '../src/rust/api/textcodec.dart';
 import '../l10n/strings.dart';
 import '../l10n/tag_names.dart';
-import 'app_log.dart';
 
 /// 一页作品 + 服务端分页信息（用于 hasMore 判断）
 class WorksPage {
@@ -133,7 +131,7 @@ class ApiService {
     AppState app, {
     int page = 1,
     int perPage = 20,
-  }) => AppLog.track('network fetch works', () async {
+  }) async {
     final base = resolveBase(app);
     if (app.customServer) {
       // kikoeru-express：分页大小由服务器配置决定，年龄用 nsfw、字幕用 lyric
@@ -182,7 +180,7 @@ class ApiService {
       seed: app.sort == 'random' ? app.randomSeed?.toString() : null,
     );
     return parseWorks(json, base: base, perPage: perPage);
-  });
+  }
 
   /// asmr.one 热门/推荐页面实际使用 recommender POST 接口，而不是
   /// GET /api/works/{popular,recommend}。后者不存在，会导致页面显示无网络连接。
@@ -217,7 +215,7 @@ class ApiService {
     int perPage = 20,
     // 搜索结果持有自己的 seed，避免刷新搜索打乱首页后续分页。
     int? randomSeed,
-  }) => AppLog.track('network search works', () async {
+  }) async {
     final base = resolveBase(app);
     if (app.customServer) {
       final cleanQuery = query.replaceAll('，', ' ').replaceAll(',', ' ').trim();
@@ -265,7 +263,7 @@ class ApiService {
           : null,
     );
     return parseWorks(json, base: base, perPage: perPage);
-  });
+  }
 
   /// 随心听使用 asmr.one 的专用随机作品请求。
   ///
@@ -280,10 +278,7 @@ class ApiService {
   /// 读取单部作品详情（`?v=2`，含当前账号的评分/标记/评论），
   /// 以取得首页列表未携带的多语言版本与评价信息。
   static Future<Work> fetchWork(AppState app, int id) async {
-    final json = await AppLog.track(
-      'network fetch work detail',
-      () => apiGetWorkV2(base: resolveBase(app), rj: id.toString()),
-    );
+    final json = await apiGetWorkV2(base: resolveBase(app), rj: id.toString());
     final decoded = jsonDecode(json);
     if (decoded is! Map) {
       throw FormatException(appL10n.apiServiceFetchWorkFormatException);
@@ -400,24 +395,11 @@ class ApiService {
       keyword: '',
       page: page,
     );
-    final parsed = parseWorks(json, base: base);
-    return WorksPage(
-      works: filterSimilarWorks(
-        parsed.works,
-        current: work,
-        sfwMode: app.sfwMode,
-        isBlacklisted: app.isBlacklistedWork,
-      ),
-      page: parsed.page,
-      pageSize: parsed.pageSize,
-      totalCount: parsed.totalCount,
-      hasMore: parsed.hasMore,
-    );
+    return parseWorks(json, base: base);
   }
 
   /// 相似作品展示口径：去掉当前作品自身和黑名单作品；SFW 模式下只保留
   /// 全年龄作品，与首页列表保持一致。
-  @visibleForTesting
   static List<Work> filterSimilarWorks(
     List<Work> works, {
     required Work current,
@@ -506,7 +488,7 @@ class ApiService {
 
   static Future<int> checkHealth(AppState app, String base) async {
     final timer = Stopwatch()..start();
-    await AppLog.track('network server health', () => apiHealth(base: base));
+    await apiHealth(base: base);
     return timer.elapsedMilliseconds;
   }
 
@@ -794,10 +776,7 @@ class ApiService {
     String name,
     String password,
   ) {
-    return AppLog.track(
-      'network login',
-      () => apiLogin(base: base, name: name, password: password),
-    );
+    return apiLogin(base: base, name: name, password: password);
   }
 
   static String? tokenFor(AppState app, String base) => getToken(base: base);
@@ -812,17 +791,21 @@ class ApiService {
   }) async {
     final apiId = w.apiId;
     if (apiId == null) return const [];
-    if (app.customServer && pick == null) {
-      final serverLyrics = await _fetchCustomServerLyrics(
+    final canUseServerMatch = app.customServer && pick == null;
+    List<MediaNode> nodes;
+    try {
+      nodes = await fetchTracks(app, apiId);
+    } catch (_) {
+      if (!canUseServerMatch) rethrow;
+      final fallback = await _fetchCustomServerLyrics(
         app,
         workId: apiId,
         trackUrl: trackUrl,
       );
-      if (serverLyrics != null) return serverLyrics;
+      if (fallback != null) return fallback;
+      rethrow;
     }
-    final nodes = await fetchTracks(app, apiId);
     final candidates = _findLyricCandidates(nodes);
-    if (candidates.isEmpty) return const [];
     // 指定候选（在线歌词选择）
     if (pick != null) {
       _LyricCandidate? match;
@@ -839,11 +822,12 @@ class ApiService {
     final automaticCandidates = candidates
         .where((candidate) => !_isPlainTextLyric(candidate.title))
         .toList();
-    if (automaticCandidates.isEmpty) return const [];
+    final language = AppLanguage.systemTranslationTag;
     final matched = _trackMatchedLyrics(
       automaticCandidates,
       trackTitle: trackTitle,
       trackPath: trackPath,
+      language: language,
     );
     // 多个歌词文件时不回退到其它曲目歌词；唯一歌词仍可作为整部作品通用歌词。
     final selected = matched.isNotEmpty
@@ -851,10 +835,26 @@ class ApiService {
         : (automaticCandidates.length == 1
               ? automaticCandidates
               : const <_LyricCandidate>[]);
-    // 按曲目匹配、格式优先级和语言评分尝试，直到解析出带时间轴的歌词。
+    final otherLanguages = <_LyricCandidate>[];
     for (final c in selected) {
+      if (canUseServerMatch && _onlineLyricLanguagePriority(c, language) == 0) {
+        otherLanguages.add(c);
+        continue;
+      }
       final lrc = await _loadLyricCandidate(c);
       if (lrc.isNotEmpty) return lrc;
+    }
+    if (canUseServerMatch) {
+      final fallback = await _fetchCustomServerLyrics(
+        app,
+        workId: apiId,
+        trackUrl: trackUrl,
+      );
+      if (fallback != null && fallback.isNotEmpty) return fallback;
+      for (final c in otherLanguages) {
+        final lrc = await _loadLyricCandidate(c);
+        if (lrc.isNotEmpty) return lrc;
+      }
     }
     return const [];
   }
@@ -874,6 +874,7 @@ class ApiService {
       candidates,
       trackTitle: trackTitle,
       trackPath: trackPath,
+      language: AppLanguage.systemTranslationTag,
     );
     return candidates
         .map(
@@ -1072,7 +1073,6 @@ class ApiService {
 
   /// 歌词格式优先级：LRC > SRT > VTT > ASS/SSA > TXT。
   /// TXT 仅供用户手动选择歌词时使用。
-  @visibleForTesting
   static int lyricFormatPriority(String name) {
     final lower = name.toLowerCase();
     if (lower.endsWith('.lrc')) return 5;
@@ -1234,25 +1234,95 @@ class ApiService {
     return value.substring(0, dot).trim();
   }
 
-  static String _stripLanguageSuffix(String value) {
-    var stem = value.replaceFirst(
-      RegExp(
-        r'(?:[.\-_\s]+|[\[\(])(?:zh|zho|chi|chs|cht|sc|tc)'
-        r'(?:[-_](?:cn|tw|hans|hant))?[\]\)]?$',
-      ),
-      '',
+  static final _languageSuffix = RegExp(
+    r'(?:[.\-_\s]+|[\[(（【])'
+    r'(zh(?:[-_](?:hans(?:[-_]cn)?|hant(?:[-_](?:tw|hk|mo))?|cn|sg|tw|hk|mo))?'
+    r'|zho|chi|chs|cht|sc|tc|简体|繁体|简中|繁中|中文|中字|汉化'
+    r'|en(?:[-_](?:us|gb|au|ca|nz))?|eng|english|英文|英语'
+    r'|ja(?:[-_]jp)?|jp|jpn|日本語|日语|日文'
+    r'|ru(?:[-_]ru)?|ko(?:[-_]kr)?|kr|fr|de|es|it|pt|tl)'
+    r'[\])）】]?$',
+  );
+  static final _workFolderPrefix = RegExp(r'^(?:rj|vj|bj)\d+[-_]');
+
+  static String _stripLanguageSuffix(String value) =>
+      value.replaceFirst(_languageSuffix, '').trim();
+
+  static String? _lyricLanguage(String stem) {
+    final tag = _languageSuffix
+        .firstMatch(stem)
+        ?.group(1)
+        ?.replaceAll('_', '-');
+    return switch (tag) {
+      'zh' || 'zho' || 'chi' || '中文' || '中字' || '汉化' => 'zh',
+      'zh-cn' ||
+      'zh-sg' ||
+      'zh-hans' ||
+      'zh-hans-cn' ||
+      'chs' ||
+      'sc' ||
+      '简体' ||
+      '简中' => 'zh-cn',
+      'zh-tw' ||
+      'zh-hk' ||
+      'zh-mo' ||
+      'zh-hant' ||
+      'zh-hant-tw' ||
+      'zh-hant-hk' ||
+      'zh-hant-mo' ||
+      'cht' ||
+      'tc' ||
+      '繁体' ||
+      '繁中' => 'zh-tw',
+      'eng' || 'english' || '英文' || '英语' => 'en',
+      'jp' || 'jpn' || '日本語' || '日语' || '日文' => 'ja',
+      'kr' => 'ko',
+      _ => tag?.split('-').first,
+    };
+  }
+
+  static int lyricLanguagePriority(
+    String name, {
+    required String language,
+    String? directoryLanguage,
+  }) {
+    final target = language.toLowerCase();
+    final stem = _stripKnownExtension(
+      name.trim().toLowerCase(),
+      _lyricExtensions,
     );
-    stem = stem.replaceFirst(
-      RegExp(r'(?:[.\-_\s]+|[\[\(])(?:简体|繁体|简中|繁中|中文|中字|汉化)[\]\)]?$'),
-      '',
+    final tag =
+        _lyricLanguage(stem) ??
+        _lyricLanguage(_stripKnownExtension(stem, _audioExtensions)) ??
+        directoryLanguage?.toLowerCase();
+    if (tag == target && tag != 'tl') return 3;
+    if (tag == 'zh' && target.startsWith('zh-')) return 2;
+    return tag == null ? 1 : 0;
+  }
+
+  static int _onlineLyricLanguagePriority(
+    _LyricCandidate candidate,
+    String language,
+  ) {
+    final folders = candidate.path.toLowerCase().split('/')..removeLast();
+    String? directoryLanguage;
+    for (final folder in folders.reversed) {
+      if (!_workFolderPrefix.hasMatch(folder)) continue;
+      directoryLanguage = _lyricLanguage(folder);
+      if (directoryLanguage != null) break;
+    }
+    return lyricLanguagePriority(
+      candidate.title,
+      language: language,
+      directoryLanguage: directoryLanguage,
     );
-    return stem.trim();
   }
 
   static List<_LyricCandidate> _trackMatchedLyrics(
     List<_LyricCandidate> candidates, {
     required String? trackTitle,
     required String? trackPath,
+    String? language,
   }) {
     if (lyricMatchKey(trackTitle ?? '').isEmpty) return const [];
     final trackFolder = _parentPath(trackPath ?? '');
@@ -1273,16 +1343,22 @@ class ApiService {
             .toList();
       }
     }
-    final sameFolderName = sameName
-        .where((candidate) => _parentPath(candidate.path) == trackFolder)
-        .toList();
-    final matched = sameFolderName.isNotEmpty ? sameFolderName : sameName;
-    matched.sort((a, b) {
+    if (language == null) return sameName;
+    final languageScores = {
+      for (final candidate in sameName)
+        candidate: _onlineLyricLanguagePriority(candidate, language),
+    };
+    sameName.sort((a, b) {
       final nameScore = (nameScores[b] ?? 0).compareTo(nameScores[a] ?? 0);
       if (nameScore != 0) return nameScore;
+      final languageScore = languageScores[b]!.compareTo(languageScores[a]!);
+      if (languageScore != 0) return languageScore;
+      final aInTrackFolder = _parentPath(a.path) == trackFolder;
+      final bInTrackFolder = _parentPath(b.path) == trackFolder;
+      if (aInTrackFolder != bInTrackFolder) return aInTrackFolder ? -1 : 1;
       return _compareLyricCandidates(a, b);
     });
-    return matched;
+    return sameName;
   }
 
   static String? lyricTrackOrdinal(String name) {
@@ -1317,11 +1393,13 @@ class ApiService {
     List<_LyricCandidate> candidates, {
     required String? trackTitle,
     required String? trackPath,
+    required String language,
   }) {
     final matched = _trackMatchedLyrics(
       candidates,
       trackTitle: trackTitle,
       trackPath: trackPath,
+      language: language,
     );
     final matchOrder = <_LyricCandidate, int>{
       for (var i = 0; i < matched.length; i++) matched[i]: i,
@@ -1470,10 +1548,7 @@ class ApiService {
     final key = '$base|$workApiId';
     final cached = _tracksCache[key];
     if (!forceRefresh && cached != null) return cached;
-    final json = await AppLog.track(
-      'network fetch tracks',
-      () => apiGetTracks(base: base, rj: '$workApiId'),
-    );
+    final json = await apiGetTracks(base: base, rj: '$workApiId');
     final nodes = parseMediaNodes(jsonDecode(json), base: base);
     if (_tracksCache.length >= 10) _tracksCache.remove(_tracksCache.keys.first);
     _tracksCache[key] = nodes;

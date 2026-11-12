@@ -3677,6 +3677,7 @@
   "@widgetsAdvancedSearchParametersAdvancedSearchParameter3": {
     "description": "widgets.dart: advancedSearchParameters"
   },
+  "lyricsLibraryTlLyrics": "TL歌词",
   "widgetsBuildBuilder": "AI歌词",
   "@widgetsBuildBuilder": {
     "description": "widgets.dart: build"

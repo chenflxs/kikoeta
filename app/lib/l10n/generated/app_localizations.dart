@@ -5122,6 +5122,12 @@ abstract class AppLocalizations {
   /// **'搜索声优'**
   String get widgetsAdvancedSearchParametersAdvancedSearchParameter3;
 
+  /// No description provided for @lyricsLibraryTlLyrics.
+  ///
+  /// In zh, this message translates to:
+  /// **'TL歌词'**
+  String get lyricsLibraryTlLyrics;
+
   /// widgets.dart: build
   ///
   /// In zh, this message translates to:

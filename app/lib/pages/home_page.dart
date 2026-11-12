@@ -7,6 +7,7 @@ import '../routes.dart';
 import '../services/api_service.dart';
 import '../services/lyrics_library_service.dart';
 import '../services/theme_reveal.dart';
+import '../services/works_page_buffer.dart';
 import '../subpage_swipe.dart';
 import '../theme.dart';
 import '../widgets.dart';
@@ -35,8 +36,11 @@ class _HomePageState extends State<HomePage> {
   int? _searchRandomSeed;
   bool _searchError = false;
   String _searchQuery = '';
-  int _searchSeq = 0;
-  int _worksGen = 0; // 作品列表代次：切换服务器/筛选后使在途补页失效
+  WorksPageBuffer? _searchPages;
+  WorksPageBuffer? _homePages;
+  bool _searchAppending = false;
+  bool _homeAppending = false;
+  bool _homeAppendError = false;
   final Set<String> _localSubtitleWorkIds = <String>{};
   late int _seenEpoch;
   late int _seenHomeRefreshVersion;
@@ -135,13 +139,7 @@ class _HomePageState extends State<HomePage> {
     setState(() {});
     if (app.subtitleFilter == SubtitleFilter.all) {
       _maybeRefill();
-      if (_searchQuery.isNotEmpty &&
-          !_searchLoading &&
-          _searchHasMore &&
-          _searchPage < 4 &&
-          _visibleSearchResults.length < 20) {
-        _runSearch(_searchQuery, reset: false);
-      }
+      _maybeRefillSearch();
     }
   }
 
@@ -150,10 +148,17 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _loadRemote() async {
-    final gen = ++_worksGen;
+    if (!mounted) return;
+    _homePages?.close();
+    final pages = WorksPageBuffer(
+      (page) => ApiService.fetchWorks(app, page: page),
+    );
+    _homePages = pages;
     _loadedSig = _filterSig;
     _homeFilterSig = _loadedSig;
-    app.worksLoadingMore = false; // 丢弃在途补页
+    _homeAppending = false;
+    _homeAppendError = false;
+    app.worksLoadingMore = false;
     // 切换服务器/排序/筛选后先清空旧数据，避免新请求失败时残留上一台服务器的内容
     app.remoteWorks = [];
     app.worksPage = 0;
@@ -165,39 +170,44 @@ class _HomePageState extends State<HomePage> {
     app.loadingRemote = true;
     app.notify();
     try {
-      final res = await ApiService.fetchWorks(app);
-      if (gen != _worksGen) return; // 已被新的加载取代
+      final res = await pages.takeNext();
+      if (!mounted || !identical(pages, _homePages) || res == null) return;
       app.remoteWorks = res.works;
       app.remoteError = null;
       app.loadingRemote = false;
       app.worksPage = 1;
-      app.worksHasMore = res.hasMore;
+      app.worksHasMore = res.hasMore && res.works.isNotEmpty;
       app.notify();
       if (mounted) setState(() {});
+      if (app.worksHasMore) unawaited(pages.prefetch());
       _maybeRefill();
     } catch (e) {
-      if (gen != _worksGen) return;
+      if (!mounted || !identical(pages, _homePages)) return;
       app.remoteError = e.toString();
       app.loadingRemote = false;
       app.notify();
     }
   }
 
-  Future<void> _loadMore() async {
-    if (app.worksLoadingMore || !app.worksHasMore || app.remoteWorks.isEmpty) {
+  Future<void> _loadMore({bool retry = false}) async {
+    final pages = _homePages;
+    if (pages == null ||
+        _homeAppending ||
+        (_homeAppendError && !retry) ||
+        !app.worksHasMore ||
+        app.remoteWorks.isEmpty) {
       return;
     }
-    final gen = _worksGen;
-    app.worksLoadingMore = true;
-    app.notify();
+    _homeAppending = true;
+    _homeAppendError = false;
+    if (!pages.hasReadyPage) {
+      app.worksLoadingMore = true;
+      app.notify();
+    }
     try {
-      final page = await ApiService.fetchWorks(
-        app,
-        page: app.worksPage + 1,
-        perPage: 20,
-      );
-      if (gen != _worksGen) return; // 列表已被重置，丢弃过期结果
-      if (page.works.isEmpty) {
+      final page = await pages.takeNext();
+      if (!mounted || !identical(pages, _homePages)) return;
+      if (page == null || page.works.isEmpty) {
         app.worksHasMore = false;
       } else {
         app.worksPage++;
@@ -205,12 +215,18 @@ class _HomePageState extends State<HomePage> {
         app.worksHasMore = page.hasMore;
       }
     } catch (_) {
-      if (gen == _worksGen) app.worksHasMore = false;
+      if (mounted && identical(pages, _homePages)) {
+        setState(() => _homeAppendError = true);
+      }
     } finally {
-      if (gen == _worksGen) {
+      if (mounted && identical(pages, _homePages)) {
+        _homeAppending = false;
         app.worksLoadingMore = false;
         app.notify();
-        _maybeRefill();
+        if (app.worksHasMore && !_homeAppendError) {
+          unawaited(pages.prefetch());
+          _maybeRefill();
+        }
       }
     }
   }
@@ -236,6 +252,8 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    _homePages?.close();
+    _searchPages?.close();
     app.removeListener(_onAppChanged);
     LyricsLibraryService.instance.revision.removeListener(
       _onSubtitleLibraryChanged,
@@ -362,7 +380,9 @@ class _HomePageState extends State<HomePage> {
 
   void _clearSearchState() {
     // 让已经发出的搜索请求失效，避免清空后旧响应又把结果写回来。
-    _searchSeq++;
+    _searchPages?.close();
+    _searchPages = null;
+    _searchAppending = false;
     _searchResults.clear();
     _searchQuery = '';
     _searchLoading = false;
@@ -535,7 +555,9 @@ class _HomePageState extends State<HomePage> {
                   behavior: HitTestBehavior.opaque,
                   onTap: () {
                     // 网络错误时点击空白处重试连接
-                    if (app.remoteError != null && !app.loadingRemote) {
+                    if (_homeAppendError) {
+                      _loadMore(retry: true);
+                    } else if (app.remoteError != null && !app.loadingRemote) {
                       _loadRemote();
                     }
                   },
@@ -546,7 +568,7 @@ class _HomePageState extends State<HomePage> {
               Expanded(
                 child: NotificationListener<ScrollNotification>(
                   onNotification: (n) {
-                    if (n.metrics.pixels >= n.metrics.maxScrollExtent - 240) {
+                    if (n.depth == 0 && n.metrics.extentAfter <= 240) {
                       _loadMore();
                     }
                     return false;
@@ -581,6 +603,11 @@ class _HomePageState extends State<HomePage> {
                     style: TextStyle(fontSize: 12, color: p.dim),
                   ),
                 )
+              else if (_homeAppendError)
+                TextButton(
+                  onPressed: () => _loadMore(retry: true),
+                  child: Text(context.l10n.retry),
+                )
               else if (!app.worksHasMore)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 10),
@@ -597,7 +624,7 @@ class _HomePageState extends State<HomePage> {
     final String msg;
     if (app.loadingRemote || app.worksLoadingMore) {
       msg = context.l10n.homePageEmptyHintText2;
-    } else if (app.remoteError != null) {
+    } else if (app.remoteError != null || _homeAppendError) {
       msg = context.l10n.homePageEmptyHintText5;
     } else if (app.hasAgeFilter || app.subOnly) {
       msg = context.l10n.homePageEmptyHintText4;
@@ -668,50 +695,68 @@ class _HomePageState extends State<HomePage> {
       if (mounted) setState(() {});
       return;
     }
-    if (!reset && (_searchLoading || !_searchHasMore)) return;
-    if (reset && app.sort == 'random') {
-      _searchRandomSeed = app.nextRandomSeed(_searchRandomSeed);
-    }
-    final seq = ++_searchSeq;
-    setState(() {
-      _searchQuery = query;
-      _searchLoading = true;
-      if (reset) {
-        _searchError = false;
+    if (!reset && (_searchAppending || !_searchHasMore)) return;
+    if (reset) {
+      if (_homeFilterSig != _filterSig) {
+        _homePages?.close();
+        _homePages = null;
+        _homeFilterSig = '';
+      }
+      if (app.sort == 'random') {
+        _searchRandomSeed = app.nextRandomSeed(_searchRandomSeed);
+      }
+      final seed = _searchRandomSeed;
+      _searchPages?.close();
+      _searchPages = WorksPageBuffer(
+        (page) =>
+            ApiService.searchWorks(app, query, page: page, randomSeed: seed),
+      );
+      setState(() {
+        _searchQuery = query;
         _searchResults.clear();
         _searchPage = 0;
         _searchHasMore = true;
-      }
-    });
-    final targetPage = reset ? 1 : _searchPage + 1;
+      });
+    }
+    final pages = _searchPages;
+    if (pages == null) return;
+    _searchAppending = true;
+    _searchError = false;
+    if (!pages.hasReadyPage) setState(() => _searchLoading = true);
     try {
-      final list = await ApiService.searchWorks(
-        app,
-        query,
-        page: targetPage,
-        randomSeed: _searchRandomSeed,
-      );
-      if (!mounted || seq != _searchSeq) return;
+      final list = await pages.takeNext();
+      if (!mounted || !identical(pages, _searchPages)) return;
       setState(() {
-        _searchResults.addAll(list.works);
-        _searchPage = targetPage;
-        _searchHasMore = list.hasMore;
+        if (list != null) {
+          _searchResults.addAll(list.works);
+          _searchPage++;
+        }
+        _searchHasMore = list != null && list.hasMore && list.works.isNotEmpty;
         _searchLoading = false;
       });
     } catch (_) {
-      if (!mounted || seq != _searchSeq) return;
+      if (!mounted || !identical(pages, _searchPages)) return;
       setState(() {
         _searchLoading = false;
         _searchError = true;
       });
+    } finally {
+      if (identical(pages, _searchPages)) _searchAppending = false;
     }
+    if (!_searchError && _searchHasMore) unawaited(pages.prefetch());
+    _maybeRefillSearch();
+  }
+
+  void _maybeRefillSearch() {
     // 年龄/全部字幕是客户端过滤：结果不足一页时继续补拉（最多 4 页）
-    if ((app.hasAgeFilter || app.subtitleFilter == SubtitleFilter.all) &&
+    if (_searchQuery.isNotEmpty &&
+        (app.hasAgeFilter || app.subtitleFilter == SubtitleFilter.all) &&
         _searchHasMore &&
-        !_searchLoading &&
-        _searchPage < 4) {
-      final visible = _visibleSearchResults.length;
-      if (visible < 20) _runSearch(_searchQuery, reset: false);
+        !_searchAppending &&
+        !_searchError &&
+        _searchPage < 4 &&
+        _visibleSearchResults.length < 20) {
+      _runSearch(_searchQuery, reset: false);
     }
   }
 
@@ -750,11 +795,14 @@ class _HomePageState extends State<HomePage> {
         ),
       );
     }
-    if (_searchError && _searchResults.isEmpty) {
+    final res = _visibleSearchResults;
+    if (_searchError && res.isEmpty) {
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () {
-          if (!_searchLoading) _runSearch(_searchQuery);
+          if (!_searchLoading) {
+            _runSearch(_searchQuery, reset: _searchPage == 0);
+          }
         },
         child: Center(
           child: Column(
@@ -776,7 +824,6 @@ class _HomePageState extends State<HomePage> {
         ),
       );
     }
-    final res = _visibleSearchResults;
     if (res.isEmpty) {
       return Center(
         child: Text(
@@ -790,7 +837,9 @@ class _HomePageState extends State<HomePage> {
         Expanded(
           child: NotificationListener<ScrollNotification>(
             onNotification: (n) {
-              if (n.metrics.pixels >= n.metrics.maxScrollExtent - 240) {
+              if (!_searchError &&
+                  n.depth == 0 &&
+                  n.metrics.extentAfter <= 240) {
                 _runSearch(_searchQuery, reset: false);
               }
               return false;
@@ -818,6 +867,11 @@ class _HomePageState extends State<HomePage> {
               context.l10n.loading,
               style: TextStyle(fontSize: 12, color: p.dim),
             ),
+          )
+        else if (_searchError)
+          TextButton(
+            onPressed: () => _runSearch(_searchQuery, reset: false),
+            child: Text(context.l10n.retry),
           )
         else if (!_searchHasMore)
           Padding(

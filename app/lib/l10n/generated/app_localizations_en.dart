@@ -2969,6 +2969,9 @@ class AppLocalizationsEn extends AppLocalizations {
       'Search voice actors';
 
   @override
+  String get lyricsLibraryTlLyrics => 'TL lyrics';
+
+  @override
   String get widgetsBuildBuilder => 'AI lyrics';
 
   @override

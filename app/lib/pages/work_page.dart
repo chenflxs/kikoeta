@@ -14,6 +14,7 @@ import '../services/download_service.dart';
 import '../services/dictation_media_matcher.dart';
 import '../services/media_selection.dart';
 import '../services/media_tree.dart';
+import '../services/works_page_buffer.dart';
 import '../smooth_scroll.dart';
 import '../src/rust/api/kikoeru_api.dart';
 import '../src/rust/api/textcodec.dart';
@@ -279,17 +280,23 @@ class _WorkPageState extends State<WorkPage> {
   String? _myProgress;
   String? _myReviewText;
   List<Work> _similarWorks = const [];
-  int _similarPage = 0;
+  WorksPageBuffer? _similarPages;
   int _similarTotal = 0;
   bool _similarHasMore = true;
+  bool _similarAppending = false;
   bool _similarLoading = false;
-  int _similarSeq = 0;
+  bool _similarAppendError = false;
+  late (int, int, bool) _seenSimilarScope;
   final ScrollController _pageScroll = ScrollController();
+
+  (int, int, bool) get _similarScope =>
+      (app.serverEpoch, app.loginEpoch, app.sfwMode);
 
   @override
   void initState() {
     super.initState();
     _seenLoginEpoch = app.loginEpoch;
+    _seenSimilarScope = _similarScope;
     _languageEditions = work.languageEditions;
     if (downloadItem != null) {
       _tree = ApiService.sortedMediaNodes(downloadItem!.tree);
@@ -306,6 +313,7 @@ class _WorkPageState extends State<WorkPage> {
 
   @override
   void dispose() {
+    _similarPages?.close();
     _stopAutoScrollTimer();
     app.removeListener(_onAppChanged);
     _pageScroll.dispose();
@@ -316,53 +324,83 @@ class _WorkPageState extends State<WorkPage> {
     if (downloadItem == null && app.loginEpoch != _seenLoginEpoch) {
       _seenLoginEpoch = app.loginEpoch;
       _loadTracks();
-      _loadSimilarWorks();
+    }
+    final scope = _similarScope;
+    if (scope != _seenSimilarScope) {
+      _seenSimilarScope = scope;
+      _loadSimilarWorks(clear: true);
     }
     if (mounted) setState(() {});
   }
 
-  /// 加载相似作品：`reset` 从第一页重新拉取（进入页面/刷新），
-  /// 否则追加下一页。接口每页 20 条，总数为 100。
-  Future<void> _loadSimilarWorks({bool reset = true}) async {
-    if (_similarLoading && !reset) return;
-    final id = work.apiId;
-    if (id == null || app.customServer) return;
-    final seq = ++_similarSeq;
-    final nextPage = reset ? 1 : _similarPage + 1;
+  Future<void> _loadSimilarWorks({
+    bool reset = true,
+    bool clear = false,
+  }) async {
+    if (!reset && (_similarAppending || !_similarHasMore)) return;
     if (reset) {
-      _similarPage = 0;
-      _similarHasMore = true;
-    }
-    setState(() => _similarLoading = true);
-    try {
-      final result = await ApiService.fetchSimilarWorks(
-        app,
-        work,
-        page: nextPage,
+      _similarPages?.close();
+      if (work.apiId == null || app.customServer) {
+        _similarPages = null;
+        _similarAppending = false;
+        setState(() {
+          _similarWorks = const [];
+          _similarHasMore = false;
+          _similarLoading = false;
+        });
+        return;
+      }
+      _similarPages = WorksPageBuffer(
+        (page) => ApiService.fetchSimilarWorks(app, work, page: page),
       );
-      if (!mounted || seq != _similarSeq) return;
-      setState(() {
-        _similarLoading = false;
-        _similarPage = result.page;
-        _similarTotal = result.totalCount;
-        _similarHasMore = result.hasMore;
-        if (nextPage == 1) {
-          _similarWorks = result.works;
-        } else {
-          final seen = {for (final w in _similarWorks) w.rj};
-          _similarWorks = [
-            ..._similarWorks,
-            ...result.works.where((w) => seen.add(w.rj)),
-          ];
+      if (clear) {
+        setState(() {
+          _similarWorks = const [];
+          _similarTotal = 0;
+        });
+      }
+    }
+    final pages = _similarPages;
+    if (pages == null) return;
+    _similarAppending = true;
+    _similarAppendError = false;
+    try {
+      final previous = reset ? const <Work>[] : _similarWorks;
+      final seen = {for (final w in previous) w.rj};
+      final added = <Work>[];
+      WorksPage? result;
+      do {
+        if (!pages.hasReadyPage && !_similarLoading) {
+          setState(() => _similarLoading = true);
         }
-      });
-    } catch (_) {
-      if (!mounted || seq != _similarSeq) return;
-      // 相似作品是详情页的附加内容：接口不可用（含自建站）时整段隐藏。
+        result = await pages.takeNext();
+        if (!mounted || !identical(pages, _similarPages)) return;
+        if (result == null) break;
+        final visible = ApiService.filterSimilarWorks(
+          result.works,
+          current: work,
+          sfwMode: app.sfwMode,
+          isBlacklisted: app.isBlacklistedWork,
+        );
+        added.addAll(visible.where((w) => seen.add(w.rj)));
+        // Filtered or duplicate-only pages do not extend the scrollable list.
+      } while (added.isEmpty && result.hasMore);
       setState(() {
         _similarLoading = false;
-        _similarHasMore = false;
+        if (result != null) _similarTotal = result.totalCount;
+        _similarHasMore = result?.hasMore ?? false;
+        _similarWorks = [...previous, ...added];
       });
+      if (_similarHasMore) unawaited(pages.prefetch());
+    } catch (_) {
+      if (!mounted || !identical(pages, _similarPages)) return;
+      setState(() {
+        _similarLoading = false;
+        if (reset) _similarHasMore = false;
+        _similarAppendError = !reset;
+      });
+    } finally {
+      if (identical(pages, _similarPages)) _similarAppending = false;
     }
   }
 
@@ -2303,7 +2341,7 @@ class _WorkPageState extends State<WorkPage> {
   }
 
   /// 相似作品：与首页作品流一致的竖向卡片网格，放在文件列表下方。
-  /// 接口总数 100、每页 20，滚到接近底部时自动加载下一页。
+  /// 接近底部时接入下一批，后台维持两批预取。
   List<Widget> _similarWorksSlivers() {
     return [
       SliverPadding(
@@ -2399,7 +2437,9 @@ class _WorkPageState extends State<WorkPage> {
                         vertical: 4,
                       ),
                       child: Text(
-                        context.l10n.workPageSimilarWorksSliversText2,
+                        _similarAppendError
+                            ? context.l10n.retry
+                            : context.l10n.workPageSimilarWorksSliversText2,
                         style: TextStyle(fontSize: 12, color: p.accent),
                       ),
                     ),
@@ -2417,9 +2457,14 @@ class _WorkPageState extends State<WorkPage> {
   /// 页面滚到接近底部时自动加载下一批相似作品。
   void _onPageScroll() {
     if (!_pageScroll.hasClients) return;
-    if (!_similarHasMore || _similarLoading || _similarWorks.isEmpty) return;
+    if (!_similarHasMore ||
+        _similarAppending ||
+        _similarAppendError ||
+        _similarWorks.isEmpty) {
+      return;
+    }
     final position = _pageScroll.position;
-    if (position.pixels >= position.maxScrollExtent - 400) {
+    if (position.hasContentDimensions && position.extentAfter <= 400) {
       _loadSimilarWorks(reset: false);
     }
   }

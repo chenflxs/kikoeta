@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../data.dart';
 import '../services/api_service.dart';
+import '../services/app_log.dart';
 import '../services/kikoeru_lyrics_writeback.dart';
 import '../services/kikoeru_writeback_access.dart';
 import '../services/kikoeru_writeback_site.dart';
@@ -187,7 +188,8 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
       _persistConnection();
       if (restartCancelled) _session.restartCancelled();
       await _session.run((entry) => _processEntry(connection, entry, l10n));
-    } catch (error) {
+    } catch (error, stack) {
+      AppLog.recordError('dictation start queue', error, stack);
       _appendLog(l10n.dictationTranslationPageStartAppendLog(error.toString()));
       _toast(l10n.dictationTranslationPageStartToast(error.toString()));
     } finally {
@@ -304,10 +306,11 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
         });
         try {
           _session.savedFiles = await _saveOutputs(service, job, entry, l10n);
-        } catch (error) {
+        } catch (error, stack) {
           // The backend checkpoint remains resumable even if writing an
           // already finished lyric to the local library fails.
           if (status != 'paused') rethrow;
+          AppLog.recordError('dictation save paused outputs', error, stack);
           _appendLog(
             l10n.dictationTranslationPageStartAppendLog(error.toString()),
           );
@@ -347,7 +350,8 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
               : l10n.dictationTranslationPageStartException,
         );
       }
-    } catch (error) {
+    } catch (error, stack) {
+      AppLog.recordError('dictation process work', error, stack);
       // A polling/submission error does not prove the backend stopped. Pause
       // rather than submit another work while the first job may still run.
       if (submissionAttempted && !terminalObserved) {

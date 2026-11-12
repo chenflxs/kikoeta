@@ -76,13 +76,15 @@ class LyricsTranslationService {
     }
 
     final maxUnits = isAi ? 1600 : 800;
-    final maxLines = isAi ? 10 : 8;
+    // The traditional endpoints accept one text, so a response newline is
+    // not a reliable boundary between cues. Send each unique piece separately.
+    final maxLines = isAi ? 10 : 1;
     // Keep repeated cues in the result, but translate identical text only once.
     final piecesByCue = <List<String>>[];
     final translations = <String, String>{};
     for (final cue in source) {
       final pieces = <String>[];
-      for (final line in cue.jp.replaceAll('\r', '').split('\n')) {
+      for (final line in cue.jp.split(RegExp(r'\r\n?|\n'))) {
         var piece = StringBuffer();
         var units = 0;
         for (final rune in line.trim().runes) {
@@ -114,14 +116,15 @@ class LyricsTranslationService {
       requested = true;
       final output = await request(batch.join('\n'));
       checkCancelled();
-      final lines = output.replaceAll('\r\n', '\n').trim().split('\n');
+      final lines = isAi
+          ? output.replaceAll('\r\n', '\n').trim().split('\n')
+          : [output.replaceAll(RegExp(r'\s*[\r\n]+\s*'), ' ').trim()];
       if (lines.length != batch.length ||
           lines.any((line) => line.trim().isEmpty)) {
         if (batch.length == 1) {
           throw FormatException(appL10n.lyricsTranslationInvalidResponse);
         }
-        // Machine engines may merge lines; AI engines may omit IDs. Splitting
-        // reduces ambiguity without ever shifting a translation to another cue.
+        // Retry ambiguous AI batches with smaller groups.
         final middle = batch.length ~/ 2;
         await translateBatch(batch.sublist(0, middle));
         await translateBatch(batch.sublist(middle));

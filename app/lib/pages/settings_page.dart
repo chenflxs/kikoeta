@@ -1799,7 +1799,8 @@ class _SettingsPageState extends State<SettingsPage> {
         bytes: bytes,
       );
       if (path != null && mounted) _toast(l10n.logExportDone);
-    } catch (_) {
+    } catch (error, stack) {
+      AppLog.recordError('log export', error, stack);
       if (mounted) _toast(l10n.dataOperationFailed);
     } finally {
       if (mounted) setState(() => _exportingLog = false);

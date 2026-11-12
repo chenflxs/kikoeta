@@ -7,6 +7,7 @@ import '../data.dart';
 import '../src/rust/api/textconv.dart';
 import 'api_service.dart';
 import 'android_lyrics_overlay.dart';
+import 'app_log.dart';
 import 'desktop_lyrics_overlay.dart';
 import 'desktop_lyrics_timing.dart';
 import 'lyrics_library_service.dart';
@@ -214,7 +215,8 @@ class LyricsHub extends ChangeNotifier {
       _manualTrackKey = selection.key;
       _setResult(result, sourceName: sourceName);
       return true;
-    } catch (_) {
+    } catch (error, stack) {
+      AppLog.recordError('lyrics load selected source', error, stack);
       return false;
     } finally {
       if (isSelectionCurrent(selection) && seq == _matchSeq) {
@@ -372,7 +374,8 @@ class LyricsHub extends ChangeNotifier {
               break;
             }
           }
-        } catch (_) {
+        } catch (error, stack) {
+          AppLog.recordError('lyrics match library', error, stack);
           // 歌词库读取失败也应继续在线回退。
         }
       }
@@ -382,7 +385,8 @@ class LyricsHub extends ChangeNotifier {
       }
       if (!isCurrent()) return;
       _setResult(result, sourceName: sourceName);
-    } catch (_) {
+    } catch (error, stack) {
+      AppLog.recordError('lyrics load for current track', error, stack);
       // 开始时已清空旧曲歌词，失败时保持空列表。
     } finally {
       if (isCurrent()) {

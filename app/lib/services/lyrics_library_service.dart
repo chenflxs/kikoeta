@@ -9,6 +9,7 @@ import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
 
 import '../data.dart';
+import '../l10n/app_language.dart';
 import 'api_service.dart';
 import 'app_paths.dart';
 import 'settings_store.dart';
@@ -99,6 +100,7 @@ class LyricsLibraryFile {
   final String name;
   final String extension;
   final String absolutePath;
+  final bool isTranslated;
   final int score;
   const LyricsLibraryFile({
     required this.workId,
@@ -106,6 +108,7 @@ class LyricsLibraryFile {
     required this.name,
     required this.extension,
     required this.absolutePath,
+    this.isTranslated = false,
     this.score = 0,
   });
 }
@@ -957,11 +960,17 @@ class LyricsLibraryService {
   /// 批量统计首页卡片的文件数。共享一次索引和根目录解析，避免首批卡片
   /// 同时重复创建歌词库目录并分别读取相同的作品目录记录。
   Future<Map<String, int>> countFilesForWorks(Iterable<String> workIds) async {
+    final counts = await countFilesByTranslationForWorks(workIds);
+    return counts.map((id, count) => MapEntry(id, count.total));
+  }
+
+  Future<Map<String, ({int total, int translated})>>
+  countFilesByTranslationForWorks(Iterable<String> workIds) async {
     await _load();
     final ids = workIds.map((id) => id.toUpperCase()).toSet().toList();
     if (ids.isEmpty) return {};
     final base = await root;
-    final result = <String, int>{};
+    final result = <String, ({int total, int translated})>{};
     // Keep directory enumeration bounded when a page contains many works.
     for (var start = 0; start < ids.length; start += 4) {
       final end = math.min(start + 4, ids.length);
@@ -969,11 +978,15 @@ class LyricsLibraryService {
         ids.sublist(start, end).map((id) async {
           final records = _workRecords(id);
           final hasLocal = records.any((record) => !record.online);
-          final localCount = hasLocal ? (await _listFiles(base, id)).length : 0;
+          final files = hasLocal
+              ? await _listFiles(base, id)
+              : const <LyricsLibraryFile>[];
           final online = _orderedOnlineRecords(records);
-          result[id] = localCount > 0
-              ? localCount
-              : (online.isEmpty ? 0 : online.first.fileCount);
+          final remoteCount = online.isEmpty ? 0 : online.first.fileCount;
+          result[id] = (
+            total: files.isNotEmpty ? files.length : remoteCount,
+            translated: files.where((file) => file.isTranslated).length,
+          );
         }),
       );
     }
@@ -1014,6 +1027,10 @@ class LyricsLibraryService {
     _onFileScan?.call(id);
     final out = <LyricsLibraryFile>[];
     final seen = <String>{};
+    final translatedRoots = [
+      for (final record in records)
+        if (!record.online && record.isTranslated) '${record.relativePath}/',
+    ];
     for (final record in records.where((r) => !r.online)) {
       final dir = Directory(_join(base, record.relativePath));
       if (!await dir.exists()) continue;
@@ -1034,7 +1051,7 @@ class LyricsLibraryService {
             name: title,
             extension: ext,
             absolutePath: entity.path,
-            score: 0,
+            isTranslated: translatedRoots.any(relative.startsWith),
           ),
         );
       }
@@ -1078,25 +1095,30 @@ class LyricsLibraryService {
       await _downloadOnlineWork(workId);
       files = await listFiles(workId: workId);
     }
-    final candidates = files.map((f) => _candidate(f)).toList();
-    final translatedRoots = _workRecords(workId.toUpperCase())
-        .where((record) => record.isTranslated && !record.online)
-        .map((record) => '${record.relativePath}/')
-        .toList();
-    final translatedFiles = candidates
-        .where(
-          (file) =>
-              translatedRoots.any((root) => file.relativePath.startsWith(root)),
-        )
-        .toSet();
+    final candidates = files.toList();
+    final language = AppLanguage.systemTranslationTag;
+    final nameScores = {
+      for (final file in candidates)
+        file: ApiService.lyricMatchScore(trackTitle ?? '', file.name),
+    };
+    final languageScores = {
+      for (final file in candidates)
+        file: ApiService.lyricLanguagePriority(
+          file.name,
+          language: language,
+          directoryLanguage: _fileDirectoryLanguage(file),
+        ),
+    };
     candidates.sort((a, b) {
-      final ma = _matchScore(a, trackTitle, trackPath);
-      final mb = _matchScore(b, trackTitle, trackPath);
-      final score = mb.compareTo(ma);
+      final nameScore = nameScores[b]!.compareTo(nameScores[a]!);
+      if (nameScore != 0) return nameScore;
+      final languageScore = languageScores[b]!.compareTo(languageScores[a]!);
+      if (languageScore != 0) return languageScore;
+      final aScore = _matchScore(a, trackPath);
+      final bScore = _matchScore(b, trackPath);
+      final score = bScore.compareTo(aScore);
       if (score != 0) return score;
-      return (translatedFiles.contains(b) ? 1 : 0).compareTo(
-        translatedFiles.contains(a) ? 1 : 0,
-      );
+      return a.relativePath.compareTo(b.relativePath);
     });
     return candidates;
   }
@@ -1752,26 +1774,25 @@ class LyricsLibraryService {
     return false;
   }
 
-  LyricsLibraryFile _candidate(LyricsLibraryFile f) => f;
-  int _matchScore(LyricsLibraryFile file, String? title, String? path) {
-    var score = _formatPriority(file.name) * 10;
-    if (title != null) score += ApiService.lyricMatchScore(title, file.name);
+  static String? _fileDirectoryLanguage(LyricsLibraryFile file) {
+    final parts = file.relativePath.split('/')..removeLast();
+    for (final folder in parts.reversed) {
+      final translated = translatedDirectoryName(file.workId, folder);
+      if (translated != null) {
+        return translated.substring(file.workId.length + 1);
+      }
+    }
+    return file.isTranslated ? 'tl' : null;
+  }
+
+  int _matchScore(LyricsLibraryFile file, String? path) {
+    var score = ApiService.lyricFormatPriority(file.name) * 10;
     if (path != null &&
         _parent(file.relativePath).toLowerCase() ==
             _parent(path).toLowerCase()) {
       score += 100;
     }
     return score;
-  }
-
-  static int _formatPriority(String name) {
-    final lower = name.toLowerCase();
-    if (lower.endsWith('.lrc')) return 5;
-    if (lower.endsWith('.srt')) return 4;
-    if (lower.endsWith('.vtt')) return 3;
-    if (lower.endsWith('.ass') || lower.endsWith('.ssa')) return 2;
-    if (lower.endsWith('.txt')) return 1;
-    return 0;
   }
 
   static String _cleanRelative(String value) => _normalizeRelative(value);

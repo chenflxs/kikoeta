@@ -1,5 +1,7 @@
 import 'package:flutter/services.dart';
 
+import 'app_log.dart';
+
 /// Jetpack Media3 媒体会话桥接（安卓）：
 /// Dart 上报播放状态 → 原生 MediaSession（通知/锁屏卡片）；
 /// 原生控制命令 → 回调 Dart 执行（mpv 播放）。
@@ -70,7 +72,8 @@ class AndroidMedia3 {
         'lyricsLockLabel': lyricsLockLabel,
         'lyricsToggleLabel': lyricsToggleLabel,
       });
-    } catch (e) {
+    } catch (e, stack) {
+      AppLog.recordError('android media3 updateState', e, stack);
       // ignore: avoid_print
       print('[media3] updateState FAILED: $e');
     }

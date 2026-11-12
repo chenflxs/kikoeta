@@ -2988,6 +2988,9 @@ class AppLocalizationsRu extends AppLocalizations {
       'Поиск актёров озвучивания';
 
   @override
+  String get lyricsLibraryTlLyrics => 'Перевод';
+
+  @override
   String get widgetsBuildBuilder => 'Текст от ИИ';
 
   @override

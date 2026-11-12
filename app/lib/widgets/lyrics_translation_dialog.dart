@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data.dart';
 import '../l10n/strings.dart';
 import '../services/api_service.dart';
+import '../services/app_log.dart';
 import '../services/lyrics_hub.dart';
 import '../services/lyrics_library_service.dart';
 import '../services/lyrics_translation_service.dart';
@@ -84,8 +85,13 @@ class _LyricsTranslationDialogState extends State<LyricsTranslationDialog> {
       if (mounted) Navigator.pop(context, path);
     } on LyricsTranslationCancelled {
       // Cancellation is handled immediately by the dialog button.
-    } catch (error) {
+    } catch (error, stack) {
       if (mounted && !_cancelled) {
+        AppLog.recordError(
+          _saving ? 'lyrics save translation' : 'lyrics translate',
+          error,
+          stack,
+        );
         setState(() {
           _error = error.toString();
           _saving = false;

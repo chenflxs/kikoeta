@@ -73,7 +73,7 @@ class AppPlayer {
         }
       }),
       player.stream.error.listen((e) {
-        AppLog.record('playback backend error');
+        AppLog.recordError('playback backend', e);
         _errorCtrl.add(e.toString());
         _scheduleReconnect();
       }),
@@ -166,6 +166,12 @@ class AppPlayer {
 
   /// Opt-in native snapshots for Android device debugging; no media URLs/tokens.
   Future<void> _trace(String event) async {
+    if (AppLog.enabled) {
+      AppLog.record(
+        'playback $event generation=$_mediaGeneration position_sec=$_lastPos '
+        'opened=$opened requested=$_playbackRequested',
+      );
+    }
     if (!_tracePlayback) return;
     try {
       final backend = player.platform;
@@ -300,7 +306,7 @@ class AppPlayer {
         .catchError((Object error, StackTrace stack) {
           // Superseded callers must not retry their old URL or change new UI state.
           if (generation != _mediaGeneration) return;
-          AppLog.record('playback open failed', error: error);
+          AppLog.recordError('playback open', error, stack);
           Error.throwWithStackTrace(error, stack);
         })
         .timeout(
@@ -312,8 +318,12 @@ class AppPlayer {
             _mediaGeneration++;
             opened = false;
             openedUrl = null;
-            AppLog.record('playback open timed out');
-            throw TimeoutException('Opening media timed out', _openTimeout);
+            final error = TimeoutException(
+              'Opening media timed out',
+              _openTimeout,
+            );
+            AppLog.recordError('playback open', error, StackTrace.current);
+            throw error;
           },
         );
   }

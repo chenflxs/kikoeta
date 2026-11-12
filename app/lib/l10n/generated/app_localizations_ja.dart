@@ -2840,6 +2840,9 @@ class AppLocalizationsJa extends AppLocalizations {
   String get widgetsAdvancedSearchParametersAdvancedSearchParameter3 => '声優を検索';
 
   @override
+  String get lyricsLibraryTlLyrics => 'TL歌詞';
+
+  @override
   String get widgetsBuildBuilder => 'AI歌詞';
 
   @override

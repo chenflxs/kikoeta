@@ -2792,6 +2792,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get widgetsAdvancedSearchParametersAdvancedSearchParameter3 => '搜索声优';
 
   @override
+  String get lyricsLibraryTlLyrics => 'TL歌词';
+
+  @override
   String get widgetsBuildBuilder => 'AI歌词';
 
   @override
@@ -5800,6 +5803,9 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get widgetsAdvancedSearchParametersAdvancedSearchParameter3 => '搜尋聲優';
+
+  @override
+  String get lyricsLibraryTlLyrics => 'TL歌詞';
 
   @override
   String get widgetsBuildBuilder => 'AI歌詞';

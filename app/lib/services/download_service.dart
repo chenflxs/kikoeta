@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import '../data.dart';
 import '../src/rust/api/proxy.dart';
 import 'api_service.dart';
+import 'app_log.dart';
 import 'app_paths.dart';
 import 'download_transfer.dart';
 import 'media_tree.dart';
@@ -715,12 +716,13 @@ class DownloadManager extends ChangeNotifier {
       item.currentFileTotal = 0;
       item.updatedAt = DateTime.now();
       await _persistAndNotify();
-    } catch (e) {
+    } catch (e, stack) {
       if (_cancelled.remove(item.id)) {
         if (item.status != VoiceDownloadStatus.paused) {
           item.status = VoiceDownloadStatus.queued;
         }
       } else {
+        AppLog.recordError('download transfer', e, stack);
         item.status = VoiceDownloadStatus.failed;
         item.error = e.toString();
       }
@@ -900,8 +902,8 @@ class DownloadManager extends ChangeNotifier {
       _progressPersistTimer = null;
       if (_progressDirty && !_disposed) {
         unawaited(
-          _persist().catchError((Object error) {
-            debugPrint('Failed to save download progress: $error');
+          _persist().catchError((Object error, StackTrace stack) {
+            debugPrint('Failed to save download progress: $error\n$stack');
           }),
         );
       }

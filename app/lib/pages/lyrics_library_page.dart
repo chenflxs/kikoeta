@@ -12,6 +12,8 @@ import '../theme.dart';
 import '../widgets.dart';
 import '../l10n/strings.dart';
 
+typedef _LyricsCard = ({String workId, bool isTranslated});
+
 class LyricsLibraryPage extends StatefulWidget {
   const LyricsLibraryPage({super.key, this.service});
 
@@ -24,16 +26,16 @@ class LyricsLibraryPage extends StatefulWidget {
 class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
   static const _batchSize = 50;
   late final _service = widget.service ?? LyricsLibraryService.instance;
-  List<String> _workIds = [];
-  List<String> _filteredWorkIds = [];
+  List<_LyricsCard> _cards = [];
+  List<_LyricsCard> _filteredCards = [];
   Timer? _searchTimer;
-  Map<String, int> _directoryCounts = {};
+  Map<_LyricsCard, int> _directoryCounts = {};
   Set<String> _aiWorkIds = {};
-  Set<String> _translatedWorkIds = {};
   Set<String> _onlineWorkIds = {};
   Map<String, List<LyricsLibraryFile>> _files = {};
   String _source = 'local';
   bool _aiOnly = false;
+  bool _tlOnly = false;
   bool _loading = false;
   bool _importing = false;
   bool _deleting = false;
@@ -42,7 +44,7 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
   bool _searching = false;
   final TextEditingController _search = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
-  final Map<String, int> _fileCounts = {};
+  final Map<_LyricsCard, int> _fileCounts = {};
   final Set<String> _countFailures = {};
   int _countLoadToken = 0;
   int _fileListRequest = 0;
@@ -79,7 +81,7 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
     });
   }
 
-  void _selectAll(List<String> ids) {
+  void _selectAll(Set<String> ids) {
     setState(() {
       if (_selected.length == ids.length && ids.every(_selected.contains)) {
         _selected.clear();
@@ -166,37 +168,49 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
   }
 
   void _applyRecords(List<LyricsLibraryRecord> records) {
-    final directoryCounts = <String, int>{};
+    final directoryCounts = <_LyricsCard, int>{};
+    final remoteFileCounts = <_LyricsCard, int>{};
     final aiWorkIds = <String>{};
-    final translatedWorkIds = <String>{};
     final onlineWorkIds = <String>{};
     for (final record in records) {
       if (record.online != (_source == 'remote')) continue;
-      if (record.isTranslated) translatedWorkIds.add(record.workId);
-      final firstForWork = !directoryCounts.containsKey(record.workId);
-      directoryCounts.update(
-        record.workId,
-        (count) => count + 1,
-        ifAbsent: () => 1,
-      );
-      if (record.isAi && (!record.online || firstForWork)) {
-        aiWorkIds.add(record.workId);
+      final id = record.workId;
+      final card = (workId: id, isTranslated: record.isTranslated);
+      if (record.online) {
+        // The remote file list comes from the highest-priority source.
+        if (!onlineWorkIds.add(id)) continue;
+        directoryCounts[card] = 1;
+        if (record.isTranslated && record.isAi) {
+          directoryCounts[(workId: id, isTranslated: false)] = 1;
+        } else {
+          remoteFileCounts[card] = record.fileCount;
+        }
+      } else {
+        directoryCounts.update(card, (count) => count + 1, ifAbsent: () => 1);
       }
-      if (record.online) onlineWorkIds.add(record.workId);
+      if (record.isAi && (!record.isTranslated || record.online)) {
+        aiWorkIds.add(id);
+      }
     }
-    final ids = directoryCounts.keys.toList()..sort();
+    final cards = directoryCounts.keys.toList()
+      ..sort((a, b) {
+        final id = a.workId.compareTo(b.workId);
+        if (id != 0) return id;
+        return (a.isTranslated ? 1 : 0).compareTo(b.isTranslated ? 1 : 0);
+      });
     _searchTimer?.cancel();
-    final filtered = _filterWorkIds(ids, aiWorkIds);
+    final filtered = _filterCards(cards, aiWorkIds);
     ++_countLoadToken;
     setState(() {
-      _workIds = ids;
-      _filteredWorkIds = filtered;
+      _cards = cards;
+      _filteredCards = filtered;
       _directoryCounts = directoryCounts;
       _aiWorkIds = aiWorkIds;
-      _translatedWorkIds = translatedWorkIds;
       _onlineWorkIds = onlineWorkIds;
       _files = {};
-      _fileCounts.clear();
+      _fileCounts
+        ..clear()
+        ..addAll(remoteFileCounts);
       _countFailures.clear();
       _visibleCount = _batchSize;
       _loadingMore = false;
@@ -204,24 +218,34 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
     _loadCounts(filtered.take(_batchSize).toList());
   }
 
-  List<String> _filterWorkIds(List<String> ids, Set<String> aiWorkIds) {
+  bool get _hasTypeFilter => _aiOnly || _tlOnly;
+
+  List<_LyricsCard> _filterCards(
+    List<_LyricsCard> cards,
+    Set<String> aiWorkIds,
+  ) {
     final query = _search.text.trim().toUpperCase();
-    if (query.isEmpty && !_aiOnly) return ids;
-    return ids
+    if (query.isEmpty && !_hasTypeFilter) return cards;
+    return cards
         .where(
-          (id) => (!_aiOnly || aiWorkIds.contains(id)) && id.contains(query),
+          (card) =>
+              card.workId.contains(query) &&
+              (!_hasTypeFilter ||
+                  (card.isTranslated
+                      ? _tlOnly
+                      : _aiOnly && aiWorkIds.contains(card.workId))),
         )
         .toList();
   }
 
-  void _setAiOnly(bool? value) {
-    if (value == null || value == _aiOnly) return;
-    _searchTimer?.cancel();
-    _aiOnly = value;
-    _updateSearchResults();
-    if (_selected.isNotEmpty) {
-      _selected.retainAll(_filteredWorkIds.toSet());
+  void _setTypeFilter({required bool translated, required bool value}) {
+    if (translated) {
+      _tlOnly = value;
+    } else {
+      _aiOnly = value;
     }
+    _searchTimer?.cancel();
+    _updateSearchResults(pruneSelection: true);
   }
 
   void _onSearchChanged() {
@@ -238,19 +262,22 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
     }
   }
 
-  void _updateSearchResults() {
+  void _updateSearchResults({bool pruneSelection = false}) {
     if (!mounted) return;
-    final filtered = _filterWorkIds(_workIds, _aiWorkIds);
+    final filtered = _filterCards(_cards, _aiWorkIds);
     ++_countLoadToken;
     setState(() {
-      _filteredWorkIds = filtered;
+      _filteredCards = filtered;
+      if (pruneSelection && _selected.isNotEmpty) {
+        _selected.retainAll(filtered.map((card) => card.workId).toSet());
+      }
       _visibleCount = _batchSize;
       _loadingMore = false;
     });
     _loadCounts(
       filtered
           .take(_batchSize)
-          .where((id) => !_fileCounts.containsKey(id))
+          .where((card) => !_fileCounts.containsKey(card))
           .toList(),
     );
   }
@@ -318,35 +345,45 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
     }
   }
 
-  Future<void> _loadCounts(List<String> ids) async {
+  Future<void> _loadCounts(List<_LyricsCard> cards) async {
+    final ids = {
+      for (final card in cards)
+        if (!_onlineWorkIds.contains(card.workId)) card.workId,
+    };
     if (ids.isEmpty) return;
     final token = _countLoadToken;
     try {
-      final result = await _service.countFilesForWorks(ids);
+      final result = await _service.countFilesByTranslationForWorks(ids);
       if (!mounted || token != _countLoadToken) return;
       setState(() {
-        _fileCounts.addAll(result);
+        for (final entry in result.entries) {
+          final id = entry.key;
+          final count = entry.value;
+          _fileCounts[(workId: id, isTranslated: false)] =
+              count.total - count.translated;
+          _fileCounts[(workId: id, isTranslated: true)] = count.translated;
+        }
         _countFailures.removeAll(result.keys);
       });
     } catch (_) {
       if (!mounted || token != _countLoadToken) return;
       setState(() {
-        _countFailures.addAll(ids.where((id) => !_fileCounts.containsKey(id)));
+        _countFailures.addAll(ids);
       });
     }
   }
 
-  Future<void> _loadNextBatch(List<String> ids) async {
-    if (_loadingMore || _visibleCount >= ids.length) return;
+  Future<void> _loadNextBatch(List<_LyricsCard> cards) async {
+    if (_loadingMore || _visibleCount >= cards.length) return;
     final token = _countLoadToken;
     final start = _visibleCount;
-    final end = (start + _batchSize).clamp(0, ids.length);
+    final end = (start + _batchSize).clamp(0, cards.length);
     setState(() {
       _loadingMore = true;
       _visibleCount = end;
     });
     try {
-      await _loadCounts(ids.sublist(start, end));
+      await _loadCounts(cards.sublist(start, end));
     } finally {
       if (mounted && token == _countLoadToken) {
         setState(() => _loadingMore = false);
@@ -554,7 +591,8 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
     if (ok == true) await _refresh(deep: true);
   }
 
-  Future<void> _showFiles(String workId) async {
+  Future<void> _showFiles(_LyricsCard card) async {
+    final workId = card.workId;
     final l10n = context.l10n;
     final token = _countLoadToken;
     final request = ++_fileListRequest;
@@ -572,14 +610,21 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
                         name: file.name,
                         extension: file.extension,
                         absolutePath: '',
+                        isTranslated: file.isTranslated,
                       ),
                     )
                     .toList()
               : await _service.listFiles(workId: workId));
       if (!mounted || !isCurrent()) return;
+      final translatedCount = files.where((file) => file.isTranslated).length;
+      final cardFiles = files
+          .where((file) => file.isTranslated == card.isTranslated)
+          .toList();
       setState(() {
         _files[workId] = files;
-        _fileCounts[workId] = files.length;
+        _fileCounts[(workId: workId, isTranslated: false)] =
+            files.length - translatedCount;
+        _fileCounts[(workId: workId, isTranslated: true)] = translatedCount;
         _countFailures.remove(workId);
       });
       await showModalBottomSheet<void>(
@@ -588,14 +633,14 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
         builder: (ctx) => SafeArea(
           child: SizedBox(
             height: 420,
-            child: files.isEmpty
+            child: cardFiles.isEmpty
                 ? Center(child: Text(l10n.lyricsLibraryPageShowFilesText))
                 : SmoothListView.builder(
-                    itemCount: files.length,
+                    itemCount: cardFiles.length,
                     itemBuilder: (_, i) => ListTile(
                       leading: const Icon(Icons.lyrics_outlined),
-                      title: Text(files[i].name),
-                      subtitle: Text(files[i].relativePath),
+                      title: Text(cardFiles[i].name),
+                      subtitle: Text(cardFiles[i].relativePath),
                     ),
                   ),
           ),
@@ -663,8 +708,15 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
     final p = Theme.of(context).brightness == Brightness.dark
         ? AppColors.dark
         : AppColors.light;
-    final ids = _filteredWorkIds;
-    final visibleCount = _visibleCount.clamp(0, ids.length);
+    final cards = _filteredCards;
+    final visibleCount = _visibleCount.clamp(0, cards.length);
+    final itemCount = _hasTypeFilter ? cards.length : _cards.length;
+    final selectableIds = _selecting
+        ? cards.map((card) => card.workId).toSet()
+        : const <String>{};
+    final allSelected =
+        selectableIds.length == _selected.length &&
+        selectableIds.every(_selected.contains);
     return Scaffold(
       appBar: AppBar(
         leadingWidth: 112,
@@ -678,7 +730,7 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
                   ),
                   Text(
                     context.l10n.lyricsLibraryPageBuildText8(
-                      (_aiOnly ? ids.length : _workIds.length).toString(),
+                      itemCount.toString(),
                     ),
                     style: TextStyle(fontSize: 12, color: p.dim),
                   ),
@@ -689,59 +741,13 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
                   const BackButton(),
                   Text(
                     context.l10n.lyricsLibraryPageBuildText8(
-                      (_aiOnly ? ids.length : _workIds.length).toString(),
+                      itemCount.toString(),
                     ),
                     style: TextStyle(fontSize: 12, color: p.dim),
                   ),
                 ],
               ),
         title: Text(context.l10n.lyricsLibrary),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(48),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Row(
-                children: [
-                  Pill(
-                    label: context.l10n.local,
-                    selected: _source == 'local',
-                    onTap: () => _changeSource('local'),
-                  ),
-                  const SizedBox(width: 8),
-                  Pill(
-                    label: context.l10n.online,
-                    selected: _source == 'remote',
-                    onTap: () => _changeSource('remote'),
-                  ),
-                  const Spacer(),
-                  MergeSemantics(
-                    child: InkWell(
-                      onTap: () => _setAiOnly(!_aiOnly),
-                      borderRadius: BorderRadius.circular(8),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Checkbox(
-                            value: _aiOnly,
-                            onChanged: _setAiOnly,
-                            activeColor: p.accent,
-                            visualDensity: VisualDensity.compact,
-                          ),
-                          Text(
-                            context.l10n.widgetsBuildBuilder,
-                            style: TextStyle(fontSize: 12.5, color: p.muted),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
         actions: [
           if (_searching)
             IconButton(
@@ -780,15 +786,11 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
                   : _deleteSelected,
             ),
             IconButton(
-              tooltip: _selected.length == ids.length
+              tooltip: allSelected
                   ? context.l10n.deselectAll
                   : context.l10n.selectAll,
-              icon: Icon(
-                _selected.length == ids.length
-                    ? Icons.deselect
-                    : Icons.select_all,
-              ),
-              onPressed: () => _selectAll(ids),
+              icon: Icon(allSelected ? Icons.deselect : Icons.select_all),
+              onPressed: () => _selectAll(selectableIds),
             ),
           ],
           IconButton(
@@ -847,18 +849,58 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
         onChanged: (index) => _changeSource(index == 0 ? 'local' : 'remote'),
         child: Column(
           children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: OverflowBar(
+                alignment: MainAxisAlignment.spaceBetween,
+                overflowAlignment: OverflowBarAlignment.end,
+                children: [
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      Pill(
+                        label: context.l10n.local,
+                        selected: _source == 'local',
+                        onTap: () => _changeSource('local'),
+                      ),
+                      Pill(
+                        label: context.l10n.online,
+                        selected: _source == 'remote',
+                        onTap: () => _changeSource('remote'),
+                      ),
+                    ],
+                  ),
+                  Wrap(
+                    children: [
+                      _typeCheckbox(
+                        p,
+                        label: context.l10n.lyricsLibraryTlLyrics,
+                        translated: true,
+                        value: _tlOnly,
+                      ),
+                      _typeCheckbox(
+                        p,
+                        label: context.l10n.widgetsBuildBuilder,
+                        translated: false,
+                        value: _aiOnly,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
             if (_searching)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
                 child: _searchField(p),
               ),
             Expanded(
-              child: ids.isEmpty
+              child: cards.isEmpty
                   ? Center(
                       child: _loading
                           ? const CircularProgressIndicator()
                           : Text(
-                              _aiOnly
+                              _hasTypeFilter || _search.text.trim().isNotEmpty
                                   ? context.l10n.homePageEmptyHintText4
                                   : _source == 'remote'
                                   ? context.l10n.lyricsLibraryPageBuildText9
@@ -874,7 +916,7 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
                           onNotification: (notification) {
                             if (notification.metrics.pixels >=
                                 notification.metrics.maxScrollExtent - 240) {
-                              _loadNextBatch(ids);
+                              _loadNextBatch(cards);
                             }
                             return false;
                           },
@@ -885,30 +927,32 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
                                   crossAxisCount: count,
                                   crossAxisSpacing: 13,
                                   mainAxisSpacing: 13,
-                                  childAspectRatio: 3.15,
+                                  mainAxisExtent: 72,
                                 ),
                             itemCount: visibleCount,
                             itemBuilder: (_, i) {
-                              final id = ids[i];
-                              final fileCount = _fileCounts[id];
-                              final directoryCount = _directoryCounts[id] ?? 0;
-                              final isAi = _aiWorkIds.contains(id);
-                              final isTranslated = _translatedWorkIds.contains(
-                                id,
-                              );
+                              final card = cards[i];
+                              final id = card.workId;
+                              final fileCount = _fileCounts[card];
+                              final directoryCount =
+                                  _directoryCounts[card] ?? 0;
+                              final isTranslated = card.isTranslated;
+                              final isAi =
+                                  !isTranslated && _aiWorkIds.contains(id);
                               final isOnline = _onlineWorkIds.contains(id);
                               return Stack(
+                                key: ValueKey(card),
+                                fit: StackFit.expand,
                                 children: [
                                   InkWell(
                                     onTap: () => _selecting
                                         ? _toggleSelection(id)
-                                        : _showFiles(id),
+                                        : _showFiles(card),
                                     onLongPress: _selecting
                                         ? null
                                         : () => _confirmDeleteWork(id),
                                     borderRadius: BorderRadius.circular(8),
                                     child: Container(
-                                      height: 72,
                                       padding: const EdgeInsets.fromLTRB(
                                         12,
                                         10,
@@ -960,8 +1004,12 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
                                                 const SizedBox(height: 3),
                                                 Text(
                                                   fileCount == null
-                                                      ? (_countFailures
-                                                                .contains(id)
+                                                      ? (isOnline
+                                                            ? context
+                                                                  .l10n
+                                                                  .remote
+                                                            : _countFailures
+                                                                  .contains(id)
                                                             ? context
                                                                   .l10n
                                                                   .lyricsLibraryPageBuildText5
@@ -1041,6 +1089,34 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _typeCheckbox(
+    Palette p, {
+    required String label,
+    required bool translated,
+    required bool value,
+  }) {
+    void update(bool next) =>
+        _setTypeFilter(translated: translated, value: next);
+    return MergeSemantics(
+      child: InkWell(
+        onTap: () => update(!value),
+        borderRadius: BorderRadius.circular(8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Checkbox(
+              value: value,
+              onChanged: (_) => update(!value),
+              activeColor: p.accent,
+              visualDensity: VisualDensity.compact,
+            ),
+            Text(label, style: TextStyle(fontSize: 12.5, color: p.muted)),
           ],
         ),
       ),

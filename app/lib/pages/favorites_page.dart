@@ -10,6 +10,7 @@ import '../services/api_service.dart';
 import '../services/dictation_batch_importer.dart';
 import '../services/dictation_queue.dart';
 import '../services/lyrics_library_service.dart';
+import '../services/works_page_buffer.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import '../widgets/playlist_picker.dart';
@@ -90,10 +91,11 @@ class _FavoritesPageState extends State<FavoritesPage> {
   String _query = '';
   bool _searching = false;
   int _visibleTarget = 20;
+  WorksPageBuffer? _pages;
+  bool _appending = false;
   bool _loading = false;
   bool _error = false;
   bool _hasMore = true;
-  int _page = 0;
   int _gen = 0;
   int _totalCount = -1; // 当前列表对应的服务端总数（未知为 -1）
   bool _silentRefreshing = false; // 进入页面时的后台比对是否在途
@@ -102,6 +104,8 @@ class _FavoritesPageState extends State<FavoritesPage> {
   String? _reviewFilter;
   late int _seenFavVersion;
   late int _seenFavoritesEntryVersion;
+  late int _seenServerEpoch;
+  late int _seenLoginEpoch;
   late bool _seenSfwMode;
   bool _selecting = false;
   final Set<String> _selected = {};
@@ -117,6 +121,8 @@ class _FavoritesPageState extends State<FavoritesPage> {
     super.initState();
     _seenFavVersion = app.favVersion;
     _seenFavoritesEntryVersion = app.favoritesEntryVersion;
+    _seenServerEpoch = app.serverEpoch;
+    _seenLoginEpoch = app.loginEpoch;
     _seenSfwMode = app.sfwMode;
     app.addListener(_onAppChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadData(reset: true));
@@ -124,6 +130,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
 
   @override
   void dispose() {
+    _pages?.close();
     _filterTimer?.cancel();
     _search.dispose();
     _searchFocus.dispose();
@@ -167,7 +174,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
   void _maybeRefill() {
     if (!mounted || app.sfwMode || _filterTimer?.isActive == true) return;
     if (_hasViewFilter &&
-        !_loading &&
+        !_appending &&
         !_error &&
         _hasMore &&
         _visibleWorks.length < _visibleTarget) {
@@ -176,7 +183,9 @@ class _FavoritesPageState extends State<FavoritesPage> {
   }
 
   void _loadMore() {
-    if (_loading || !_hasMore || _filterTimer?.isActive == true) return;
+    if (_appending || _error || !_hasMore || _filterTimer?.isActive == true) {
+      return;
+    }
     _visibleTarget = _visibleWorks.length + 20;
     _loadData(reset: false);
   }
@@ -186,14 +195,24 @@ class _FavoritesPageState extends State<FavoritesPage> {
     final enteredFavorites =
         app.favoritesEntryVersion != _seenFavoritesEntryVersion;
     final sfwChanged = app.sfwMode != _seenSfwMode;
-    if (!favoriteChanged && !enteredFavorites && !sfwChanged) return;
+    final siteChanged =
+        app.serverEpoch != _seenServerEpoch ||
+        app.loginEpoch != _seenLoginEpoch;
+    if (!favoriteChanged && !enteredFavorites && !sfwChanged && !siteChanged) {
+      return;
+    }
 
     _seenFavVersion = app.favVersion;
     _seenFavoritesEntryVersion = app.favoritesEntryVersion;
     _seenSfwMode = app.sfwMode;
+    _seenServerEpoch = app.serverEpoch;
+    _seenLoginEpoch = app.loginEpoch;
     if (sfwChanged && app.sfwMode) {
       // SFW 开启后立即清空当前收藏，且使在途请求结果失效。
       _gen++;
+      _pages?.close();
+      _pages = null;
+      _appending = false;
       if (mounted) {
         setState(() {
           _reviewsMode = true;
@@ -203,13 +222,12 @@ class _FavoritesPageState extends State<FavoritesPage> {
           _clearWorks();
           _loading = false;
           _error = false;
-          _page = 0;
           _hasMore = false;
         });
       }
       return;
     }
-    if (favoriteChanged || sfwChanged) {
+    if (favoriteChanged || sfwChanged || siteChanged) {
       // 收藏增删/开关变化需立即与服务器对齐，保持常规加载（含加载态）。
       _loadData(reset: true);
       return;
@@ -224,55 +242,28 @@ class _FavoritesPageState extends State<FavoritesPage> {
   /// 才替换列表并重建页面。请求失败时同样保留旧数据，不打断浏览。
   Future<void> _refreshOnEntry() async {
     if (app.sfwMode || _silentRefreshing) return;
-    if (_loading) return; // 已有请求在途，其结果会自行更新列表
+    if (_appending) return; // 已有请求在途，其结果会自行更新列表
     if (_works.isEmpty) {
       // 没有旧数据可展示（首次进入/上次加载失败）：走常规加载。
       await _loadData(reset: true);
       return;
     }
+    final loadPage = _pageLoader();
+    if (loadPage == null) return;
     _silentRefreshing = true;
     // 请求期间条件变化（切歌单、改排序/筛选、分页）则丢弃本次结果。
     final gen = _gen;
     final reviewsMode = _reviewsMode;
-    final playlist = _playlist;
-    final sort = _reviewSort;
-    final asc = _reviewOrderAsc;
-    final filter = _reviewFilter;
     try {
-      final WorksPage fresh;
-      if (reviewsMode) {
-        fresh = await ApiService.fetchMyReviews(
-          app,
-          page: 1,
-          perPage: 20,
-          order: sort,
-          sort: asc ? 'asc' : 'desc',
-          filter: filter,
-        );
-      } else {
-        final pl = playlist;
-        if (pl == null) return;
-        fresh = await ApiService.fetchPlaylistWorks(
-          app,
-          pl.id,
-          page: 1,
-          perPage: 20,
-        );
-      }
+      final fresh = await loadPage(1);
       if (!mounted || gen != _gen) return;
-      if (_reviewsMode != reviewsMode ||
-          !identical(_playlist, playlist) ||
-          _reviewSort != sort ||
-          _reviewOrderAsc != asc ||
-          _reviewFilter != filter) {
-        return;
-      }
       if (!favoritesListChanged(_works, _totalCount, fresh)) return; // 无差异
+      _pages?.close();
+      _pages = WorksPageBuffer(loadPage, nextPage: 2);
       setState(() {
         _clearWorks();
         _appendWorks(fresh.works);
         _visibleTarget = 20;
-        _page = 1;
         _hasMore = fresh.hasMore && fresh.works.isNotEmpty;
         _totalCount = fresh.totalCount;
         _error = false;
@@ -283,109 +274,86 @@ class _FavoritesPageState extends State<FavoritesPage> {
       // 静默刷新失败：继续显示旧数据
     } finally {
       _silentRefreshing = false;
+      _prefetch();
+    }
+  }
+
+  Future<WorksPage> Function(int)? _pageLoader() {
+    if (!_reviewsMode) {
+      final id = _playlist?.id;
+      return id == null
+          ? null
+          : (page) => ApiService.fetchPlaylistWorks(app, id, page: page);
+    }
+    final sort = _reviewSort;
+    final order = _reviewOrderAsc ? 'asc' : 'desc';
+    final filter = _reviewFilter;
+    return (page) => ApiService.fetchMyReviews(
+      app,
+      page: page,
+      order: sort,
+      sort: order,
+      filter: filter,
+    );
+  }
+
+  void _prefetch() {
+    final pages = _pages;
+    // The tab is mounted in the navigation stack before it is opened.
+    if (mounted && app.tab == 1 && _hasMore && !_error && pages != null) {
+      unawaited(pages.prefetch());
     }
   }
 
   Future<void> _loadData({bool reset = true}) async {
-    if (!mounted) return;
-    if (reset) _visibleTarget = 20;
-    if (app.sfwMode) {
+    if (!mounted || app.sfwMode) return;
+    if (!reset && (_appending || !_hasMore)) return;
+    if (reset) {
+      final loadPage = _pageLoader();
+      if (loadPage == null) return;
+      _pages?.close();
+      _pages = WorksPageBuffer(loadPage);
+      _visibleTarget = 20;
+    }
+    final pages = _pages;
+    if (pages == null) return;
+    final gen = ++_gen;
+    _appending = true;
+    _error = false;
+    if (reset) {
       setState(() {
         _clearWorks();
-        _loading = false;
-        _error = false;
-        _page = 0;
-        _hasMore = false;
+        _hasMore = true;
+        _loading = true;
       });
-      return;
+    } else if (!pages.hasReadyPage) {
+      setState(() => _loading = true);
     }
-    if (_reviewsMode) {
-      await _loadReviews(reset: reset);
-    } else {
-      await _loadPlaylist(reset: reset);
+    try {
+      final list = await pages.takeNext();
+      if (!mounted || gen != _gen) return;
+      setState(() {
+        if (list != null) {
+          _appendWorks(list.works);
+          _totalCount = list.totalCount;
+        }
+        _hasMore = list != null && list.hasMore && list.works.isNotEmpty;
+        _loading = false;
+      });
+      if (reset && _reviewsMode && list != null) {
+        app.syncFavorites(_works);
+      }
+    } catch (_) {
+      if (!mounted || gen != _gen) return;
+      setState(() {
+        _loading = false;
+        _error = true;
+      });
+    } finally {
+      if (gen == _gen) _appending = false;
     }
+    _prefetch();
     _maybeRefill();
-  }
-
-  Future<void> _loadReviews({bool reset = true}) async {
-    if (!reset && (_loading || !_hasMore)) return;
-    final gen = ++_gen;
-    final page = reset ? 1 : _page + 1;
-    setState(() {
-      _loading = true;
-      _error = false;
-      if (reset) {
-        _clearWorks();
-        _page = 0;
-        _hasMore = true;
-      }
-    });
-    try {
-      final list = await ApiService.fetchMyReviews(
-        app,
-        page: page,
-        perPage: 20,
-        order: _reviewSort,
-        sort: _reviewOrderAsc ? 'asc' : 'desc',
-        filter: _reviewFilter,
-      );
-      if (!mounted || gen != _gen) return;
-      setState(() {
-        _appendWorks(list.works);
-        _page = page;
-        _hasMore = list.hasMore && list.works.isNotEmpty;
-        _totalCount = list.totalCount;
-        _loading = false;
-      });
-      if (page == 1) {
-        app.syncFavorites(_works); // 用我的评价列表同步收藏状态
-      }
-    } catch (_) {
-      if (!mounted || gen != _gen) return;
-      setState(() {
-        _loading = false;
-        _error = true;
-      });
-    }
-  }
-
-  Future<void> _loadPlaylist({bool reset = true}) async {
-    final pl = _playlist;
-    if (pl == null) return;
-    if (!reset && (_loading || !_hasMore)) return;
-    final gen = ++_gen;
-    final page = reset ? 1 : _page + 1;
-    setState(() {
-      _loading = true;
-      _error = false;
-      if (reset) {
-        _clearWorks();
-        _page = 0;
-        _hasMore = true;
-      }
-    });
-    try {
-      final list = await ApiService.fetchPlaylistWorks(
-        app,
-        pl.id,
-        page: page,
-        perPage: 20,
-      );
-      if (!mounted || gen != _gen) return;
-      setState(() {
-        _appendWorks(list.works);
-        _page = page;
-        _hasMore = list.hasMore && list.works.isNotEmpty;
-        _totalCount = list.totalCount;
-        _loading = false;
-      });
-    } catch (_) {
-      if (!mounted || gen != _gen) return;
-      setState(() {
-        _loading = false;
-        _error = true;
-      });
-    }
   }
 
   Future<void> _openPlaylistPicker() async {
@@ -1153,7 +1121,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
     if (_error && _visibleWorks.isEmpty) {
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => _loadData(reset: true),
+        onTap: () => _loadData(reset: _works.isEmpty),
         child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1191,7 +1159,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
         Expanded(
           child: NotificationListener<ScrollNotification>(
             onNotification: (n) {
-              if (n.metrics.pixels >= n.metrics.maxScrollExtent - 240) {
+              if (n.depth == 0 && n.metrics.extentAfter <= 240) {
                 _loadMore();
               }
               return false;
@@ -1251,6 +1219,11 @@ class _FavoritesPageState extends State<FavoritesPage> {
               context.l10n.loading,
               style: TextStyle(fontSize: 12, color: p.dim),
             ),
+          )
+        else if (_error)
+          TextButton(
+            onPressed: () => _loadData(reset: false),
+            child: Text(context.l10n.retry),
           )
         else if (!_hasMore)
           Padding(
