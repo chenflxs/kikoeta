@@ -4,7 +4,7 @@
 
 > ASMR 音声を楽しむためのクライアント。asmr.one と kikoeru-express ベースの自前サーバーに対応し、Windows と Android で作品の閲覧・再生、歌詞の表示、ローカルデータの管理ができます。
 
-[![GitHub release](https://img.shields.io/github/v/release/chenflxs/kikoeta?display_name=tag&label=Latest%20release)](https://github.com/chenflxs/kikoeta/releases) [![License](https://img.shields.io/github/license/chenflxs/kikoeta)](LICENSE) [![Flutter](https://img.shields.io/badge/Flutter-Material%203-02569B?logo=flutter)](https://flutter.dev/) [![Rust](https://img.shields.io/badge/Rust-Core-000000?logo=rust)](https://www.rust-lang.org/)
+[![GitHub release](https://img.shields.io/github/v/release/chenflxs/kikoeta?display_name=tag&label=Latest%20release)](https://github.com/chenflxs/kikoeta/releases) [![License](https://img.shields.io/github/license/chenflxs/kikoeta)](LICENSE) [![Flutter](https://img.shields.io/badge/Flutter-Material%203-02569B?logo=flutter)](https://flutter.dev/) [![Rust](https://img.shields.io/badge/Rust-Core-000000?logo=rust)](https://www.rust-lang.org/) [![ダウンロード数](https://img.shields.io/github/downloads/chenflxs/kikoeta/total?label=%E3%83%80%E3%82%A6%E3%83%B3%E3%83%AD%E3%83%BC%E3%83%89%E6%95%B0)](https://github.com/chenflxs/kikoeta/releases)
 
 > [!WARNING]
 > 本プロジェクトは、学習と個人でのリスニングを目的とした非公式の個人プロジェクトです。サーバーの API や提供状況は予告なく変更される場合があります。各サービスの利用規則を守ってご利用ください。

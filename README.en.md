@@ -4,7 +4,7 @@
 
 > An ASMR listening client. Browse and play works from asmr.one and self-hosted kikoeru-express servers on Windows and Android, with lyrics and local library management.
 
-[![GitHub release](https://img.shields.io/github/v/release/chenflxs/kikoeta?display_name=tag&label=Latest%20release)](https://github.com/chenflxs/kikoeta/releases) [![License](https://img.shields.io/github/license/chenflxs/kikoeta)](LICENSE) [![Flutter](https://img.shields.io/badge/Flutter-Material%203-02569B?logo=flutter)](https://flutter.dev/) [![Rust](https://img.shields.io/badge/Rust-Core-000000?logo=rust)](https://www.rust-lang.org/)
+[![GitHub release](https://img.shields.io/github/v/release/chenflxs/kikoeta?display_name=tag&label=Latest%20release)](https://github.com/chenflxs/kikoeta/releases) [![License](https://img.shields.io/github/license/chenflxs/kikoeta)](LICENSE) [![Flutter](https://img.shields.io/badge/Flutter-Material%203-02569B?logo=flutter)](https://flutter.dev/) [![Rust](https://img.shields.io/badge/Rust-Core-000000?logo=rust)](https://www.rust-lang.org/) [![Downloads](https://img.shields.io/github/downloads/chenflxs/kikoeta/total?label=Downloads)](https://github.com/chenflxs/kikoeta/releases)
 
 > [!WARNING]
 > This is an unofficial personal project for learning and personal listening. Server APIs and their availability may change at any time. Please follow the rules of the services you use.

@@ -4,7 +4,7 @@
 
 > Клиент для прослушивания ASMR. Поддерживает asmr.one и собственные серверы на базе kikoeru-express: просмотр и воспроизведение произведений, тексты и субтитры, управление локальными данными в Windows и Android.
 
-[![GitHub release](https://img.shields.io/github/v/release/chenflxs/kikoeta?display_name=tag&label=Latest%20release)](https://github.com/chenflxs/kikoeta/releases) [![License](https://img.shields.io/github/license/chenflxs/kikoeta)](LICENSE) [![Flutter](https://img.shields.io/badge/Flutter-Material%203-02569B?logo=flutter)](https://flutter.dev/) [![Rust](https://img.shields.io/badge/Rust-Core-000000?logo=rust)](https://www.rust-lang.org/)
+[![GitHub release](https://img.shields.io/github/v/release/chenflxs/kikoeta?display_name=tag&label=Latest%20release)](https://github.com/chenflxs/kikoeta/releases) [![License](https://img.shields.io/github/license/chenflxs/kikoeta)](LICENSE) [![Flutter](https://img.shields.io/badge/Flutter-Material%203-02569B?logo=flutter)](https://flutter.dev/) [![Rust](https://img.shields.io/badge/Rust-Core-000000?logo=rust)](https://www.rust-lang.org/) [![Загрузки](https://img.shields.io/github/downloads/chenflxs/kikoeta/total?label=%D0%97%D0%B0%D0%B3%D1%80%D1%83%D0%B7%D0%BA%D0%B8)](https://github.com/chenflxs/kikoeta/releases)
 
 > [!WARNING]
 > Это неофициальный личный проект для обучения и личного прослушивания. API серверов и их доступность могут измениться в любой момент. Соблюдайте правила используемых сервисов.

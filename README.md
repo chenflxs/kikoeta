@@ -4,7 +4,7 @@
 
 > 面向 ASMR 音声的本地收听客户端。支持 asmr.one 与基于 kikoeru-express 的自建站点，在 Windows 和 Android 上提供浏览、播放、歌词与本地资料管理体验。
 
-[![GitHub release](https://img.shields.io/github/v/release/chenflxs/kikoeta?display_name=tag&label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC)](https://github.com/chenflxs/kikoeta/releases) [![License](https://img.shields.io/github/license/chenflxs/kikoeta)](LICENSE) [![Flutter](https://img.shields.io/badge/Flutter-Material%203-02569B?logo=flutter)](https://flutter.dev/) [![Rust](https://img.shields.io/badge/Rust-Core-000000?logo=rust)](https://www.rust-lang.org/)
+[![GitHub release](https://img.shields.io/github/v/release/chenflxs/kikoeta?display_name=tag&label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC)](https://github.com/chenflxs/kikoeta/releases) [![License](https://img.shields.io/github/license/chenflxs/kikoeta)](LICENSE) [![Flutter](https://img.shields.io/badge/Flutter-Material%203-02569B?logo=flutter)](https://flutter.dev/) [![Rust](https://img.shields.io/badge/Rust-Core-000000?logo=rust)](https://www.rust-lang.org/) [![下载量](https://img.shields.io/github/downloads/chenflxs/kikoeta/total?label=%E4%B8%8B%E8%BD%BD%E9%87%8F)](https://github.com/chenflxs/kikoeta/releases)
 
 > [!WARNING]
 > 本项目为非官方个人项目，仅供学习与本地收听使用。服务端接口及其可用性可能随时变动，请遵守相关服务的使用规则。
