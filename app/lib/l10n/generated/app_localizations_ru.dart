@@ -100,6 +100,21 @@ class AppLocalizationsRu extends AppLocalizations {
   String get dataExport => 'Экспорт данных';
 
   @override
+  String get logCapture => 'Включить журнал';
+
+  @override
+  String get logCaptureHint => 'Хранит последние 1 МБ журнала за текущий сеанс';
+
+  @override
+  String get logExport => 'Экспорт журнала';
+
+  @override
+  String get logEmpty => 'Нет записей для экспорта';
+
+  @override
+  String get logExportDone => 'Журнал экспортирован';
+
+  @override
   String get dataImport => 'Импорт данных';
 
   @override

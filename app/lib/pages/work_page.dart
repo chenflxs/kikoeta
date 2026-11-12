@@ -2924,24 +2924,29 @@ class _WorkPageState extends State<WorkPage> {
         parts.first.trim().isNotEmpty ? parts.first.trim() : work.title,
         trackZh,
       );
-      if (mounted) setState(() {});
-      _toast(l10n.workPageTranslateTitlesToast7((trackZh.length).toString()));
+      if (mounted) {
+        setState(() {});
+        _toast(l10n.workPageTranslateTitlesToast7((trackZh.length).toString()));
+      }
     } catch (e) {
-      _toast(l10n.workPageTranslateTitlesToast3((e).toString()));
+      if (mounted) {
+        _toast(
+          l10n.workPageTranslateTitlesToast3(e.toString()),
+          duration: const Duration(seconds: 6),
+        );
+      }
     } finally {
       if (mounted) setState(() => _translating = false);
     }
   }
 
-  void _toast(String msg) {
+  void _toast(
+    String msg, {
+    Duration duration = const Duration(milliseconds: 1600),
+  }) {
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(msg),
-          duration: const Duration(milliseconds: 1600),
-        ),
-      );
+      ..showSnackBar(SnackBar(content: Text(msg), duration: duration));
   }
 }
 

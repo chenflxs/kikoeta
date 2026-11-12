@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'app_log.dart';
+
 /// Small, payload-free startup trace: available even before Rust is initialized.
 class StartupTrace {
   static final _clock = Stopwatch()..start();
@@ -25,6 +27,7 @@ class StartupTrace {
   }
 
   static void mark(String event) {
+    AppLog.record('startup $event');
     try {
       _file?.writeStringSync('${_clock.elapsedMilliseconds}ms $event\n');
       if (event == 'startup-ready') _ready = true;

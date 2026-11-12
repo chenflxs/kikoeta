@@ -65,7 +65,12 @@ pub async fn api_translate_openai(
     if text.trim().is_empty() {
         return Ok(String::new());
     }
-    let input = indexed_translation_input(&text);
+    let lines: Vec<_> = text.lines().collect();
+    let batches = if !lyrics && is_index_compat(&base) {
+        index_title_batches(&lines)
+    } else {
+        vec![lines.as_slice()]
+    };
     let url = format!("{base}/chat/completions");
     let client = openai_client(&base)?;
     let mut prompt = translation_prompt(&source_language, &target_language);
@@ -79,49 +84,71 @@ pub async fn api_translate_openai(
         "model": model.trim(),
         "messages": [
             { "role": "system", "content": prompt },
-            { "role": "user", "content": input },
+            { "role": "user", "content": "" },
         ],
         "temperature": temperature.clamp(0.0, 2.0),
     });
     apply_thinking_options(&mut body, &base, &model);
 
+    let mut translations = Vec::with_capacity(batches.len());
+    let mut first_line = 1;
+    for batch in &batches {
+        body["messages"][1]["content"] = indexed_translation_input(batch).into();
+        let last_line = first_line + batch.len() - 1;
+        let result =
+            request_completion(|| apply_auth(client.post(&url).json(&body), &base, &api_key))
+                .await
+                .and_then(|content| {
+                    if lyrics {
+                        let markers = indexed_markers(&content);
+                        let mut seen = vec![false; batch.len()];
+                        for (_, _, index) in &markers {
+                            if *index >= batch.len() || seen[*index] {
+                                return Ok(String::new());
+                            }
+                            seen[*index] = true;
+                        }
+                        // Dart splits malformed lyric batches before trying again.
+                        if markers.len() != batch.len() || seen.contains(&false) {
+                            return Ok(String::new());
+                        }
+                    }
+                    unpack_indexed_translation(&content, batch.len())
+                });
+        translations.push(result.map_err(|error| {
+            if batches.len() > 1 {
+                format!("第 {first_line}–{last_line} 行：{error}")
+            } else {
+                error
+            }
+        })?);
+        first_line = last_line + 1;
+    }
+    Ok(translations.join("\n"))
+}
+
+async fn request_completion(
+    request: impl Fn() -> reqwest::RequestBuilder,
+) -> Result<String, String> {
     let mut last_err = String::new();
     let mut delay = Duration::from_secs(1);
     for attempt in 0..3 {
-        let req = client
-            .post(&url)
-            .header("content-type", "application/json")
-            .body(body.to_string());
-        let req = apply_auth(req, &base, &api_key);
-        match req.send().await {
+        match request().send().await {
+            Ok(resp) if resp.status() == reqwest::StatusCode::GATEWAY_TIMEOUT => {
+                last_err = "HTTP 504：翻译服务网关超时".to_string();
+            }
             Ok(resp) => {
                 let status = resp.status();
                 let text_body = resp
                     .text()
                     .await
-                    .map_err(|e| format!("读取响应失败: {e}"))?;
+                    .map_err(|e| completion_request_error("读取响应", e))?;
                 if status.is_success() {
-                    let content = parse_completion(&text_body)?;
-                    if lyrics {
-                        let count = text.lines().count();
-                        let markers = indexed_markers(&content);
-                        let mut seen = vec![false; count];
-                        for (_, _, index) in &markers {
-                            if *index >= count || seen[*index] {
-                                return Ok(String::new());
-                            }
-                            seen[*index] = true;
-                        }
-                        // Dart splits malformed batches before trying again.
-                        if markers.len() != count || seen.contains(&false) {
-                            return Ok(String::new());
-                        }
-                    }
-                    return unpack_indexed_translation(&content, text.lines().count());
+                    return parse_completion(&text_body);
                 }
                 last_err = format!("HTTP {}: {}", status.as_u16(), preview(&text_body));
             }
-            Err(e) => last_err = format!("请求失败: {e}"),
+            Err(e) => last_err = completion_request_error("请求", e),
         }
         if attempt < 2 {
             tokio::time::sleep(delay).await;
@@ -131,8 +158,39 @@ pub async fn api_translate_openai(
     Err(last_err)
 }
 
-fn indexed_translation_input(text: &str) -> String {
-    text.lines()
+fn completion_request_error(stage: &str, error: reqwest::Error) -> String {
+    if error.is_timeout() {
+        format!("翻译{stage}超时")
+    } else {
+        format!("{stage}失败: {error}")
+    }
+}
+
+fn index_title_batches<'a, 'b>(lines: &'a [&'b str]) -> Vec<&'a [&'b str]> {
+    // The public endpoint can return HTTP 504 after 30 seconds of generation.
+    const MAX_LINES: usize = 10;
+    const MAX_CHARS: usize = 500;
+    let mut batches = Vec::new();
+    let mut start = 0;
+    let mut chars = 0;
+    for (index, line) in lines.iter().enumerate() {
+        let size = line.chars().count();
+        if index > start && (index - start == MAX_LINES || chars + size > MAX_CHARS) {
+            batches.push(&lines[start..index]);
+            start = index;
+            chars = 0;
+        }
+        chars += size;
+    }
+    if start < lines.len() {
+        batches.push(&lines[start..]);
+    }
+    batches
+}
+
+fn indexed_translation_input(lines: &[&str]) -> String {
+    lines
+        .iter()
         .enumerate()
         .map(|(index, line)| format!("[[KIKOETA_LINE_{index}]]{line}"))
         .collect::<Vec<_>>()
@@ -194,6 +252,7 @@ fn apply_auth(req: reqwest::RequestBuilder, base: &str, api_key: &str) -> reqwes
 fn apply_thinking_options(body: &mut serde_json::Value, base: &str, model: &str) {
     if is_index_compat(base) {
         body["chat_template_kwargs"] = serde_json::json!({ "enable_thinking": false });
+        body["temperature"] = serde_json::json!(0.0);
         return;
     }
     let provider = format!("{} {}", base.to_ascii_lowercase(), model.to_ascii_lowercase());

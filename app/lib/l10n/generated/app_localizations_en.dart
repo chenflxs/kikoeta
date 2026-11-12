@@ -99,6 +99,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get dataExport => 'Export local data';
 
   @override
+  String get logCapture => 'Enable logging';
+
+  @override
+  String get logCaptureHint => 'Keeps the latest 1 MB from this session';
+
+  @override
+  String get logExport => 'Export logs';
+
+  @override
+  String get logEmpty => 'No logs to export';
+
+  @override
+  String get logExportDone => 'Logs exported';
+
+  @override
   String get dataImport => 'Import local data';
 
   @override

@@ -9,6 +9,7 @@ import '../src/rust/api/simple.dart';
 import '../src/rust/api/textcodec.dart';
 import '../l10n/strings.dart';
 import '../l10n/tag_names.dart';
+import 'app_log.dart';
 
 /// 一页作品 + 服务端分页信息（用于 hasMore 判断）
 class WorksPage {
@@ -132,7 +133,7 @@ class ApiService {
     AppState app, {
     int page = 1,
     int perPage = 20,
-  }) async {
+  }) => AppLog.track('network fetch works', () async {
     final base = resolveBase(app);
     if (app.customServer) {
       // kikoeru-express：分页大小由服务器配置决定，年龄用 nsfw、字幕用 lyric
@@ -181,7 +182,7 @@ class ApiService {
       seed: app.sort == 'random' ? app.randomSeed?.toString() : null,
     );
     return parseWorks(json, base: base, perPage: perPage);
-  }
+  });
 
   /// asmr.one 热门/推荐页面实际使用 recommender POST 接口，而不是
   /// GET /api/works/{popular,recommend}。后者不存在，会导致页面显示无网络连接。
@@ -216,7 +217,7 @@ class ApiService {
     int perPage = 20,
     // 搜索结果持有自己的 seed，避免刷新搜索打乱首页后续分页。
     int? randomSeed,
-  }) async {
+  }) => AppLog.track('network search works', () async {
     final base = resolveBase(app);
     if (app.customServer) {
       final cleanQuery = query.replaceAll('，', ' ').replaceAll(',', ' ').trim();
@@ -264,7 +265,7 @@ class ApiService {
           : null,
     );
     return parseWorks(json, base: base, perPage: perPage);
-  }
+  });
 
   /// 随心听使用 asmr.one 的专用随机作品请求。
   ///
@@ -279,7 +280,10 @@ class ApiService {
   /// 读取单部作品详情（`?v=2`，含当前账号的评分/标记/评论），
   /// 以取得首页列表未携带的多语言版本与评价信息。
   static Future<Work> fetchWork(AppState app, int id) async {
-    final json = await apiGetWorkV2(base: resolveBase(app), rj: id.toString());
+    final json = await AppLog.track(
+      'network fetch work detail',
+      () => apiGetWorkV2(base: resolveBase(app), rj: id.toString()),
+    );
     final decoded = jsonDecode(json);
     if (decoded is! Map) {
       throw FormatException(appL10n.apiServiceFetchWorkFormatException);
@@ -502,7 +506,7 @@ class ApiService {
 
   static Future<int> checkHealth(AppState app, String base) async {
     final timer = Stopwatch()..start();
-    await apiHealth(base: base);
+    await AppLog.track('network server health', () => apiHealth(base: base));
     return timer.elapsedMilliseconds;
   }
 
@@ -790,7 +794,10 @@ class ApiService {
     String name,
     String password,
   ) {
-    return apiLogin(base: base, name: name, password: password);
+    return AppLog.track(
+      'network login',
+      () => apiLogin(base: base, name: name, password: password),
+    );
   }
 
   static String? tokenFor(AppState app, String base) => getToken(base: base);
@@ -1463,7 +1470,10 @@ class ApiService {
     final key = '$base|$workApiId';
     final cached = _tracksCache[key];
     if (!forceRefresh && cached != null) return cached;
-    final json = await apiGetTracks(base: base, rj: '$workApiId');
+    final json = await AppLog.track(
+      'network fetch tracks',
+      () => apiGetTracks(base: base, rj: '$workApiId'),
+    );
     final nodes = parseMediaNodes(jsonDecode(json), base: base);
     if (_tracksCache.length >= 10) _tracksCache.remove(_tracksCache.keys.first);
     _tracksCache[key] = nodes;

@@ -7,6 +7,7 @@ import 'package:media_kit/media_kit.dart' hide Track;
 import '../src/rust/api/proxy.dart';
 import '../src/rust/api/simple.dart';
 import 'android_audio.dart';
+import 'app_log.dart';
 import 'audio_effects.dart';
 
 /// stop()/open() 后残留 completed 事件的抑制窗口：
@@ -72,6 +73,7 @@ class AppPlayer {
         }
       }),
       player.stream.error.listen((e) {
+        AppLog.record('playback backend error');
         _errorCtrl.add(e.toString());
         _scheduleReconnect();
       }),
@@ -298,6 +300,7 @@ class AppPlayer {
         .catchError((Object error, StackTrace stack) {
           // Superseded callers must not retry their old URL or change new UI state.
           if (generation != _mediaGeneration) return;
+          AppLog.record('playback open failed', error: error);
           Error.throwWithStackTrace(error, stack);
         })
         .timeout(
@@ -309,6 +312,7 @@ class AppPlayer {
             _mediaGeneration++;
             opened = false;
             openedUrl = null;
+            AppLog.record('playback open timed out');
             throw TimeoutException('Opening media timed out', _openTimeout);
           },
         );
@@ -414,6 +418,9 @@ class AppPlayer {
   void _setReconnecting(bool value) {
     if (_reconnecting == value) return;
     _reconnecting = value;
+    AppLog.record(
+      value ? 'playback reconnect started' : 'playback reconnect ended',
+    );
     _reconnectingCtrl.add(value);
   }
 

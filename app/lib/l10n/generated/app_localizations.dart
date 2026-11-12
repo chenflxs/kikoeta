@@ -266,6 +266,36 @@ abstract class AppLocalizations {
   /// **'导出本地数据'**
   String get dataExport;
 
+  /// No description provided for @logCapture.
+  ///
+  /// In zh, this message translates to:
+  /// **'开启日志'**
+  String get logCapture;
+
+  /// No description provided for @logCaptureHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'仅保留本次运行最近的 1 MB'**
+  String get logCaptureHint;
+
+  /// No description provided for @logExport.
+  ///
+  /// In zh, this message translates to:
+  /// **'导出日志'**
+  String get logExport;
+
+  /// No description provided for @logEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无日志可导出'**
+  String get logEmpty;
+
+  /// No description provided for @logExportDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'日志已导出'**
+  String get logExportDone;
+
   /// No description provided for @dataImport.
   ///
   /// In zh, this message translates to:

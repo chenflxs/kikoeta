@@ -93,6 +93,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get dataExport => '导出本地数据';
 
   @override
+  String get logCapture => '开启日志';
+
+  @override
+  String get logCaptureHint => '仅保留本次运行最近的 1 MB';
+
+  @override
+  String get logExport => '导出日志';
+
+  @override
+  String get logEmpty => '暂无日志可导出';
+
+  @override
+  String get logExportDone => '日志已导出';
+
+  @override
   String get dataImport => '导入本地数据';
 
   @override
@@ -3088,6 +3103,21 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get dataExport => '匯出本機資料';
+
+  @override
+  String get logCapture => '開啟日誌';
+
+  @override
+  String get logCaptureHint => '僅保留本次執行最近的 1 MB';
+
+  @override
+  String get logExport => '匯出日誌';
+
+  @override
+  String get logEmpty => '目前沒有可匯出的日誌';
+
+  @override
+  String get logExportDone => '日誌已匯出';
 
   @override
   String get dataImport => '匯入本機資料';

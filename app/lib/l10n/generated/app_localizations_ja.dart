@@ -95,6 +95,21 @@ class AppLocalizationsJa extends AppLocalizations {
   String get dataExport => 'ローカルデータをエクスポート';
 
   @override
+  String get logCapture => 'ログ記録を有効にする';
+
+  @override
+  String get logCaptureHint => '今回の起動中のログを最新 1 MB まで保持';
+
+  @override
+  String get logExport => 'ログをエクスポート';
+
+  @override
+  String get logEmpty => 'エクスポートできるログがありません';
+
+  @override
+  String get logExportDone => 'ログをエクスポートしました';
+
+  @override
   String get dataImport => 'ローカルデータをインポート';
 
   @override

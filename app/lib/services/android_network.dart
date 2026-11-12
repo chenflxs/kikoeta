@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../src/rust/api/simple.dart';
+import 'app_log.dart';
 
 class AndroidNetwork {
   AndroidNetwork._();
@@ -16,6 +17,7 @@ class AndroidNetwork {
       if (call.method != 'defaultNetworkChanged') {
         throw MissingPluginException(call.method);
       }
+      AppLog.record('android default network changed');
       notifyDefaultNetworkChanged();
     });
   }

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'services/android_audio.dart';
+import 'services/app_log.dart';
 import 'services/audio_effects.dart';
 import 'l10n/app_language.dart';
 import 'l10n/tag_names.dart';
@@ -1824,6 +1825,12 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setAppLoggingEnabled(bool enabled) {
+    SettingsStore.set(AppLog.settingKey, enabled ? '1' : '0');
+    AppLog.setEnabled(enabled);
+    notifyListeners();
+  }
+
   void setUpdateCheckEnabled(bool value) {
     updateCheckEnabled = value;
     SettingsStore.set('update_check_enabled', value ? '1' : '0');
@@ -2041,6 +2048,8 @@ class AppState extends ChangeNotifier {
   /// 调用方应同时停止播放器、隐藏桌面歌词，重置后 loginRequired 会回到 true。
   void resetAll() {
     SettingsStore.clearAll();
+    AppLog.setEnabled(false);
+    AppLog.clear();
     themeMode = ThemeMode.system;
     uiScalePercent = 100;
     tab = 0;

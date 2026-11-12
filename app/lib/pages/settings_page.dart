@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +12,7 @@ import '../data.dart';
 import '../services/android_battery.dart';
 import '../services/android_lyrics_overlay.dart';
 import '../services/api_service.dart';
+import '../services/app_log.dart';
 import '../services/desktop_lyrics_overlay.dart';
 import '../services/lyrics_library_broadcast_service.dart';
 import '../services/lyrics_library_service.dart';
@@ -52,6 +54,7 @@ class _SettingsPageState extends State<SettingsPage> {
   final Map<String, String> _loginStatus = {};
   // 电池优化白名单状态（仅安卓）：true=已关闭省电优化 / false=未关闭 / null=未知或非安卓
   bool? _batteryIgnoring;
+  bool _exportingLog = false;
   // 版本号彩蛋：连续点击计数（前 3 次静默，超过 3 秒未点击则重置）
   int _devTaps = 0;
   Timer? _devTimer;
@@ -687,35 +690,15 @@ class _SettingsPageState extends State<SettingsPage> {
                       }
                     },
                   ),
-                  Padding(
+                  _lyricsSliderRow(
+                    icon: Icons.format_size,
+                    label: context.l10n.settingsPageSectionsText6,
+                    displayValue: '${app.lyricsFontSize.round()}',
+                    value: app.lyricsFontSize,
+                    min: 12,
+                    max: 64,
+                    onChanged: app.setLyricsFontSize,
                     padding: const EdgeInsets.fromLTRB(14, 4, 14, 4),
-                    child: Row(
-                      children: [
-                        Icon(Icons.format_size, size: 17, color: p.accent),
-                        const SizedBox(width: 12),
-                        Text(
-                          context.l10n.settingsPageSectionsText6,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const Spacer(),
-                        Text(
-                          '${app.lyricsFontSize.round()}',
-                          style: TextStyle(fontSize: 12, color: p.dim),
-                        ),
-                        Expanded(
-                          child: Slider(
-                            value: app.lyricsFontSize,
-                            min: 12,
-                            max: 64,
-                            activeColor: p.accent,
-                            onChanged: (v) => app.setLyricsFontSize(v),
-                          ),
-                        ),
-                      ],
-                    ),
                   ),
                   _colorRow(
                     icon: Icons.palette_outlined,
@@ -731,74 +714,27 @@ class _SettingsPageState extends State<SettingsPage> {
                     onChanged: (v) => app.setLyricsOutlineColor(v),
                     hexCtrl: _outlineHexCtrl,
                   ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-                    child: Row(
-                      children: [
-                        Icon(Icons.line_weight, size: 17, color: p.accent),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            context.l10n.settingsPageSectionsText5,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        Text(
-                          app.lyricsOutlineWidth.toStringAsFixed(1),
-                          style: TextStyle(fontSize: 12, color: p.dim),
-                        ),
-                        SizedBox(
-                          width: 120,
-                          child: Slider(
-                            value: app.lyricsOutlineWidth,
-                            min: 0,
-                            max: 4,
-                            divisions: 8,
-                            activeColor: p.accent,
-                            onChanged: (v) => app.setLyricsOutlineWidth(v),
-                          ),
-                        ),
-                      ],
-                    ),
+                  _lyricsSliderRow(
+                    icon: Icons.line_weight,
+                    label: context.l10n.settingsPageSectionsText5,
+                    displayValue: app.lyricsOutlineWidth.toStringAsFixed(1),
+                    value: app.lyricsOutlineWidth,
+                    min: 0,
+                    max: 4,
+                    divisions: 8,
+                    onChanged: app.setLyricsOutlineWidth,
                   ),
                   if (defaultTargetPlatform == TargetPlatform.windows ||
                       defaultTargetPlatform == TargetPlatform.android) ...[
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-                      child: Row(
-                        children: [
-                          Icon(Icons.opacity, size: 17, color: p.accent),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              context.l10n.lyricsOpacity,
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          Text(
-                            '${app.lyricsOpacityPercent}%',
-                            style: TextStyle(fontSize: 12, color: p.dim),
-                          ),
-                          SizedBox(
-                            width: 120,
-                            child: Slider(
-                              value: app.lyricsOpacityPercent.toDouble(),
-                              min: 10,
-                              max: 100,
-                              divisions: 18,
-                              activeColor: p.accent,
-                              onChanged: (v) =>
-                                  app.setLyricsOpacityPercent(v.round()),
-                            ),
-                          ),
-                        ],
-                      ),
+                    _lyricsSliderRow(
+                      icon: Icons.opacity,
+                      label: context.l10n.lyricsOpacity,
+                      displayValue: '${app.lyricsOpacityPercent}%',
+                      value: app.lyricsOpacityPercent.toDouble(),
+                      min: 10,
+                      max: 100,
+                      divisions: 18,
+                      onChanged: (v) => app.setLyricsOpacityPercent(v.round()),
                     ),
                     _switchRow(
                       Icons.font_download_outlined,
@@ -1026,6 +962,27 @@ class _SettingsPageState extends State<SettingsPage> {
                     DataSyncSettings(rowBuilder: _row, groupBuilder: _group),
                     const SizedBox(height: 10),
                     _group([_proxySettings()]),
+                    const SizedBox(height: 10),
+                    _group([
+                      _switchRow(
+                        Icons.receipt_long_outlined,
+                        context.l10n.logCapture,
+                        context.l10n.logCaptureHint,
+                        AppLog.enabled,
+                        app.setAppLoggingEnabled,
+                      ),
+                      _row(
+                        icon: Icons.file_upload_outlined,
+                        title: context.l10n.logExport,
+                        trailing: Icon(
+                          Icons.chevron_right,
+                          size: 20,
+                          color: p.dim,
+                        ),
+                        onTap: _exportingLog ? null : _exportLog,
+                        showDivider: false,
+                      ),
+                    ]),
                   ],
                 ),
                 rootVisible: false,
@@ -1828,6 +1785,31 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
+  Future<void> _exportLog() async {
+    if (_exportingLog) return;
+    final l10n = context.l10n;
+    final bytes = AppLog.snapshot();
+    if (bytes.isEmpty) {
+      _toast(l10n.logEmpty);
+      return;
+    }
+    setState(() => _exportingLog = true);
+    try {
+      final time = DateTime.now().toIso8601String().substring(0, 19);
+      final path = await FilePicker.saveFile(
+        fileName: 'kikoeta-${time.replaceAll(':', '-')}.log',
+        type: FileType.custom,
+        allowedExtensions: ['log'],
+        bytes: bytes,
+      );
+      if (path != null && mounted) _toast(l10n.logExportDone);
+    } catch (_) {
+      if (mounted) _toast(l10n.dataOperationFailed);
+    } finally {
+      if (mounted) setState(() => _exportingLog = false);
+    }
+  }
+
   Widget _proxySettings() {
     final enabled = app.httpProxyEnabled;
     final hasAddress = _proxyCtrl.text.trim().isNotEmpty;
@@ -2436,6 +2418,51 @@ class _SettingsPageState extends State<SettingsPage> {
           duration: const Duration(milliseconds: 1600),
         ),
       );
+  }
+
+  Widget _lyricsSliderRow({
+    required IconData icon,
+    required String label,
+    required String displayValue,
+    required double value,
+    required double min,
+    required double max,
+    required ValueChanged<double> onChanged,
+    int? divisions,
+    EdgeInsets padding = const EdgeInsets.fromLTRB(14, 0, 14, 12),
+  }) {
+    return Padding(
+      padding: padding,
+      child: LayoutBuilder(
+        builder: (context, constraints) => Row(
+          children: [
+            Icon(icon, size: 17, color: p.accent),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            Text(displayValue, style: TextStyle(fontSize: 12, color: p.dim)),
+            SizedBox(
+              width: (constraints.maxWidth * 0.44).clamp(0.0, 460.0),
+              child: Slider(
+                value: value,
+                min: min,
+                max: max,
+                divisions: divisions,
+                activeColor: p.accent,
+                onChanged: onChanged,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _colorRow({

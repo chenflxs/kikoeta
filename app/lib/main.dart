@@ -24,6 +24,7 @@ import 'services/player_service.dart';
 import 'services/settings_store.dart';
 import 'services/startup_trace.dart';
 import 'services/app_data_service.dart';
+import 'services/app_log.dart';
 import 'services/shortcut_service.dart';
 import 'services/sleep_timer.dart';
 import 'services/clipboard_watcher.dart';
@@ -54,6 +55,18 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   StartupTrace.initialize();
   await StartupTrace.stage('settings', SettingsStore.init);
+  AppLog.setEnabled(SettingsStore.get(AppLog.settingKey) == '1');
+  final flutterOnError = FlutterError.onError;
+  FlutterError.onError = (details) {
+    AppLog.record('flutter framework error', error: details.exception);
+    flutterOnError?.call(details);
+  };
+  final dispatcher = ui.PlatformDispatcher.instance;
+  final platformOnError = dispatcher.onError;
+  dispatcher.onError = (error, stack) {
+    AppLog.record('dart unhandled error', error: error);
+    return platformOnError?.call(error, stack) ?? false;
+  };
   AndroidNetwork.init();
   await StartupTrace.stage('downloads', DownloadManager.instance.init);
   await StartupTrace.stage('state', appState.loadFromRust);
