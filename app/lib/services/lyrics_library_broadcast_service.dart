@@ -164,10 +164,17 @@ class LyricsLibraryBroadcastService {
     final relativePath = file.relativePath.startsWith(prefix)
         ? file.relativePath.substring(prefix.length)
         : file.name;
+    final translationRoot = owner?.isTranslated == true
+        ? LyricsLibraryService.translatedDirectoryName(
+                file.workId,
+                owner!.relativePath.split('/').last,
+              ) ??
+              '${file.workId}-tl'
+        : null;
     return {
-      'relativePath': owner?.isTranslated == true
-          ? '${file.workId}-ru/$relativePath'
-          : relativePath,
+      'relativePath': translationRoot == null
+          ? relativePath
+          : '$translationRoot/$relativePath',
       'name': file.name,
       'extension': file.extension,
       'isAi': owner?.isAi ?? false,

@@ -63,6 +63,7 @@ class _LyricsTranslationDialogState extends State<LyricsTranslationDialog> {
       final path = LyricsLibraryService.translationPath(
         widget.selection.work.rj,
         widget.selection.track.path,
+        targetLanguage: translator.targetLanguage,
       );
       final content = LyricsTranslationService.toLrc(translated);
       await LyricsLibraryService.instance.saveTranslatedLyrics(

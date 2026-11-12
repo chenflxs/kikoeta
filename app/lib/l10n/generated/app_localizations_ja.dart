@@ -3021,10 +3021,16 @@ class AppLocalizationsJa extends AppLocalizations {
   String get lyricsTranslate => '歌詞を翻訳';
 
   @override
+  String get lyricsOpacity => '不透明度';
+
+  @override
+  String get lyricsFollowSystemFont => 'システムフォントを使用';
+
+  @override
   String get translatedSubtitleBadge => '翻訳字幕';
 
   @override
-  String get lyricsTranslateDescription => '翻訳設定を使用し、RJ番号-ru に保存';
+  String get lyricsTranslateDescription => '翻訳先の言語別に歌詞ライブラリへ保存';
 
   @override
   String lyricsTranslationProgress(int completed, int total) {

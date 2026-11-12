@@ -887,8 +887,10 @@
   "favoritesSearch": "Search favorites",
   "favoritesSearchHint": "Search titles or RJ codes",
   "lyricsTranslate": "Translate lyrics",
+  "lyricsOpacity": "Opacity",
+  "lyricsFollowSystemFont": "Use system font",
   "translatedSubtitleBadge": "Translated subs",
-  "lyricsTranslateDescription": "Use translation settings; save to RJ number-ru",
+  "lyricsTranslateDescription": "Save to the lyrics library by target language",
   "lyricsTranslationProgress": "Translated {completed}/{total} lines",
   "lyricsTranslationSaved": "Translation saved: {path}",
   "lyricsTranslationInvalidResponse": "The translation has missing or empty lines. Retry or switch translation engines."

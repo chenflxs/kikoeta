@@ -3180,11 +3180,17 @@ class AppLocalizationsRu extends AppLocalizations {
   String get lyricsTranslate => 'Перевести субтитры';
 
   @override
+  String get lyricsOpacity => 'Непрозрачность';
+
+  @override
+  String get lyricsFollowSystemFont => 'Использовать системный шрифт';
+
+  @override
   String get translatedSubtitleBadge => 'Перевод';
 
   @override
   String get lyricsTranslateDescription =>
-      'Использовать настройки перевода; сохранить в RJномер-ru';
+      'Сохранить в библиотеку субтитров по языку перевода';
 
   @override
   String lyricsTranslationProgress(int completed, int total) {

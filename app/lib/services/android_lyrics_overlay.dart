@@ -70,6 +70,8 @@ class AndroidLyricsOverlay {
     required int outlineColor,
     required double outlineWidth,
     required bool locked,
+    int opacityPercent = 100,
+    bool followSystemFont = false,
   }) async {
     _text = text;
     if (!_available) return;
@@ -80,6 +82,8 @@ class AndroidLyricsOverlay {
         'color': color,
         'outlineColor': outlineColor,
         'outlineWidth': outlineWidth,
+        'opacityPercent': opacityPercent,
+        'followSystemFont': followSystemFont,
         'locked': locked,
       });
     } catch (_) {}

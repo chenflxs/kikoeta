@@ -413,6 +413,8 @@ class AppState extends ChangeNotifier {
   int lyricsColor = 0xFFFFFFFF;
   int lyricsOutlineColor = 0xFF000000;
   double lyricsOutlineWidth = 1;
+  int lyricsOpacityPercent = 100;
+  bool lyricsFollowSystemFont = false;
   bool lyricsLockedDesktop = false; // 桌面端
   bool lyricsLockedAndroid = false;
 
@@ -1221,6 +1223,11 @@ class AppState extends ChangeNotifier {
     if (low != null) {
       lyricsOutlineWidth = (double.tryParse(low) ?? 1).clamp(0, 4);
     }
+    lyricsOpacityPercent =
+        (int.tryParse(SettingsStore.get('lyrics_opacity_percent') ?? '') ?? 100)
+            .clamp(10, 100);
+    lyricsFollowSystemFont =
+        SettingsStore.get('lyrics_follow_system_font') == '1';
     final lld = SettingsStore.get('lyrics_locked_desktop');
     if (lld != null) lyricsLockedDesktop = lld == '1';
     final androidLock = SettingsStore.get('lyrics_locked_android');
@@ -1783,6 +1790,21 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setLyricsOpacityPercent(int value) {
+    final percent = value.clamp(10, 100);
+    if (lyricsOpacityPercent == percent) return;
+    lyricsOpacityPercent = percent;
+    SettingsStore.set('lyrics_opacity_percent', '$percent');
+    notifyListeners();
+  }
+
+  void setLyricsFollowSystemFont(bool value) {
+    if (lyricsFollowSystemFont == value) return;
+    lyricsFollowSystemFont = value;
+    SettingsStore.set('lyrics_follow_system_font', value ? '1' : '0');
+    notifyListeners();
+  }
+
   void setLyricsLockedAndroid(bool v) {
     if (lyricsLockedAndroid == v) return;
     lyricsLockedAndroid = v;
@@ -2101,6 +2123,8 @@ class AppState extends ChangeNotifier {
     lyricsColor = 0xFFFFFFFF;
     lyricsOutlineColor = 0xFF000000;
     lyricsOutlineWidth = 1;
+    lyricsOpacityPercent = 100;
+    lyricsFollowSystemFont = false;
     lyricsLockedDesktop = false;
     lyricsLockedAndroid = false;
     engine = 'google';

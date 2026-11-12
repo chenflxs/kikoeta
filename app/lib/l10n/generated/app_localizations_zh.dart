@@ -2971,10 +2971,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get lyricsTranslate => '翻译歌词';
 
   @override
+  String get lyricsOpacity => '不透明度';
+
+  @override
+  String get lyricsFollowSystemFont => '跟随系统字体';
+
+  @override
   String get translatedSubtitleBadge => '翻译字幕';
 
   @override
-  String get lyricsTranslateDescription => '使用翻译设置，保存到 RJ号-ru';
+  String get lyricsTranslateDescription => '按目标语言保存到歌词库';
 
   @override
   String lyricsTranslationProgress(int completed, int total) {
@@ -5963,10 +5969,16 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String get lyricsTranslate => '翻譯歌詞';
 
   @override
+  String get lyricsOpacity => '不透明度';
+
+  @override
+  String get lyricsFollowSystemFont => '跟隨系統字型';
+
+  @override
   String get translatedSubtitleBadge => '翻譯字幕';
 
   @override
-  String get lyricsTranslateDescription => '使用翻譯設定，儲存至 RJ號-ru';
+  String get lyricsTranslateDescription => '依目標語言儲存至歌詞庫';
 
   @override
   String lyricsTranslationProgress(int completed, int total) {

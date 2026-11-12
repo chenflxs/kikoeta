@@ -3160,11 +3160,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get lyricsTranslate => 'Translate lyrics';
 
   @override
+  String get lyricsOpacity => 'Opacity';
+
+  @override
+  String get lyricsFollowSystemFont => 'Use system font';
+
+  @override
   String get translatedSubtitleBadge => 'Translated subs';
 
   @override
   String get lyricsTranslateDescription =>
-      'Use translation settings; save to RJ number-ru';
+      'Save to the lyrics library by target language';
 
   @override
   String lyricsTranslationProgress(int completed, int total) {

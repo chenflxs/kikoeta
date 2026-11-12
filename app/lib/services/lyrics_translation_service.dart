@@ -9,6 +9,7 @@ class LyricsTranslationCancelled implements Exception {}
 class LyricsTranslationService {
   LyricsTranslationService({
     required this.isAi,
+    required this.targetLanguage,
     required this.request,
     this.requestGap = const Duration(milliseconds: 350),
   });
@@ -33,6 +34,7 @@ class LyricsTranslationService {
     }
     return LyricsTranslationService(
       isAi: ai,
+      targetLanguage: target,
       request: (text) => switch (engine) {
         'google' => apiTranslateGoogle(text: text, src: source, dst: target),
         'microsoft' => apiTranslateMicrosoft(
@@ -60,6 +62,7 @@ class LyricsTranslationService {
   }
 
   final bool isAi;
+  final String targetLanguage;
   final Future<String> Function(String) request;
   final Duration requestGap;
 

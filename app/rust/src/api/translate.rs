@@ -14,6 +14,8 @@ fn translation_prompt(source_language: &str, target_language: &str) -> String {
     let language = match target_language.trim() {
         "zh-TW" => "繁体中文",
         "en" => "English",
+        "ja" => "日文",
+        "ru" => "俄文",
         _ => "简体中文",
     };
     format!(
@@ -27,6 +29,14 @@ fn translation_prompt(source_language: &str, target_language: &str) -> String {
 
 fn http_client() -> Result<reqwest::Client, String> {
     crate::api::http_client::translation_client()
+}
+
+fn openai_client(base: &str) -> Result<reqwest::Client, String> {
+    if is_index_compat(base) {
+        crate::api::http_client::index_translation_client()
+    } else {
+        http_client()
+    }
 }
 
 fn normalize_base(base: &str) -> String {
@@ -57,7 +67,7 @@ pub async fn api_translate_openai(
     }
     let input = indexed_translation_input(&text);
     let url = format!("{base}/chat/completions");
-    let client = http_client()?;
+    let client = openai_client(&base)?;
     let mut prompt = translation_prompt(&source_language, &target_language);
     if lyrics {
         prompt = prompt
@@ -164,7 +174,9 @@ fn split_translation_source(text: String) -> (String, String) {
 }
 
 fn is_index_compat(base: &str) -> bool {
-    base.to_ascii_lowercase().contains("index-translate.bilibili.com")
+    reqwest::Url::parse(base)
+        .ok()
+        .is_some_and(|url| url.host_str() == Some("index-translate.bilibili.com"))
 }
 
 fn apply_auth(req: reqwest::RequestBuilder, base: &str, api_key: &str) -> reqwest::RequestBuilder {
@@ -563,8 +575,29 @@ pub async fn api_translate_test(
     if base.is_empty() {
         return Err("请先填写 API 地址".to_string());
     }
-    let client = http_client()?;
+    let client = openai_client(&base)?;
     test_connection_with_client(&client, &base, &model, &api_key).await
+}
+
+/// 为设置页获取 Index-Translate 模型列表。
+#[flutter_rust_bridge::frb]
+pub async fn api_translate_index_models(base_url: String) -> Result<String, String> {
+    let base = normalize_base(&base_url);
+    if !is_index_compat(&base) {
+        return Err("无效的 Index-Translate API 地址".to_string());
+    }
+    let client = openai_client(&base)?;
+    let request = models_request(&client, &base, "").timeout(Duration::from_secs(12));
+    let response = request
+        .send()
+        .await
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(|e| e.to_string())?;
+    response.text().await.map_err(|e| e.to_string())
+}
+
+fn models_request(client: &reqwest::Client, base: &str, api_key: &str) -> reqwest::RequestBuilder {
+    apply_auth(client.get(format!("{base}/models")), base, api_key)
 }
 
 async fn test_connection_with_client(
@@ -573,7 +606,7 @@ async fn test_connection_with_client(
     model: &str,
     api_key: &str,
 ) -> Result<String, String> {
-    let req = apply_auth(client.get(format!("{base}/models")), base, api_key);
+    let req = models_request(client, base, api_key);
     let resp = req
         .send()
         .await

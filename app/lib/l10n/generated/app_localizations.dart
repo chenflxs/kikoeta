@@ -5446,6 +5446,18 @@ abstract class AppLocalizations {
   /// **'翻译歌词'**
   String get lyricsTranslate;
 
+  /// No description provided for @lyricsOpacity.
+  ///
+  /// In zh, this message translates to:
+  /// **'不透明度'**
+  String get lyricsOpacity;
+
+  /// No description provided for @lyricsFollowSystemFont.
+  ///
+  /// In zh, this message translates to:
+  /// **'跟随系统字体'**
+  String get lyricsFollowSystemFont;
+
   /// No description provided for @translatedSubtitleBadge.
   ///
   /// In zh, this message translates to:
@@ -5455,7 +5467,7 @@ abstract class AppLocalizations {
   /// No description provided for @lyricsTranslateDescription.
   ///
   /// In zh, this message translates to:
-  /// **'使用翻译设置，保存到 RJ号-ru'**
+  /// **'按目标语言保存到歌词库'**
   String get lyricsTranslateDescription;
 
   /// No description provided for @lyricsTranslationProgress.

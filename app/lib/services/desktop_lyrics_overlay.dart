@@ -77,8 +77,12 @@ class DesktopLyricsOverlay {
   int _textColor = 0xFFFFFFFF; // ARGB
   int _outlineColor = 0xFF000000; // ARGB 描边
   double _outlineWidth = 1;
+  int _opacityPercent = 100;
+  bool _followSystemFont = false;
   bool _locked = false;
-  String _fontFace = 'Microsoft YaHei';
+  String _bundledFontFace = 'Microsoft YaHei';
+  String? _systemFontFace;
+  String get _fontFace => _systemFontFace ?? _bundledFontFace;
 
   ui.Rect _minusRect = ui.Rect.zero;
   ui.Rect _plusRect = ui.Rect.zero;
@@ -181,6 +185,13 @@ class DesktopLyricsOverlay {
       case WM_DISPLAYCHANGE:
         overlay._render();
         return 0;
+      case WM_SETTINGCHANGE:
+      case WM_FONTCHANGE:
+        if (overlay._followSystemFont) {
+          overlay._refreshSystemFont();
+          if (overlay._visible) overlay._render();
+        }
+        return DefWindowProc(hwnd, msg, wParam, lParam);
       case WM_MOVE:
         // Windows 会移动现有分层位图，位置变化无需重新栅格化歌词。
         return 0;
@@ -297,10 +308,31 @@ class DesktopLyricsOverlay {
       calloc.free(p);
       if (added > 0) {
         _privateFontPath = tmp.path;
-        _fontFace = 'Sarasa UI SC';
+        _bundledFontFace = 'Sarasa UI SC';
       }
     } catch (_) {
       // 字体加载失败时回退默认字体
+    }
+  }
+
+  void _refreshSystemFont() {
+    final metrics = calloc<NONCLIENTMETRICS>();
+    try {
+      final size = sizeOf<NONCLIENTMETRICS>();
+      metrics.ref.cbSize = size;
+      final found = SystemParametersInfo(
+        SPI_GETNONCLIENTMETRICS,
+        size,
+        metrics.cast(),
+        0,
+      );
+      final face = found == 0
+          ? ''
+          : metrics.ref.lfMessageFont.lfFaceName.trim();
+      _systemFontFace = face.isEmpty ? null : face;
+      _singleLineMeasureKey = null;
+    } finally {
+      calloc.free(metrics);
     }
   }
 
@@ -1015,7 +1047,7 @@ class DesktopLyricsOverlay {
       ptSrc.ref.y = 0;
       blend.ref.BlendOp = 0; // AC_SRC_OVER
       blend.ref.BlendFlags = 0;
-      blend.ref.SourceConstantAlpha = 255;
+      blend.ref.SourceConstantAlpha = (_opacityPercent * 255 / 100).round();
       blend.ref.AlphaFormat = 1; // AC_SRC_ALPHA
       info.ref.cbSize = sizeOf<UPDATELAYEREDWINDOWINFO>();
       info.ref.hdcDst = screenDc;
@@ -1361,9 +1393,35 @@ class DesktopLyricsOverlay {
     required int outlineColor,
     required double outlineWidth,
     required bool locked,
+    int opacityPercent = 100,
+    bool followSystemFont = false,
   }) {
     if (!Platform.isWindows) return;
     _ensureWindow();
+    final opacity = opacityPercent.clamp(10, 100);
+    final onlyOpacityChanged =
+        _visible &&
+        _dib != 0 &&
+        !_resizingOrMoving &&
+        opacity != _opacityPercent &&
+        text == _text &&
+        timing?.start == _timing?.start &&
+        timing?.end == _timing?.end &&
+        fontSize == _fontSize &&
+        color == _textColor &&
+        outlineColor == _outlineColor &&
+        outlineWidth == _outlineWidth &&
+        locked == _locked &&
+        followSystemFont == _followSystemFont;
+    _opacityPercent = opacity;
+    if (_followSystemFont != followSystemFont) {
+      _followSystemFont = followSystemFont;
+      if (followSystemFont) {
+        _refreshSystemFont();
+      } else {
+        _systemFontFace = null;
+      }
+    }
     if (!_visible) _marquee.reset();
     _text = text;
     _timing = timing;
@@ -1378,7 +1436,12 @@ class DesktopLyricsOverlay {
       _visible = true;
     }
     _setTopmost();
-    _render();
+    if (onlyOpacityChanged) {
+      // The window compositor blends the existing bitmap without rerasterizing text.
+      _updateLayered(_dibW, _dibH);
+    } else {
+      _render();
+    }
   }
 
   void update(String text, {DesktopLyricsTiming? timing}) {

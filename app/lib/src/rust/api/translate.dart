@@ -6,8 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `apply_thinking_options`, `browser_user_agent`, `deepl_lang`, `fetch_bing_translation_config`, `google_batches`, `google_request`, `http_client`, `indexed_markers`, `indexed_translation_input`, `message_content`, `microsoft_lang`, `normalize_base`, `normalize_marked_translation`, `parse_bing_auth`, `parse_bing_ig`, `parse_completion`, `parse_google`, `preview`, `split_translation_target`, `strip_thinking`, `test_connection_with_client`, `translate_google_with_client`, `translation_prompt`, `unpack_indexed_translation`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BingTranslationConfig`
+// These functions are ignored because they are not marked as `pub`: `apply_auth`, `apply_thinking_options`, `browser_user_agent`, `deepl_form`, `deepl_lang`, `google_batches`, `google_request`, `http_client`, `indexed_markers`, `indexed_translation_input`, `is_index_compat`, `message_content`, `models_request`, `normalize_base`, `normalize_marked_translation`, `openai_client`, `parse_completion`, `parse_google`, `preview`, `split_translation_source`, `split_translation_target`, `strip_thinking`, `test_connection_with_client`, `translate_google_with_client`, `translation_prompt`, `unpack_indexed_translation`
 
 /// 调用 OpenAI 兼容接口翻译文本。text 为多行拼接内容，返回翻译结果。
 Future<String> apiTranslateOpenai({
@@ -70,3 +69,9 @@ Future<String> apiTranslateTest({
   model: model,
   apiKey: apiKey,
 );
+
+/// 为设置页获取 Index-Translate 模型列表。
+Future<String> apiTranslateIndexModels({required String baseUrl}) => RustLib
+    .instance
+    .api
+    .crateApiTranslateApiTranslateIndexModels(baseUrl: baseUrl);

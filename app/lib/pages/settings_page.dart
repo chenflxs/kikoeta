@@ -235,21 +235,8 @@ class _SettingsPageState extends State<SettingsPage> {
       return;
     }
     _toast(l10n.settingsPageDetectOpenAiModelsToast);
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 12);
     try {
-      final request = await client.getUrl(Uri.parse('$base/models'));
-      final key = config['key']!.trim();
-      if (base.contains('index-translate.bilibili.com')) {
-        request.headers.set('User-Agent', 'Index-Translate-Client/1.0');
-      } else if (key.isNotEmpty) {
-        request.headers.set('Authorization', 'Bearer $key');
-      }
-      final response = await request.close();
-      final body = await utf8.decodeStream(response);
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw HttpException('HTTP ${response.statusCode}');
-      }
+      final body = await _fetchOpenAiModels(base, config['key']!.trim());
       final raw = jsonDecode(body) as Map<String, dynamic>;
       final models =
           ((raw['data'] as List?) ?? const [])
@@ -288,6 +275,27 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         );
       }
+    }
+  }
+
+  Future<String> _fetchOpenAiModels(String base, String key) async {
+    final uri = Uri.parse('$base/models');
+    if (uri.host == 'index-translate.bilibili.com') {
+      return apiTranslateIndexModels(baseUrl: base);
+    }
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 12);
+    try {
+      final request = await client.getUrl(uri);
+      if (key.isNotEmpty) {
+        request.headers.set('Authorization', 'Bearer $key');
+      }
+      final response = await request.close();
+      final body = await utf8.decodeStream(response);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw HttpException('HTTP ${response.statusCode}');
+      }
+      return body;
     } finally {
       client.close(force: true);
     }
@@ -756,6 +764,50 @@ class _SettingsPageState extends State<SettingsPage> {
                       ],
                     ),
                   ),
+                  if (defaultTargetPlatform == TargetPlatform.windows ||
+                      defaultTargetPlatform == TargetPlatform.android) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+                      child: Row(
+                        children: [
+                          Icon(Icons.opacity, size: 17, color: p.accent),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              context.l10n.lyricsOpacity,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            '${app.lyricsOpacityPercent}%',
+                            style: TextStyle(fontSize: 12, color: p.dim),
+                          ),
+                          SizedBox(
+                            width: 120,
+                            child: Slider(
+                              value: app.lyricsOpacityPercent.toDouble(),
+                              min: 10,
+                              max: 100,
+                              divisions: 18,
+                              activeColor: p.accent,
+                              onChanged: (v) =>
+                                  app.setLyricsOpacityPercent(v.round()),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    _switchRow(
+                      Icons.font_download_outlined,
+                      context.l10n.lyricsFollowSystemFont,
+                      null,
+                      app.lyricsFollowSystemFont,
+                      app.setLyricsFollowSystemFont,
+                    ),
+                  ],
                   if (defaultTargetPlatform == TargetPlatform.android)
                     _switchRow(
                       Icons.lock_outline,
@@ -1511,7 +1563,7 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget _switchRow(
     IconData icon,
     String title,
-    String sub,
+    String? sub,
     bool value,
     ValueChanged<bool> onChanged, {
     bool showDivider = true,

@@ -89,6 +89,8 @@ class MainActivity : FlutterActivity() {
                         (a["outlineColor"] as Number).toInt(),
                         (a["outlineWidth"] as Number).toDouble(),
                         a["locked"] as Boolean,
+                        opacityPercent = (a["opacityPercent"] as? Number)?.toInt() ?: 100,
+                        followSystemFont = a["followSystemFont"] == true,
                     )
                     result.success(null)
                 }

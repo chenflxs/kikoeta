@@ -886,8 +886,10 @@
   "favoritesSearch": "お気に入りを検索",
   "favoritesSearchHint": "タイトルまたはRJ番号で検索",
   "lyricsTranslate": "歌詞を翻訳",
+  "lyricsOpacity": "不透明度",
+  "lyricsFollowSystemFont": "システムフォントを使用",
   "translatedSubtitleBadge": "翻訳字幕",
-  "lyricsTranslateDescription": "翻訳設定を使用し、RJ番号-ru に保存",
+  "lyricsTranslateDescription": "翻訳先の言語別に歌詞ライブラリへ保存",
   "lyricsTranslationProgress": "{completed}/{total} 行を翻訳済み",
   "lyricsTranslationSaved": "翻訳を保存しました：{path}",
   "lyricsTranslationInvalidResponse": "翻訳結果に欠落または空行があります。再試行するか翻訳エンジンを変更してください。"

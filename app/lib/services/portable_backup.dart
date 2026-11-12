@@ -47,6 +47,8 @@ class PortableBackup {
     'lyrics_color': '4294967295',
     'lyrics_outline_color': '4278190080',
     'lyrics_outline_width': '1',
+    'lyrics_opacity_percent': '100',
+    'lyrics_follow_system_font': '0',
     'lyrics_locked_desktop': '0',
     'lyrics_locked_android': '0',
     'conv': 'orig',
@@ -91,6 +93,8 @@ class PortableBackup {
     'lyrics_skip_empty',
     'android_lyrics_hide_when_paused',
     'lyrics_locked_android',
+    'lyrics_opacity_percent',
+    'lyrics_follow_system_font',
   };
 
   static String _migrateAndroidLock(String? Function(String) read) =>
@@ -367,6 +371,7 @@ class PortableBackup {
       'volume': (0, 200),
       'lyrics_font_size': (12, 64),
       'lyrics_outline_width': (0, 4),
+      'lyrics_opacity_percent': (10, 100),
       'lyrics_color': (0, 4294967295),
       'lyrics_outline_color': (0, 4294967295),
       'playback_seek_backward_seconds': (5, 60),

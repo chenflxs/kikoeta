@@ -1,8 +1,17 @@
 //! Shared asynchronous HTTP clients. Authentication remains per request.
 
-use std::sync::Mutex;
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+use hickory_resolver::{
+    config::{LookupIpStrategy, NameServerConfig, ResolveHosts, ResolverConfig},
+    name_server::TokioConnectionProvider,
+    proto::xfer::Protocol,
+    TokioResolver,
+};
+use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 
 use crate::api::simple;
 
@@ -13,6 +22,8 @@ const TRANSLATION_TIMEOUT: Duration = Duration::from_secs(30);
 
 static API_CLIENT: ClientPool = ClientPool::new(API_USER_AGENT, API_TIMEOUT);
 static TRANSLATION_CLIENT: ClientPool =
+    ClientPool::new(TRANSLATION_USER_AGENT, TRANSLATION_TIMEOUT);
+static INDEX_TRANSLATION_CLIENT: ClientPool =
     ClientPool::new(TRANSLATION_USER_AGENT, TRANSLATION_TIMEOUT);
 static NETWORK_GENERATION: AtomicUsize = AtomicUsize::new(0);
 
@@ -31,6 +42,46 @@ pub(super) fn api_client() -> Result<reqwest::Client, String> {
 
 pub(super) fn translation_client() -> Result<reqwest::Client, String> {
     TRANSLATION_CLIENT.client_for_proxy(simple::http_proxy_config())
+}
+
+pub(super) fn index_translation_client() -> Result<reqwest::Client, String> {
+    INDEX_TRANSLATION_CLIENT.client_with_builder(None, |builder| {
+        // A proxy would resolve the API hostname itself.
+        builder
+            .no_proxy()
+            .dns_resolver(Arc::new(AliDnsResolver::new()))
+    })
+}
+
+struct AliDnsResolver(TokioResolver);
+
+impl AliDnsResolver {
+    fn new() -> Self {
+        let mut config = ResolverConfig::new();
+        for address in [[223, 5, 5, 5], [223, 6, 6, 6]] {
+            let mut server =
+                NameServerConfig::new(SocketAddr::from((address, 443)), Protocol::Https);
+            server.tls_dns_name = Some("dns.alidns.com".into());
+            config.add_name_server(server);
+        }
+        let mut builder =
+            TokioResolver::builder_with_config(config, TokioConnectionProvider::default());
+        let options = builder.options_mut();
+        options.use_hosts_file = ResolveHosts::Never;
+        options.ip_strategy = LookupIpStrategy::Ipv4AndIpv6;
+        Self(builder.build())
+    }
+}
+
+impl Resolve for AliDnsResolver {
+    fn resolve(&self, name: Name) -> Resolving {
+        let resolver = self.0.clone();
+        Box::pin(async move {
+            let lookup = resolver.lookup_ip(name.as_str()).await?;
+            let addresses: Addrs = Box::new(lookup.into_iter().map(|ip| SocketAddr::new(ip, 0)));
+            Ok(addresses)
+        })
+    }
 }
 
 pub(super) struct ClientPool {
@@ -56,6 +107,14 @@ impl ClientPool {
         &self,
         configured_proxy: Option<String>,
     ) -> Result<reqwest::Client, String> {
+        self.client_with_builder(configured_proxy, |builder| builder)
+    }
+
+    fn client_with_builder(
+        &self,
+        configured_proxy: Option<String>,
+        configure: impl FnOnce(reqwest::ClientBuilder) -> reqwest::ClientBuilder,
+    ) -> Result<reqwest::Client, String> {
         // Keep the existing invalid-address fallback, and use the proxy that
         // will actually be applied as the connection-pool cache key.
         let proxy = configured_proxy
@@ -78,7 +137,7 @@ impl ClientPool {
         if let Some((_, proxy)) = proxy {
             builder = builder.proxy(proxy);
         }
-        let client = builder
+        let client = configure(builder)
             .build()
             .map_err(|e| format!("创建 HTTP 客户端失败: {e}"))?;
         // Running requests keep clones of the previous client and its pool.

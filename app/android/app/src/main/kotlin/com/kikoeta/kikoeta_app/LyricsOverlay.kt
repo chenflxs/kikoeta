@@ -17,6 +17,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.text.TextUtils
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -25,6 +26,7 @@ import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.TextView
 import io.flutter.plugin.common.MethodChannel
+import kotlin.math.ceil
 
 /**
  * 安卓桌面歌词悬浮窗（WindowManager 覆盖层）。
@@ -64,7 +66,7 @@ class LyricsOverlay(
     private var listeningForDisplayChanges = false
 
     private var root: LinearLayout? = null
-    private var textView: TextView? = null
+    private var textView: OutlinedLyricsTextView? = null
     private var lockBtn: View? = null
     private var visible = false
     private var locked = false
@@ -75,16 +77,17 @@ class LyricsOverlay(
     private var color = Color.WHITE
     private var outlineColor = Color.BLACK
     private var outlineWidth = 1f
+    private var opacityPercent = 100
+    private var followSystemFont = false
 
-    // 与 Flutter 界面保持一致：歌词同样使用内置 Sarasa UI SC，
-    // 资源缺失时回退系统字体（不阻断悬浮窗显示）。
-    private val lyricsTypeface: Typeface? by lazy {
+    // 复用应用已打包的 Sarasa UI SC 粗体。
+    private val lyricsTypeface: Typeface by lazy {
         runCatching {
             Typeface.createFromAsset(
                 context.assets,
-                "flutter_assets/assets/fonts/sarasa-ui-sc-regular.ttf",
+                "flutter_assets/assets/fonts/sarasa-ui-sc-bold.ttf",
             )
-        }.getOrNull()
+        }.getOrDefault(Typeface.DEFAULT_BOLD)
     }
 
     // 坐标随悬浮窗实例保留，切歌时临时隐藏后重新挂载也使用同一位置。
@@ -173,6 +176,8 @@ class LyricsOverlay(
         outlineColor: Int,
         outlineWidth: Double,
         locked: Boolean,
+        opacityPercent: Int,
+        followSystemFont: Boolean,
     ) {
         if (activeOverlay !== this) {
             activeOverlay?.hide()
@@ -186,15 +191,11 @@ class LyricsOverlay(
             dragging = false
         }
         this.locked = locked
-        this.fontSize = fontSize.toFloat()
-        this.color = color
-        this.outlineColor = outlineColor
-        this.outlineWidth = outlineWidth.toFloat()
+        this.opacityPercent = opacityPercent.coerceIn(10, 100)
+        this.followSystemFont = followSystemFont
+        setStyle(fontSize, color, outlineColor, outlineWidth)
         if (root == null) buildOverlay()
-        textView?.text = text
-        textView?.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, this.fontSize)
-        textView?.setTextColor(this.color)
-        textView?.setShadowLayer(this.outlineWidth, 0f, 0f, this.outlineColor)
+        textView?.let { if (!TextUtils.equals(it.text, text)) it.text = text }
         if (!visible) {
             constrainPosition()
             wm.addView(root, params())
@@ -229,16 +230,10 @@ class LyricsOverlay(
             LinearLayout.LayoutParams(dp(30), dp(30)).apply { bottomMargin = dp(6) },
         )
 
-        val tv = TextView(overlayContext)
-        lyricsTypeface?.let { tv.typeface = it }
-        tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, fontSize)
-        tv.setTextColor(color)
-        tv.setShadowLayer(outlineWidth.toFloat(), 0f, 0f, outlineColor)
+        val tv = OutlinedLyricsTextView(overlayContext)
         tv.gravity = Gravity.CENTER
         tv.maxLines = 2
         tv.ellipsize = TextUtils.TruncateAt.END
-        // 内边距防止描边（outline）在窗口边缘被裁剪
-        tv.setPadding(dp(4), dp(3), dp(4), dp(3))
         root.addView(
             tv,
             LinearLayout.LayoutParams(
@@ -291,6 +286,7 @@ class LyricsOverlay(
 
         this.root = root
         textView = tv
+        applyTextStyle()
         lockBtn = btn
     }
 
@@ -330,12 +326,13 @@ class LyricsOverlay(
         ).apply {
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
             // Android 12+ also checks opacity when passing touches through overlays.
-            alpha = if (locked && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val maxOpacity = if (locked && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 context.getSystemService(InputManager::class.java)
                     .maximumObscuringOpacityForTouch
             } else {
                 1f
             }
+            alpha = maxOpacity * (opacityPercent / 100f)
             x = winX
             y = winY
         }
@@ -361,9 +358,15 @@ class LyricsOverlay(
         this.color = color
         this.outlineColor = outlineColor
         this.outlineWidth = outlineWidth.toFloat()
-        textView?.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, this.fontSize)
-        textView?.setTextColor(this.color)
-        textView?.setShadowLayer(this.outlineWidth, 0f, 0f, this.outlineColor)
+        applyTextStyle()
+    }
+
+    private fun applyTextStyle() {
+        val view = textView ?: return
+        view.typeface = if (followSystemFont) Typeface.DEFAULT_BOLD else lyricsTypeface
+        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, fontSize)
+        view.setTextColor(color)
+        view.setOutline(outlineColor, outlineWidth)
     }
 
     fun hide() {
@@ -392,6 +395,56 @@ class LyricsOverlay(
     }
 
     private fun dp(v: Int): Int = (v * overlayContext.resources.displayMetrics.density).toInt()
+}
+
+private class OutlinedLyricsTextView(context: Context) : TextView(context) {
+    private var outlineColor = Color.TRANSPARENT
+    private var outlineRadiusPx = 0f
+
+    fun setOutline(color: Int, widthDp: Float) {
+        val density = resources.displayMetrics.density
+        val radius = if (Color.alpha(color) == 0) 0f else widthDp.coerceIn(0f, 4f) * density
+        // Reserve room for the outside half of the stroke and its antialiased edge.
+        val inset = if (radius > 0f) ceil(radius).toInt() + 1 else 0
+        val horizontal = maxOf((4 * density).toInt(), inset)
+        val vertical = maxOf((3 * density).toInt(), inset)
+        if (horizontal != paddingLeft || vertical != paddingTop) {
+            setPadding(horizontal, vertical, horizontal, vertical)
+        }
+        if (color != outlineColor || radius != outlineRadiusPx) {
+            outlineColor = color
+            outlineRadiusPx = radius
+            invalidate()
+        }
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        val textLayout = layout
+        if (outlineRadiusPx > 0f && textLayout != null) {
+            val textPaint = textLayout.paint
+            val savedColor = textPaint.color
+            val savedStyle = textPaint.style
+            val savedWidth = textPaint.strokeWidth
+            val savedJoin = textPaint.strokeJoin
+            val savedCanvas = canvas.save()
+            try {
+                // Same layout and origin as TextView, so wrapping and ellipses stay aligned.
+                canvas.translate(compoundPaddingLeft.toFloat(), totalPaddingTop.toFloat())
+                textPaint.color = outlineColor
+                textPaint.style = Paint.Style.STROKE
+                textPaint.strokeWidth = outlineRadiusPx * 2f
+                textPaint.strokeJoin = Paint.Join.ROUND
+                textLayout.draw(canvas)
+            } finally {
+                textPaint.color = savedColor
+                textPaint.style = savedStyle
+                textPaint.strokeWidth = savedWidth
+                textPaint.strokeJoin = savedJoin
+                canvas.restoreToCount(savedCanvas)
+            }
+        }
+        super.onDraw(canvas)
+    }
 }
 
 /** 锁定键：与 Windows 悬浮窗一致的 SVG 锁图标（48 viewBox 路径光栅化），半透明圆底 */

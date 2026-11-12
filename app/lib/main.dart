@@ -173,6 +173,8 @@ void _syncDesktopLyrics() {
       color: appState.lyricsColor,
       outlineColor: appState.lyricsOutlineColor,
       outlineWidth: appState.lyricsOutlineWidth,
+      opacityPercent: appState.lyricsOpacityPercent,
+      followSystemFont: appState.lyricsFollowSystemFont,
       locked: appState.lyricsLockedDesktop,
     );
   } else {
@@ -189,6 +191,8 @@ void _syncAndroidLyrics() {
       color: appState.lyricsColor,
       outlineColor: appState.lyricsOutlineColor,
       outlineWidth: appState.lyricsOutlineWidth,
+      opacityPercent: appState.lyricsOpacityPercent,
+      followSystemFont: appState.lyricsFollowSystemFont,
       locked: appState.lyricsLockedAndroid,
     );
   } else {
