@@ -30,7 +30,6 @@
   "logCapture": "Enable logging",
   "logCaptureHint": "Keeps the latest 1 MB from this session",
   "logExport": "Export logs",
-  "logEmpty": "No logs to export",
   "logExportDone": "Logs exported",
   "dataImport": "Import local data",
   "dataScope": "Favorites, playlists, blacklist, history and preferences. Excludes downloads, lyrics libraries, passwords and keys.",

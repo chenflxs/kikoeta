@@ -108,9 +108,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get logExport => 'Export logs';
 
   @override
-  String get logEmpty => 'No logs to export';
-
-  @override
   String get logExportDone => 'Logs exported';
 
   @override

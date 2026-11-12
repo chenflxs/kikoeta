@@ -284,12 +284,6 @@ abstract class AppLocalizations {
   /// **'导出日志'**
   String get logExport;
 
-  /// No description provided for @logEmpty.
-  ///
-  /// In zh, this message translates to:
-  /// **'暂无日志可导出'**
-  String get logEmpty;
-
   /// No description provided for @logExportDone.
   ///
   /// In zh, this message translates to:

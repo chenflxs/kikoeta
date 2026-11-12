@@ -102,9 +102,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get logExport => '导出日志';
 
   @override
-  String get logEmpty => '暂无日志可导出';
-
-  @override
   String get logExportDone => '日志已导出';
 
   @override
@@ -3112,9 +3109,6 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get logExport => '匯出日誌';
-
-  @override
-  String get logEmpty => '目前沒有可匯出的日誌';
 
   @override
   String get logExportDone => '日誌已匯出';

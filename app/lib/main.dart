@@ -78,6 +78,7 @@ Future<void> main() async {
     }
   }
   await StartupTrace.stage('version', UpdateService.initialize);
+  AppLog.setAppVersion(UpdateService.currentVersion);
   // Windows 首次运行：自动创建桌面/开始菜单快捷方式（仅 release，幂等）
   unawaited(StartupTrace.stage('shortcuts', ShortcutService.ensureShortcuts));
   // 安卓音频控制：耳机拔出/焦点丢失 → 暂停播放

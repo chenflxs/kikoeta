@@ -29,7 +29,6 @@
   "logCapture": "開啟日誌",
   "logCaptureHint": "僅保留本次執行最近的 1 MB",
   "logExport": "匯出日誌",
-  "logEmpty": "目前沒有可匯出的日誌",
   "logExportDone": "日誌已匯出",
   "dataImport": "匯入本機資料",
   "dataScope": "收藏、歌單、黑名單、歷史與偏好；不含下載、歌詞庫、帳號密碼和金鑰。",

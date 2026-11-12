@@ -109,9 +109,6 @@ class AppLocalizationsRu extends AppLocalizations {
   String get logExport => 'Экспорт журнала';
 
   @override
-  String get logEmpty => 'Нет записей для экспорта';
-
-  @override
   String get logExportDone => 'Журнал экспортирован';
 
   @override

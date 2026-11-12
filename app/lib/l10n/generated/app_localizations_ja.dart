@@ -104,9 +104,6 @@ class AppLocalizationsJa extends AppLocalizations {
   String get logExport => 'ログをエクスポート';
 
   @override
-  String get logEmpty => 'エクスポートできるログがありません';
-
-  @override
   String get logExportDone => 'ログをエクスポートしました';
 
   @override

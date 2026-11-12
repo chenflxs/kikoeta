@@ -1788,13 +1788,9 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _exportLog() async {
     if (_exportingLog) return;
     final l10n = context.l10n;
-    final bytes = AppLog.snapshot();
-    if (bytes.isEmpty) {
-      _toast(l10n.logEmpty);
-      return;
-    }
     setState(() => _exportingLog = true);
     try {
+      final bytes = AppLog.snapshot();
       final time = DateTime.now().toIso8601String().substring(0, 19);
       final path = await FilePicker.saveFile(
         fileName: 'kikoeta-${time.replaceAll(':', '-')}.log',
