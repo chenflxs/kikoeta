@@ -14,6 +14,7 @@ class DictationQueueEntry {
   final bool automaticallyMatched;
   final String label;
   final String? sourceBase;
+  final int? sourceLoginEpoch;
   final String lyricsWritebackKey;
   final Map<String, String> sourceHeaders;
   KtJobReference? backendJob;
@@ -27,6 +28,7 @@ class DictationQueueEntry {
     required this.automaticallyMatched,
     required this.label,
     required this.sourceBase,
+    required this.sourceLoginEpoch,
     required this.lyricsWritebackKey,
     required Map<String, String> sourceHeaders,
   }) : tracks = List.unmodifiable(tracks),
@@ -77,6 +79,7 @@ class DictationQueue extends ChangeNotifier {
     required List<MediaNode> tracks,
     bool automaticallyMatched = false,
     String? sourceBase,
+    int? sourceLoginEpoch,
     String lyricsWritebackKey = '',
     Map<String, String> sourceHeaders = const {},
   }) {
@@ -84,6 +87,7 @@ class DictationQueue extends ChangeNotifier {
     final reservedPaths = <String>{
       for (final entry in _entries)
         if (entry.work.rj.toUpperCase() == id &&
+            entry.sourceLoginEpoch == sourceLoginEpoch &&
             (entry.status == DictationQueueStatus.pending ||
                 entry.status == DictationQueueStatus.running ||
                 entry.status == DictationQueueStatus.cancelled))
@@ -101,6 +105,7 @@ class DictationQueue extends ChangeNotifier {
       automaticallyMatched: automaticallyMatched,
       label: batch == 0 ? work.rj : '${work.rj}-$batch',
       sourceBase: sourceBase,
+      sourceLoginEpoch: sourceLoginEpoch,
       lyricsWritebackKey: lyricsWritebackKey,
       sourceHeaders: sourceHeaders,
     );
@@ -194,6 +199,24 @@ class DictationQueue extends ChangeNotifier {
     );
     if (hadPending) pendingRevision++;
     if (current?.status != DictationQueueStatus.running) current = null;
+    notifyListeners();
+  }
+
+  void expireDlsiteEntries(int epoch) {
+    bool expired(DictationQueueEntry entry) => entry.sourceLoginEpoch == epoch;
+    if (current case final entry?
+        when expired(entry) && entry.status == DictationQueueStatus.running) {
+      deleteOnFinish = true;
+    }
+    final before = _entries.length;
+    _entries.removeWhere(
+      (entry) => expired(entry) && entry.status != DictationQueueStatus.running,
+    );
+    if (before == _entries.length) return;
+    if (current case final entry? when !_entries.contains(entry)) {
+      current = null;
+    }
+    pendingRevision++;
     notifyListeners();
   }
 

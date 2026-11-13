@@ -618,12 +618,14 @@ class Pill extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
   final Widget? trailing;
+  final bool wrapLabel;
   const Pill({
     super.key,
     required this.label,
     required this.selected,
     required this.onTap,
     this.trailing,
+    this.wrapLabel = false,
   });
 
   @override
@@ -631,6 +633,13 @@ class Pill extends StatelessWidget {
     final p = Theme.of(context).brightness == Brightness.dark
         ? AppColors.dark
         : AppColors.light;
+    final title = Text(
+      label,
+      style: TextStyle(
+        fontSize: 12.5,
+        color: selected ? Colors.white : p.muted,
+      ),
+    );
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
@@ -644,13 +653,7 @@ class Pill extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12.5,
-                color: selected ? Colors.white : p.muted,
-              ),
-            ),
+            if (wrapLabel) Flexible(child: title) else title,
             if (trailing != null) ...[const SizedBox(width: 5), trailing!],
           ],
         ),

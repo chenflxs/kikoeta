@@ -2,7 +2,7 @@
 
 [简体中文](README.md) | [繁體中文](README.zh-Hant.md) | [English](README.en.md) | [日本語](README.ja.md) | [Русский](README.ru.md)
 
-> An ASMR listening client. Browse and play works from asmr.one and self-hosted kikoeru-express servers on Windows and Android, with lyrics and local library management.
+> An ASMR listening client. Browse and play works from asmr.one, DLsite Play, and self-hosted kikoeru-express servers on Windows and Android, with lyrics and local library management.
 
 [![GitHub release](https://img.shields.io/github/v/release/chenflxs/kikoeta?display_name=tag&label=Latest%20release)](https://github.com/chenflxs/kikoeta/releases) [![License](https://img.shields.io/github/license/chenflxs/kikoeta)](LICENSE) [![Flutter](https://img.shields.io/badge/Flutter-Material%203-02569B?logo=flutter)](https://flutter.dev/) [![Rust](https://img.shields.io/badge/Rust-Core-000000?logo=rust)](https://www.rust-lang.org/) [![Downloads](https://img.shields.io/github/downloads/chenflxs/kikoeta/total?label=Downloads)](https://github.com/chenflxs/kikoeta/releases)
 
@@ -73,7 +73,7 @@
 
 - Paginated browsing and search by title, tag, circle, or voice actor, with popular and recommended works, sorting, age ratings, and subtitle filters.
 - SFW mode, blacklist filtering, and search history. Copy an RJ ID to search for it directly.
-- Switch between asmr.one and self-hosted kikoeru-express servers, with account login and HTTP proxy support.
+- Switch between asmr.one, DLsite Play, and self-hosted kikoeru-express servers, with account sign-in and HTTP proxy support.
 
 ### Built for listening
 
@@ -107,6 +107,16 @@ Download the latest version for your platform from [GitHub Releases](https://git
 
 - Windows: run the installer.
 - Android: download and install the `arm64-v8a` APK.
+
+### DLsite Play
+
+Choose **Sign in with DLsite Play** on the sign-in screen, or select **DLsite Play** from the server picker on the home screen and choose **Apply**. Once signed in, you can browse, search, and play purchased works and manage favorites and lists. For Cookie sign-in, see the [DLsite Play sign-in guide](docs/dlsite%20play%E7%99%BB%E5%BD%95%E6%8C%87%E5%BC%95.md) (Simplified Chinese).
+
+### Translate existing lyrics
+
+Under **Settings → Language and translation**, choose a translation engine, source language, and target language. You can select Russian or use **Custom language** to enter a code your engine supports, such as `fr` or `pt-BR`.
+
+During playback, open **Lyrics settings → Translate lyrics**. You can follow progress or cancel while the current track's lyrics are translated in batches. The app saves the translation as LRC under `RJ ID-target language/` in the lyrics library (for example, `RJ123-en/` or `RJ123-zh-CN/`), retaining the original timing and track subfolders. The source file stays in place. Use the **TL** filter to find translations in the lyrics library.
 
 ### Transcription and translation
 

@@ -308,7 +308,7 @@ class _WorkPageState extends State<WorkPage> {
     if (downloadItem == null) _loadTracks();
     _ratingAverage = work.rating;
     _loadWorkDetails();
-    _loadSimilarWorks();
+    if (!app.isDlsite) _loadSimilarWorks();
   }
 
   @override
@@ -340,7 +340,7 @@ class _WorkPageState extends State<WorkPage> {
     if (!reset && (_similarAppending || !_similarHasMore)) return;
     if (reset) {
       _similarPages?.close();
-      if (work.apiId == null || app.customServer) {
+      if (work.apiId == null || app.customServer || app.isDlsite) {
         _similarPages = null;
         _similarAppending = false;
         setState(() {
@@ -503,17 +503,26 @@ class _WorkPageState extends State<WorkPage> {
   Future<void> _loadWorkDetails() async {
     final id = work.apiId;
     if (id == null) return;
+    final epoch = app.serverEpoch;
+    final favoriteVersion = app.favVersion;
+    final previousProgress = _myProgress;
     try {
       final details = await ApiService.fetchWork(app, id);
-      if (details.hasReview != null) {
+      if (!mounted || app.serverEpoch != epoch) return;
+      if (details.hasReview != null &&
+          (!app.isDlsite || app.favVersion == favoriteVersion)) {
         app.syncFavoriteFromServer(work, details.hasReview!);
       }
       if (mounted) {
         setState(() {
-          _languageEditions = details.languageEditions;
+          _languageEditions = app.isDlsite
+              ? const []
+              : details.languageEditions;
           _ratingAverage = details.rating;
           _userRating = details.userRating;
-          _myProgress = details.progress;
+          if (!app.isDlsite || _myProgress == previousProgress) {
+            _myProgress = details.progress;
+          }
           _myReviewText = details.reviewText;
         });
       }
@@ -592,10 +601,11 @@ class _WorkPageState extends State<WorkPage> {
     final l10n = context.l10n;
     if (work.apiId == null) return;
     final previous = _myProgress;
+    if (app.isDlsite && previous == progress) return;
     final clearing = previous == progress;
     setState(() => _myProgress = clearing ? null : progress);
     try {
-      if (clearing) {
+      if (clearing && !app.isDlsite) {
         await ApiService.clearReviewProgress(app, work);
       } else {
         await ApiService.submitReview(app, work, progress: progress);
@@ -616,11 +626,18 @@ class _WorkPageState extends State<WorkPage> {
   Widget _markButton() {
     final marked = _myProgress != null;
     final color = marked ? p.accent : p.text;
+    final progressLabels = app.isDlsite
+        ? <String, String>{
+            'listened': _dlsiteProgressLabel('listened'),
+            'unwatched': _dlsiteProgressLabel('unwatched'),
+            'hidden': _dlsiteProgressLabel('hidden'),
+          }
+        : workProgressLabels;
     return PopupMenuButton<String>(
       tooltip: context.l10n.mark,
       onSelected: _setProgress,
       itemBuilder: (_) => [
-        for (final entry in workProgressLabels.entries)
+        for (final entry in progressLabels.entries)
           PopupMenuItem<String>(
             value: entry.key,
             child: Row(
@@ -651,7 +668,7 @@ class _WorkPageState extends State<WorkPage> {
             const SizedBox(width: 4),
             Text(
               marked
-                  ? (workProgressLabels[_myProgress] ?? context.l10n.mark)
+                  ? (progressLabels[_myProgress] ?? context.l10n.mark)
                   : context.l10n.mark,
               style: TextStyle(fontSize: 12.5, color: color),
             ),
@@ -661,7 +678,32 @@ class _WorkPageState extends State<WorkPage> {
     );
   }
 
+  String _dlsiteProgressLabel(String progress) {
+    final locale = Localizations.localeOf(context);
+    final language = locale.scriptCode == 'Hant'
+        ? 'zh-Hant'
+        : locale.languageCode;
+    return switch ((language, progress)) {
+      ('ja', 'listened') => '視聴済み',
+      ('ja', 'unwatched') => '未視聴',
+      ('ja', 'hidden') => '非表示',
+      ('zh', 'listened') => '已观看',
+      ('zh', 'unwatched') => '未观看',
+      ('zh', 'hidden') => '不显示',
+      ('zh-Hant', 'listened') => '已觀看',
+      ('zh-Hant', 'unwatched') => '未觀看',
+      ('zh-Hant', 'hidden') => '不顯示',
+      ('ru', 'listened') => 'Прослушано',
+      ('ru', 'unwatched') => 'Не прослушано',
+      ('ru', 'hidden') => 'Скрыто',
+      (_, 'listened') => 'Watched',
+      (_, 'unwatched') => 'Unwatched',
+      _ => 'Hidden',
+    };
+  }
+
   Future<void> _openReviewDialog() async {
+    if (app.isDlsite) return;
     final l10n = context.l10n;
     if (work.apiId == null) {
       _toast(l10n.workPageOpenReviewDialogToast);
@@ -1916,6 +1958,7 @@ class _WorkPageState extends State<WorkPage> {
     final miniVisible = app.playing || app.hasQueue;
     // 竖屏时把多语言入口移到下一行，避免作品编号、分级和日期挤压它。
     final splitWorkMetadata =
+        !app.isDlsite &&
         MediaQuery.orientationOf(context) == Orientation.portrait &&
         _languageEditions.isNotEmpty;
     final visibleTree = _tree == null ? null : _indexForVisibleTree().roots;
@@ -1976,20 +2019,22 @@ class _WorkPageState extends State<WorkPage> {
                   label: context.l10n.workPageBuildLabel2,
                 ),
               ),
-              PopupMenuItem(
-                value: 'review',
-                child: _WorkMenuEntry(
-                  icon: Icons.chat_bubble_outline,
-                  label: context.l10n.workPageBuildLabel,
+              if (!app.isDlsite)
+                PopupMenuItem(
+                  value: 'review',
+                  child: _WorkMenuEntry(
+                    icon: Icons.chat_bubble_outline,
+                    label: context.l10n.workPageBuildLabel,
+                  ),
                 ),
-              ),
-              PopupMenuItem(
-                value: 'asmr',
-                child: _WorkMenuEntry(
-                  icon: Icons.open_in_new,
-                  label: context.l10n.workPageBuildLabel5,
+              if (!app.isDlsite)
+                PopupMenuItem(
+                  value: 'asmr',
+                  child: _WorkMenuEntry(
+                    icon: Icons.open_in_new,
+                    label: context.l10n.workPageBuildLabel5,
+                  ),
                 ),
-              ),
               PopupMenuItem(
                 value: 'dlsite',
                 child: _WorkMenuEntry(
@@ -1997,14 +2042,15 @@ class _WorkPageState extends State<WorkPage> {
                   label: context.l10n.workPageBuildLabel4,
                 ),
               ),
-              PopupMenuItem(
-                value: 'mediaOnly',
-                child: MenuItem(
-                  label: context.l10n.workPageBuildLabel3,
-                  selected: app.mediaFilesOnly,
-                  checkbox: true,
+              if (!app.isDlsite)
+                PopupMenuItem(
+                  value: 'mediaOnly',
+                  child: MenuItem(
+                    label: context.l10n.workPageBuildLabel3,
+                    selected: app.mediaFilesOnly,
+                    checkbox: true,
+                  ),
                 ),
-              ),
             ],
           ),
         ],
@@ -2059,7 +2105,7 @@ class _WorkPageState extends State<WorkPage> {
                                   ),
                                 ),
                               const SizedBox(height: 6),
-                              _ratingStars(),
+                              if (!app.isDlsite) _ratingStars(),
                               const SizedBox(height: 7),
                               if (splitWorkMetadata)
                                 Column(
@@ -2085,7 +2131,8 @@ class _WorkPageState extends State<WorkPage> {
                                       children: [
                                         if (work.releaseDate.isNotEmpty)
                                           _releaseDateChip(work.releaseDate),
-                                        _languageEditionsButton(),
+                                        if (!app.isDlsite)
+                                          _languageEditionsButton(),
                                       ],
                                     ),
                                   ],
@@ -2100,7 +2147,8 @@ class _WorkPageState extends State<WorkPage> {
                                     if (work.ageKnown) AgeBadge(age: work.age),
                                     if (work.releaseDate.isNotEmpty)
                                       _releaseDateChip(work.releaseDate),
-                                    if (_languageEditions.isNotEmpty)
+                                    if (!app.isDlsite &&
+                                        _languageEditions.isNotEmpty)
                                       _languageEditionsButton(),
                                   ],
                                 ),
@@ -2322,7 +2370,8 @@ class _WorkPageState extends State<WorkPage> {
                       )
                     : SliverToBoxAdapter(child: _treePlaceholder()),
               ),
-              if (_similarWorks.isNotEmpty) ..._similarWorksSlivers(),
+              if (!app.isDlsite && _similarWorks.isNotEmpty)
+                ..._similarWorksSlivers(),
               SliverToBoxAdapter(
                 child: SizedBox(height: miniVisible ? 100 : 40),
               ),

@@ -10,6 +10,7 @@ import '../src/rust/api/proxy.dart';
 import 'api_service.dart';
 import 'app_log.dart';
 import 'app_paths.dart';
+import 'dlsite_play_service.dart';
 import 'download_transfer.dart';
 import 'media_tree.dart';
 import 'settings_store.dart';
@@ -742,6 +743,7 @@ class DownloadManager extends ChangeNotifier {
     final target = File(_localPath(item, node));
     final completedBytes = _completedBytes(item);
     var lastUpdate = DateTime.now();
+    final isDlsitePlay = url.startsWith('dlsite-play:');
     bool isCancelled() =>
         _disposed ||
         _cancelled.contains(item.id) ||
@@ -749,8 +751,14 @@ class DownloadManager extends ChangeNotifier {
         !_isSelected(item, node.path) ||
         item.pausedPaths.contains(node.path);
     try {
+      final requestUrl = isDlsitePlay
+          ? await ApiService.resolveActiveMediaUrl(url)
+          : url;
+      if (isCancelled()) throw const _DownloadCancelled();
       await downloadToFile(
-        uri: Uri.parse(_proxyUrl(url)),
+        // The Rust stream proxy adds bearer auth by target origin. DLsite's
+        // signed CDN URL is already authorized and must be requested directly.
+        uri: Uri.parse(isDlsitePlay ? requestUrl : _proxyUrl(requestUrl)),
         sourceUrl: url,
         target: target,
         isCancelled: isCancelled,
@@ -792,6 +800,9 @@ class DownloadManager extends ChangeNotifier {
     } catch (error) {
       if (error is DownloadTransferCancelled || isCancelled()) {
         throw const _DownloadCancelled();
+      }
+      if (isDlsitePlay && error is! DlsitePlayException) {
+        throw HttpException(appL10n.downloadServiceDownloadFileHttpException);
       }
       rethrow;
     }

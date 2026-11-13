@@ -54,6 +54,9 @@ dependencies:
   ffi: ^2.2.0
   tray_manager: ^0.3.0
   window_manager: ^0.4.3
+  cookie_jar: ^4.0.9
+  flutter_secure_storage: ^10.0.0
+  html: ^0.15.6
 
 dev_dependencies:
   flutter_test:

@@ -241,7 +241,12 @@ class PlaylistDetailPage extends StatelessWidget {
     }
     // 列表里没有该作品时，从 RJ 号还原数字 id，保证详情页仍能加载
     // 曲目、封面和评分（否则 WorkPage 会一直停留在骨架屏）。
-    final id = ApiService.apiIdFromRj(entry.rj);
+    final isDlsite = entry.tracks.any(
+      (track) => track.url?.startsWith('dlsite-play:') == true,
+    );
+    final id = isDlsite == app.isDlsite
+        ? ApiService.apiIdForWork(app, entry.rj)
+        : null;
     final base = ApiService.resolveBase(app).replaceFirst(RegExp(r'/+$'), '');
     return Work(
       rj: entry.rj,
@@ -254,7 +259,7 @@ class PlaylistDetailPage extends StatelessWidget {
       tags: const [],
       grad: 0,
       apiId: id,
-      coverUrl: id == null ? null : '$base/api/cover/$id',
+      coverUrl: id == null || app.isDlsite ? null : '$base/api/cover/$id',
     );
   }
 
@@ -275,7 +280,9 @@ class PlaylistDetailPage extends StatelessWidget {
     final files = <MediaNode>[];
     var index = -1;
     for (final currentEntry in entries) {
-      final owner = identical(currentEntry, entry) ? work : _workFor(currentEntry);
+      final owner = identical(currentEntry, entry)
+          ? work
+          : _workFor(currentEntry);
       for (final item in currentEntry.tracks) {
         if (item.url == null || item.url!.isEmpty) continue;
         if (identical(currentEntry, entry) && item.path == track.path) {
@@ -393,7 +400,8 @@ class PlaylistDetailPage extends StatelessWidget {
                                                 fontWeight: FontWeight.w800,
                                               ),
                                             ),
-                                            if (e.title.isNotEmpty && e.title != e.rj)
+                                            if (e.title.isNotEmpty &&
+                                                e.title != e.rj)
                                               Text(
                                                 e.title,
                                                 maxLines: 1,
@@ -411,12 +419,16 @@ class PlaylistDetailPage extends StatelessWidget {
                                       context.l10n.playlistsPageHeaderText(
                                         (e.tracks.length).toString(),
                                       ),
-                                      style: TextStyle(fontSize: 11, color: p.dim),
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: p.dim,
+                                      ),
                                     ),
                                     const SizedBox(width: 4),
                                     Tooltip(
-                                      message:
-                                          context.l10n.playlistsPageHeaderMessage,
+                                      message: context
+                                          .l10n
+                                          .playlistsPageHeaderMessage,
                                       child: Icon(
                                         Icons.drag_indicator,
                                         size: 17,
@@ -432,8 +444,9 @@ class PlaylistDetailPage extends StatelessWidget {
                                         color: p.dim,
                                       ),
                                       visualDensity: VisualDensity.compact,
-                                      tooltip:
-                                          context.l10n.playlistsPageHeaderTooltip,
+                                      tooltip: context
+                                          .l10n
+                                          .playlistsPageHeaderTooltip,
                                     ),
                                   ],
                                 );
@@ -448,14 +461,16 @@ class PlaylistDetailPage extends StatelessWidget {
                                       );
                                 return Column(
                                   key: ObjectKey(e),
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
                                   children: [
                                     headerDrag,
                                     const SizedBox(height: 4),
                                     // 媒体行各自可拖动，调整作品内音频的播放顺序。
                                     ReorderableListView.builder(
                                       shrinkWrap: true,
-                                      physics: const NeverScrollableScrollPhysics(),
+                                      physics:
+                                          const NeverScrollableScrollPhysics(),
                                       padding: EdgeInsets.zero,
                                       itemCount: e.tracks.length,
                                       buildDefaultDragHandles: false,
@@ -469,8 +484,12 @@ class PlaylistDetailPage extends StatelessWidget {
                                       itemBuilder: (ctx, j) {
                                         final track = e.tracks[j];
                                         final row = InkWell(
-                                          onTap: () =>
-                                              _playTrack(ctx, entries, e, track),
+                                          onTap: () => _playTrack(
+                                            ctx,
+                                            entries,
+                                            e,
+                                            track,
+                                          ),
                                           child: Padding(
                                             padding: const EdgeInsets.fromLTRB(
                                               12,
@@ -490,7 +509,8 @@ class PlaylistDetailPage extends StatelessWidget {
                                                   child: Text(
                                                     track.title,
                                                     maxLines: 1,
-                                                    overflow: TextOverflow.ellipsis,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
                                                     style: TextStyle(
                                                       fontSize: 12.5,
                                                       color: p.text,

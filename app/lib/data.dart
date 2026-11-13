@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -7,6 +8,8 @@ import 'package:flutter/services.dart';
 import 'services/android_audio.dart';
 import 'services/app_log.dart';
 import 'services/audio_effects.dart';
+import 'services/dlsite_play_service.dart';
+import 'services/dictation_queue.dart';
 import 'l10n/app_language.dart';
 import 'l10n/translation_language.dart';
 import 'l10n/tag_names.dart';
@@ -274,6 +277,14 @@ class AppState extends ChangeNotifier {
   final List<CustomSite> customSites = [];
   String asmrUser = '';
   String asmrPass = '';
+  DlsitePlaySession? _dlsiteSession;
+  DlsitePlaySession? get dlsiteSession => isDlsite ? _dlsiteSession : null;
+  DlsitePlaySession? get savedDlsiteSession => _dlsiteSession;
+  bool get hasDlsiteSession => _dlsiteSession != null;
+  bool get hasOneCredentials => asmrUser.isNotEmpty && asmrPass.isNotEmpty;
+  bool _useDlsite = false;
+  bool get isDlsite => _useDlsite && hasDlsiteSession;
+  int dlsiteSessionEpoch = 0;
 
   // 首页
   String category = 'all'; // all / hot / rec
@@ -496,10 +507,11 @@ class AppState extends ChangeNotifier {
   bool get hasQueue => queue.isNotEmpty;
   Work? get playWork => currentWork;
 
-  /// 需要显示登录页：未登录 one 站（账密缺失）且未配置自建服务器
+  /// 只有当前来源没有可用登录状态时才显示登录页。
   bool get loginRequired =>
-      (asmrUser.isEmpty || asmrPass.isEmpty) &&
-      !(customServer && customSites.isNotEmpty);
+      !isDlsite &&
+      !(customServer && customSites.isNotEmpty) &&
+      !hasOneCredentials;
 
   List<int> get homeOrder {
     final n = homeList.length;
@@ -1122,9 +1134,25 @@ class AppState extends ChangeNotifier {
     final srvIdx = SettingsStore.get('server_idx');
     if (srvIdx != null) customServerIdx = int.tryParse(srvIdx) ?? 0;
     if (customSites.isEmpty) customServer = false;
-    if (customServer && customServerIdx >= customSites.length) {
+    if (customServer &&
+        (customServerIdx < 0 || customServerIdx >= customSites.length)) {
       customServer = false;
       customServerIdx = 0;
+    }
+    final source = SettingsStore.get('login_source');
+    if (!hasDlsiteSession) {
+      try {
+        _dlsiteSession = DlsitePlaySession.active =
+            await DlsitePlaySession.restore();
+      } catch (_) {
+        _dlsiteSession = DlsitePlaySession.active = null;
+      }
+    }
+    _useDlsite = source == 'dlsite' && hasDlsiteSession;
+    if (isDlsite) {
+      customServer = false;
+    } else if (!customServer && !hasOneCredentials) {
+      customServer = customSites.isNotEmpty;
     }
     final recommenderUuid = SettingsStore.get('recommender_uuid');
     if (recommenderUuid != null && recommenderUuid.isNotEmpty) {
@@ -1269,14 +1297,7 @@ class AppState extends ChangeNotifier {
       (mode) => mode.name == channelMode,
       orElse: () => AudioChannelMode.stereo,
     );
-    final favs = SettingsStore.get('favs');
-    if (favs != null && favs.isNotEmpty) {
-      try {
-        favoriteRjs
-          ..clear()
-          ..addAll((jsonDecode(favs) as List).cast<String>());
-      } catch (_) {}
-    }
+    _restoreSourceFavorites();
     final sh = SettingsStore.get('search_history');
     if (sh != null && sh.isNotEmpty) {
       try {
@@ -1389,6 +1410,7 @@ class AppState extends ChangeNotifier {
     if (pe != null) httpProxyEnabled = pe == '1';
     final pu = SettingsStore.get('http_proxy');
     if (pu != null) httpProxyUrl = pu;
+    _updateDlsiteProxy();
     final uc = SettingsStore.get('update_check_enabled');
     if (uc != null) updateCheckEnabled = uc == '1';
     final uiv = SettingsStore.get('update_ignored_version');
@@ -1399,14 +1421,7 @@ class AppState extends ChangeNotifier {
     if (cacheLimit != null) {
       mediaCacheLimitMb = cacheLimit.clamp(512, 10240).toInt();
     }
-    final hs = SettingsStore.get('home_sort');
-    if (hs != null && hs.isNotEmpty) sort = hs;
-    final ho = SettingsStore.get('home_order_asc');
-    if (ho != null) orderAsc = ho == '1';
-    final hc = SettingsStore.get('home_category');
-    if (hc != null && const ['all', 'hot', 'rec'].contains(hc)) {
-      category = hc;
-    }
+    _restoreSourceHomePreferences();
     final haf = SettingsStore.get('home_age_filter');
     if (haf != null) {
       // 兼容旧版保存的单值（0/1/2），新版使用逗号分隔的集合。
@@ -1420,12 +1435,6 @@ class AppState extends ChangeNotifier {
               .where((value) => value >= 0 && value <= 2),
         );
     }
-    final hso = SettingsStore.get('home_sub_only');
-    subtitleFilter = switch (hso) {
-      '2' || 'all' => SubtitleFilter.all,
-      '1' || 'online' => SubtitleFilter.online,
-      _ => SubtitleFilter.none,
-    };
     // SFW 始终优先于已保存的年龄筛选。
     if (sfwMode) {
       ageFilters
@@ -1818,12 +1827,14 @@ class AppState extends ChangeNotifier {
   void setHttpProxyEnabled(bool v) {
     httpProxyEnabled = v;
     SettingsStore.set('http_proxy_enabled', v ? '1' : '0');
+    _updateDlsiteProxy();
     notifyListeners();
   }
 
   void setHttpProxyUrl(String v) {
     httpProxyUrl = v.trim();
     SettingsStore.set('http_proxy', httpProxyUrl);
+    _updateDlsiteProxy();
     notifyListeners();
   }
 
@@ -1858,7 +1869,7 @@ class AppState extends ChangeNotifier {
       SettingsStore.set('home_category', category);
     }
     sort = v;
-    SettingsStore.set('home_sort', v);
+    SettingsStore.set(isDlsite ? 'dlsite_home_sort' : 'home_sort', v);
     notifyListeners();
   }
 
@@ -1921,7 +1932,10 @@ class AppState extends ChangeNotifier {
 
   void setOrderAsc(bool v) {
     orderAsc = v;
-    SettingsStore.set('home_order_asc', v ? '1' : '0');
+    SettingsStore.set(
+      isDlsite ? 'dlsite_home_order_asc' : 'home_order_asc',
+      v ? '1' : '0',
+    );
     notifyListeners();
   }
 
@@ -2028,14 +2042,25 @@ class AppState extends ChangeNotifier {
   }
 
   void removeSite(int i) {
+    final removingActive = customServer && i == customServerIdx;
     customSites.removeAt(i);
-    if (customServer && customServerIdx >= customSites.length) {
-      customServer = customSites.isNotEmpty;
-      customServerIdx = 0;
+    if (i < customServerIdx) customServerIdx--;
+    if (customServerIdx >= customSites.length) customServerIdx = 0;
+    if (customSites.isEmpty) {
+      customServer = false;
+      if (removingActive && !hasOneCredentials && applyDlsiteServer()) {
+        _persistSites();
+        _persistServer();
+        return;
+      }
     }
     _persistSites();
     _persistServer();
-    notifyListeners();
+    if (removingActive) {
+      _refreshSourceView();
+    } else {
+      notifyListeners();
+    }
   }
 
   void saveAsmr(String user, String pass) {
@@ -2046,9 +2071,150 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> signInDlsite(
+    DlsitePlaySession session, {
+    bool activate = true,
+  }) async {
+    try {
+      await session.save();
+    } catch (_) {
+      session.close();
+      rethrow;
+    }
+    final wasSelected = isDlsite;
+    _closeDlsiteSession();
+    _dlsiteSession = DlsitePlaySession.active = session;
+    _updateDlsiteProxy();
+    if (activate || wasSelected) {
+      _selectDlsite();
+    } else {
+      notifyListeners();
+    }
+  }
+
+  bool applyDlsiteServer() {
+    if (!hasDlsiteSession) return false;
+    if (!isDlsite) _selectDlsite();
+    return true;
+  }
+
+  void _selectDlsite() {
+    _useDlsite = true;
+    customServer = false;
+    SettingsStore.set('login_source', 'dlsite');
+    _refreshSourceView();
+  }
+
+  void _restoreSourceHomePreferences() {
+    randomSeed = null;
+    if (isDlsite) {
+      final savedSort = SettingsStore.get('dlsite_home_sort');
+      sort = switch (savedSort) {
+        'date' || 'rj' || 'random' => savedSort!,
+        _ => 'collect',
+      };
+      orderAsc = SettingsStore.get('dlsite_home_order_asc') == '1';
+      category = 'all';
+      subtitleFilter = SubtitleFilter.none;
+      return;
+    }
+    sort = SettingsStore.get('home_sort') ?? 'collect';
+    orderAsc = SettingsStore.get('home_order_asc') == '1';
+    category = switch (SettingsStore.get('home_category')) {
+      'hot' => 'hot',
+      'rec' => 'rec',
+      _ => 'all',
+    };
+    subtitleFilter = switch (SettingsStore.get('home_sub_only')) {
+      '2' || 'all' => SubtitleFilter.all,
+      '1' || 'online' => SubtitleFilter.online,
+      _ => SubtitleFilter.none,
+    };
+  }
+
+  Future<void> signOutDlsite() async {
+    if (!hasDlsiteSession) return;
+    await DlsitePlaySession.forget();
+    final wasSelected = isDlsite;
+    _closeDlsiteSession();
+    if (wasSelected) {
+      final useCustom =
+          customSites.isNotEmpty &&
+          (SettingsStore.get('server_custom') == '1' || !hasOneCredentials);
+      applyServer(useCustom, customServerIdx);
+    } else {
+      notifyListeners();
+    }
+  }
+
+  void _closeDlsiteSession() {
+    final session = _dlsiteSession;
+    _dlsiteSession = null;
+    if (session != null) {
+      if (identical(DlsitePlaySession.active, session)) {
+        DlsitePlaySession.active = null;
+      }
+      session.close();
+      DictationQueue.forApp(this).expireDlsiteEntries(dlsiteSessionEpoch);
+      dlsiteSessionEpoch++;
+    }
+  }
+
+  void _updateDlsiteProxy() =>
+      _dlsiteSession?.setProxy(httpProxyEnabled ? httpProxyUrl : null);
+
+  void refreshDlsiteWorks() {
+    homeRefreshVersion++;
+    favVersion++;
+    notifyListeners();
+  }
+
+  void _refreshSourceView() {
+    tab = 0;
+    serverEpoch++;
+    loginEpoch++;
+    remoteWorks.clear();
+    remoteError = null;
+    worksPage = 1;
+    loadingRemote = false;
+    worksLoadingMore = false;
+    worksHasMore = true;
+    _restoreSourceHomePreferences();
+    _restoreSourceFavorites();
+    favVersion++;
+    _pendingSearch = null;
+    pendingClear = false;
+    searchQuery = '';
+    searchExpanded = false;
+    if (currentWork != null || queue.isNotEmpty) {
+      currentWork = null;
+      queue = [];
+      trackIdx = 0;
+      playing = false;
+      clearPlayState();
+      unawaited(AppPlayer.instance.stop());
+    }
+    notifyListeners();
+  }
+
+  void _restoreSourceFavorites() {
+    favoriteRjs.clear();
+    favIds.clear();
+    if (isDlsite) return;
+    try {
+      final saved = jsonDecode(SettingsStore.get('favs') ?? '[]') as List;
+      favoriteRjs.addAll(saved.whereType<String>());
+    } catch (_) {}
+  }
+
   /// 完全重置：清空本地存储并恢复全部内存状态为初始值。
   /// 调用方应同时停止播放器、隐藏桌面歌词，重置后 loginRequired 会回到 true。
   void resetAll() {
+    if (hasDlsiteSession) {
+      _closeDlsiteSession();
+      unawaited(DlsitePlaySession.forget().catchError((Object _) {}));
+    }
+    _useDlsite = false;
     SettingsStore.clearAll();
     AppLog.setEnabled(false);
     AppLog.clear();
@@ -2158,13 +2324,24 @@ class AppState extends ChangeNotifier {
 
   /// 应用服务器选择并持久化（登录页/服务器弹层共用）
   void applyServer(bool custom, int idx) {
-    customServer = custom;
-    customServerIdx = customSites.isEmpty
+    final nextCustom = custom && customSites.isNotEmpty;
+    final nextIndex = customSites.isEmpty
         ? 0
         : idx.clamp(0, customSites.length - 1).toInt();
+    final changed =
+        _useDlsite ||
+        customServer != nextCustom ||
+        (nextCustom && nextIndex != customServerIdx);
+    _useDlsite = false;
+    SettingsStore.set('login_source', '');
+    customServer = nextCustom;
+    customServerIdx = nextIndex;
     _persistServer();
-    serverEpoch++;
-    notifyListeners();
+    if (changed) {
+      _refreshSourceView();
+    } else {
+      notifyListeners();
+    }
   }
 
   void _persistServer() {
@@ -2212,7 +2389,9 @@ class AppState extends ChangeNotifier {
     );
   }
 
-  void _persistFavs() => SettingsStore.set('favs', jsonEncode(favoriteRjs));
+  void _persistFavs() {
+    if (!isDlsite) SettingsStore.set('favs', jsonEncode(favoriteRjs));
+  }
 
   void _persistSearchHistory() =>
       SettingsStore.set('search_history', jsonEncode(history));

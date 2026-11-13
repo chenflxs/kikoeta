@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'dart:ui' show Locale;
 
 import '../data.dart';
@@ -8,6 +9,7 @@ import '../src/rust/api/simple.dart';
 import '../src/rust/api/textcodec.dart';
 import '../l10n/strings.dart';
 import '../l10n/tag_names.dart';
+import 'dlsite_play_service.dart';
 
 /// 一页作品 + 服务端分页信息（用于 hasMore 判断）
 class WorksPage {
@@ -48,6 +50,7 @@ class ApiService {
   static final _playbackAgeRequests =
       <(AppState, String, String), Future<void>>{};
   static String resolveBase(AppState app) {
+    if (app.isDlsite) return DlsitePlaySession.origin;
     if (app.customServer && app.customSites.isNotEmpty) {
       return app.customSites[app.customServerIdx].url;
     }
@@ -132,6 +135,9 @@ class ApiService {
     int page = 1,
     int perPage = 20,
   }) async {
+    if (app.dlsiteSession case final session?) {
+      return _dlsiteWorksPage(app, session, page: page, perPage: perPage);
+    }
     final base = resolveBase(app);
     if (app.customServer) {
       // kikoeru-express：分页大小由服务器配置决定，年龄用 nsfw、字幕用 lyric
@@ -216,6 +222,16 @@ class ApiService {
     // 搜索结果持有自己的 seed，避免刷新搜索打乱首页后续分页。
     int? randomSeed,
   }) async {
+    if (app.dlsiteSession case final session?) {
+      return _dlsiteWorksPage(
+        app,
+        session,
+        page: page,
+        perPage: perPage,
+        query: query,
+        randomSeed: randomSeed,
+      );
+    }
     final base = resolveBase(app);
     if (app.customServer) {
       final cleanQuery = query.replaceAll('，', ' ').replaceAll(',', ' ').trim();
@@ -270,6 +286,16 @@ class ApiService {
   /// 服务端会以 `betterRandom` 返回一个随机作品，客户端必须直接使用响应
   /// 的首项，不能将首页筛选、分页或本地历史逻辑混入这个请求。
   static Future<Work?> fetchRandomWork(AppState app) async {
+    if (app.dlsiteSession case final session?) {
+      final works = await session.works(
+        ages: app.hasAgeFilter ? app.ageFilters : const {},
+        sfw: app.sfwMode,
+      );
+      final visible = works
+          .where((work) => !app.isBlacklistedWork(work))
+          .toList();
+      return visible.isEmpty ? null : visible[Random().nextInt(visible.length)];
+    }
     final base = resolveBase(app);
     final json = await apiGetRandomWork(base: base);
     return parseWorks(json, base: base, perPage: 1).works.firstOrNull;
@@ -278,6 +304,7 @@ class ApiService {
   /// 读取单部作品详情（`?v=2`，含当前账号的评分/标记/评论），
   /// 以取得首页列表未携带的多语言版本与评价信息。
   static Future<Work> fetchWork(AppState app, int id) async {
+    if (app.dlsiteSession case final session?) return session.work(id);
     final json = await apiGetWorkV2(base: resolveBase(app), rj: id.toString());
     final decoded = jsonDecode(json);
     if (decoded is! Map) {
@@ -325,6 +352,14 @@ class ApiService {
     String? reviewText,
     String? progress,
   }) async {
+    if (app.dlsiteSession case final session?) {
+      if (progress == null || rating != null || reviewText != null) {
+        throw UnsupportedError('DLsite Play only supports viewing status.');
+      }
+      await session.setProgress(work.rj, progress);
+      if (identical(app.dlsiteSession, session)) app.refreshDlsiteWorks();
+      return;
+    }
     final id = work.apiId;
     if (id == null) throw Exception(appL10n.workPageOpenReviewDialogToast);
     await apiSubmitReview(
@@ -422,6 +457,10 @@ class ApiService {
     return int.tryParse(digits);
   }
 
+  static int? apiIdForWork(AppState app, String number) => app.isDlsite
+      ? DlsitePlaySession.idForNumber(number.toUpperCase())
+      : apiIdFromRj(number);
+
   /// 首页/搜索排序参数：所有分类均按用户选择传递给服务器。
   static String orderParam(AppState app) {
     return switch (app.sort) {
@@ -505,6 +544,9 @@ class ApiService {
 
   /// 歌单列表（需登录）
   static Future<List<PlaylistInfo>> fetchPlaylists(AppState app) async {
+    if (app.dlsiteSession case final session?) {
+      return session.playlists(_dlsiteHiddenLabel);
+    }
     final base = resolveBase(app);
     final json = await apiGetPlaylists(base: base);
     final data = jsonDecode(json) as Map<String, dynamic>;
@@ -520,6 +562,11 @@ class ApiService {
     AppState app,
     String id,
   ) async {
+    if (app.dlsiteSession case final session?) {
+      return (await session.playlists(
+        _dlsiteHiddenLabel,
+      )).firstWhere((list) => list.id == id);
+    }
     final base = resolveBase(app);
     final json = await apiGetPlaylistMetadata(base: base, id: id);
     final decoded = jsonDecode(json);
@@ -612,6 +659,10 @@ class ApiService {
     String description = '',
     int privacy = 0,
   }) async {
+    if (app.dlsiteSession case final session?) {
+      await session.createList(name);
+      return;
+    }
     await apiCreatePlaylist(
       base: resolveBase(app),
       name: name,
@@ -628,6 +679,9 @@ class ApiService {
     String description = '',
     int privacy = 0,
   }) async {
+    if (app.dlsiteSession case final session?) {
+      return session.renameList(id, name);
+    }
     await apiEditPlaylistMetadata(
       base: resolveBase(app),
       id: id,
@@ -639,6 +693,7 @@ class ApiService {
 
   /// 删除自己的歌单（POST /api/playlist/delete-playlist）。
   static Future<void> deletePlaylist(AppState app, String id) async {
+    if (app.dlsiteSession case final session?) return session.deleteList(id);
     await apiDeletePlaylist(base: resolveBase(app), id: id);
   }
 
@@ -653,6 +708,9 @@ class ApiService {
     String id,
     List<String> rjs,
   ) async {
+    if (app.dlsiteSession case final session?) {
+      return session.changeList(id, rjs, add: true);
+    }
     await apiPlaylistAddWorks(
       base: resolveBase(app),
       playlistId: id,
@@ -666,6 +724,14 @@ class ApiService {
     String id,
     List<String> workIds,
   ) async {
+    if (app.dlsiteSession case final session?) {
+      await session.changeList(id, workIds, add: false);
+      if (id == DlsitePlaySession.hiddenList &&
+          identical(app.dlsiteSession, session)) {
+        app.refreshDlsiteWorks();
+      }
+      return;
+    }
     await apiPlaylistRemoveWorks(
       base: resolveBase(app),
       playlistId: id,
@@ -710,6 +776,15 @@ class ApiService {
     int page = 1,
     int perPage = 20,
   }) async {
+    if (app.dlsiteSession case final session?) {
+      return _dlsiteWorksPage(
+        app,
+        session,
+        page: page,
+        perPage: perPage,
+        listId: id,
+      );
+    }
     final json = await apiGetPlaylistWorks(
       base: resolveBase(app),
       id: id,
@@ -728,6 +803,15 @@ class ApiService {
     String sort = 'desc',
     String? filter,
   }) async {
+    if (app.dlsiteSession case final session?) {
+      return _dlsiteWorksPage(
+        app,
+        session,
+        page: page,
+        perPage: perPage,
+        listId: DlsitePlaySession.favoritesList,
+      );
+    }
     final json = await apiGetMyReviews(
       base: resolveBase(app),
       page: page,
@@ -748,6 +832,17 @@ class ApiService {
 
   /// 系统「收藏」实际是我的评价中的无评分 listening 评价。
   static Future<bool> toggleFavorite(AppState app, Work w) async {
+    if (app.dlsiteSession case final session?) {
+      final added = await session.toggleFavorite(w.rj);
+      if (identical(app.dlsiteSession, session)) {
+        if (added) {
+          app.addFavorite(w);
+        } else {
+          app.removeFavorite(w);
+        }
+      }
+      return added;
+    }
     final id = w.apiId;
     if (id == null) {
       throw Exception(appL10n.apiServiceToggleFavoriteException);
@@ -780,6 +875,64 @@ class ApiService {
   }
 
   static String? tokenFor(AppState app, String base) => getToken(base: base);
+
+  static String get _dlsiteHiddenLabel {
+    final locale = AppLanguage.resolvedLocale;
+    return switch (locale.languageCode) {
+      'zh' => locale.scriptCode == 'Hant' ? '不顯示的作品列表' : '不显示的作品列表',
+      'ja' => '非表示作品リスト',
+      'ru' => 'Скрытые произведения',
+      _ => 'Hidden works',
+    };
+  }
+
+  static Future<WorksPage> _dlsiteWorksPage(
+    AppState app,
+    DlsitePlaySession session, {
+    required int page,
+    required int perPage,
+    String? listId,
+    String query = '',
+    int? randomSeed,
+  }) async {
+    final works = await session.works(
+      listId: listId,
+      query: query,
+      order: app.sort,
+      ascending: app.orderAsc,
+      seed: randomSeed ?? app.randomSeed ?? 0,
+      ages: listId == null && app.hasAgeFilter ? app.ageFilters : const {},
+      sfw: app.sfwMode,
+    );
+    final start = (page - 1) * perPage;
+    final end = min(start + perPage, works.length);
+    return WorksPage(
+      works: start < end ? works.sublist(start, end) : const [],
+      page: page,
+      pageSize: perPage,
+      totalCount: works.length,
+      hasMore: end < works.length,
+    );
+  }
+
+  static Future<String> resolveMediaUrl(AppState app, String url) =>
+      _resolveDlsiteMedia(app.savedDlsiteSession, url);
+
+  static Future<String> resolveActiveMediaUrl(String url) =>
+      _resolveDlsiteMedia(DlsitePlaySession.active, url);
+
+  static Future<String> _resolveDlsiteMedia(
+    DlsitePlaySession? session,
+    String url,
+  ) async {
+    if (!url.startsWith('${DlsitePlaySession.mediaScheme}:')) return url;
+    if (session == null) {
+      throw const DlsitePlayException(
+        'Sign in to DLsite Play to play this audio.',
+      );
+    }
+    return session.resolveMedia(url);
+  }
 
   static Future<List<LyricLine>> fetchLrc(
     AppState app,
@@ -1539,11 +1692,18 @@ class ApiService {
     AppState app,
     int workApiId, {
     bool forceRefresh = false,
-  }) => fetchTracksFromBase(
-    resolveBase(app),
-    workApiId,
-    forceRefresh: forceRefresh,
-  );
+  }) async {
+    if (app.dlsiteSession case final session?) {
+      return sortedMediaNodes(
+        await session.tracks(workApiId, forceRefresh: forceRefresh),
+      );
+    }
+    return fetchTracksFromBase(
+      resolveBase(app),
+      workApiId,
+      forceRefresh: forceRefresh,
+    );
+  }
 
   static Future<List<MediaNode>> fetchTracksFromBase(
     String base,

@@ -1,5 +1,6 @@
 import '../data.dart';
 import 'api_service.dart';
+import 'dlsite_play_service.dart';
 import 'kt_service.dart';
 import 'kikoeru_lyrics_writeback.dart';
 import 'kikoeru_writeback_access.dart';
@@ -67,8 +68,9 @@ class KtCacheSync {
           origin == null || origin.isEmpty ? legacySourceBase : origin,
         );
         // Keep the configured spelling for token lookup and media-cache keys.
-        final base = _configuredBases[source];
-        if (origin?.isNotEmpty == true && base == null) {
+        final dlsite = source == DlsitePlaySession.origin;
+        final base = dlsite ? null : _configuredBases[source];
+        if (origin?.isNotEmpty == true && base == null && !dlsite) {
           report.missingSource = true;
         }
         for (final file in entry.files) {
@@ -97,7 +99,7 @@ class KtCacheSync {
               localSaved = true;
             }
             if (!remote) {
-              if (local) report.notWritten++;
+              if (local && !dlsite) report.notWritten++;
               continue;
             }
             final writer = writers.putIfAbsent(

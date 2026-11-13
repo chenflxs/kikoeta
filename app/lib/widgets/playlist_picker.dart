@@ -680,8 +680,10 @@ class _PlaylistPickerSheetState extends State<_PlaylistPickerSheet> {
       subtitle: subtitle,
       selected: !widget.reviewsMode && pl.id == widget.currentId,
       onTap: () => Navigator.of(context).pop(PlaylistPick(pl)),
-      onLongPress: () => _showDetails(pl),
-      trailing: pl.isOwned
+      onLongPress: app.isDlsite || pl.isSystem ? null : () => _showDetails(pl),
+      trailing: pl.isSystem
+          ? null
+          : pl.isOwned
           ? IconButton(
               onPressed: _busy ? null : () => _editPlaylist(pl),
               tooltip: context.l10n.playlistPickerPlaylistItemTooltip2,
@@ -740,14 +742,15 @@ class _PlaylistPickerSheetState extends State<_PlaylistPickerSheet> {
                       style: TextStyle(fontSize: 12.5),
                     ),
                   ),
-                  TextButton.icon(
-                    onPressed: _busy ? null : _importPlaylist,
-                    icon: const Icon(Icons.link, size: 18),
-                    label: Text(
-                      context.l10n.importAction,
-                      style: TextStyle(fontSize: 12.5),
+                  if (!app.isDlsite)
+                    TextButton.icon(
+                      onPressed: _busy ? null : _importPlaylist,
+                      icon: const Icon(Icons.link, size: 18),
+                      label: Text(
+                        context.l10n.importAction,
+                        style: TextStyle(fontSize: 12.5),
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),
@@ -786,7 +789,9 @@ class _PlaylistPickerSheetState extends State<_PlaylistPickerSheet> {
                       _reviewsItem(),
                       const Divider(height: 1),
                     ],
-                    for (final pl in _list) _playlistItem(pl),
+                    for (final pl in _list)
+                      if (widget.showFavorites || !app.isDlsite || !pl.isSystem)
+                        _playlistItem(pl),
                   ],
                 ),
               ),

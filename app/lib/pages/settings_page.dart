@@ -29,6 +29,7 @@ import '../widgets/data_sync_settings.dart';
 import '../l10n/strings.dart';
 import '../l10n/app_language.dart';
 import '../l10n/translation_language.dart';
+import 'dlsite_login_page.dart';
 
 class SettingsPage extends StatefulWidget {
   final AppState app;
@@ -206,11 +207,67 @@ class _SettingsPageState extends State<SettingsPage> {
     }
     try {
       await ApiService.login(app, base, user, pass);
-      app.loginEpoch++;
-      app.notify();
+      if (!app.isDlsite) {
+        app.loginEpoch++;
+        app.notify();
+      }
       if (mounted) setState(() => _loginStatus[key] = 'ok');
     } catch (_) {
       if (mounted) setState(() => _loginStatus[key] = 'fail');
+    }
+  }
+
+  String _dlsiteAccountStatus() {
+    if (!app.hasDlsiteSession) return context.l10n.settingsPageSectionsSub;
+    return switch (Localizations.localeOf(context)) {
+      Locale(languageCode: 'zh', scriptCode: 'Hant') => '已儲存登入',
+      Locale(languageCode: 'zh') => '已保存登录',
+      Locale(languageCode: 'ja') => 'ログイン情報を保存済み',
+      Locale(languageCode: 'ru') => 'Вход сохранён',
+      _ => 'Sign-in saved',
+    };
+  }
+
+  String _dlsiteForgetLabel() => switch (Localizations.localeOf(context)) {
+    Locale(languageCode: 'zh', scriptCode: 'Hant') => '登出 DLsite Play',
+    Locale(languageCode: 'zh') => '退出 DLsite Play 登录',
+    Locale(languageCode: 'ja') => 'DLsite Play からログアウト',
+    Locale(languageCode: 'ru') => 'Выйти из DLsite Play',
+    _ => 'Sign out of DLsite Play',
+  };
+
+  Future<void> _configureDlsite() async {
+    await DlsiteLoginPage.showAccountSettings(context, app);
+  }
+
+  Future<void> _confirmForgetDlsite() async {
+    final label = _dlsiteForgetLabel();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: p.surface,
+        title: Text(
+          label,
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(context.l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(label),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await app.signOutDlsite();
+      if (mounted && app.loginRequired) Navigator.of(context).pop();
+    } catch (_) {
+      if (mounted) _toast(context.l10n.settingsPageAutoCheckSetState2);
     }
   }
 
@@ -221,6 +278,10 @@ class _SettingsPageState extends State<SettingsPage> {
         : s == 'fail'
         ? p.red
         : p.dim;
+    return _accountStatusDot(color);
+  }
+
+  Widget _accountStatusDot(Color color) {
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: Container(
@@ -362,6 +423,36 @@ class _SettingsPageState extends State<SettingsPage> {
                             );
                           },
                         ),
+                      ],
+                    ),
+                  ),
+                  _row(
+                    icon: Icons.dns_outlined,
+                    title: 'DLsite Play',
+                    sub: _dlsiteAccountStatus(),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _accountStatusDot(
+                          app.hasDlsiteSession ? p.green : p.dim,
+                        ),
+                        _miniBtn(
+                          context.l10n.settingsPageSectionsMiniBtn2,
+                          _configureDlsite,
+                        ),
+                        if (app.hasDlsiteSession) ...[
+                          const SizedBox(width: 4),
+                          IconButton(
+                            tooltip: _dlsiteForgetLabel(),
+                            visualDensity: VisualDensity.compact,
+                            icon: Icon(
+                              Icons.delete_outline,
+                              size: 17,
+                              color: p.dim,
+                            ),
+                            onPressed: _confirmForgetDlsite,
+                          ),
+                        ],
                       ],
                     ),
                   ),

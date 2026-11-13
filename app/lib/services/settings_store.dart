@@ -1,6 +1,9 @@
 import 'dart:io';
 import 'dart:convert';
 
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
+    show ExternalLibrary;
+
 import '../src/rust/api/simple.dart';
 import '../src/rust/frb_generated.dart';
 import 'app_paths.dart';
@@ -12,7 +15,7 @@ class SettingsStore {
 
   static Future<void> init() async {
     if (_ready) return;
-    await RustLib.init();
+    await RustLib.init(externalLibrary: _bundledLinuxLibrary());
     // Windows：便携 data/ 目录（exe 旁），不污染 AppData/Temp；
     // 其他平台：系统应用支持目录
     final dir = await AppPaths.dataDir();
@@ -20,6 +23,14 @@ class SettingsStore {
     openSettings(path: dbPath);
     recoverPendingImport();
     _ready = true;
+  }
+
+  static ExternalLibrary? _bundledLinuxLibrary() {
+    if (!Platform.isLinux) return null;
+    final executable = File(Platform.resolvedExecutable);
+    final stem = RustLib.kDefaultExternalLibraryLoaderConfig.stem;
+    final library = File.fromUri(executable.uri.resolve('lib/lib$stem.so'));
+    return library.existsSync() ? ExternalLibrary.open(library.path) : null;
   }
 
   static void recoverPendingImport() {

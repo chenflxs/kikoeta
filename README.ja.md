@@ -2,7 +2,7 @@
 
 [简体中文](README.md) | [繁體中文](README.zh-Hant.md) | [English](README.en.md) | [日本語](README.ja.md) | [Русский](README.ru.md)
 
-> ASMR 音声を楽しむためのクライアント。asmr.one と kikoeru-express ベースの自前サーバーに対応し、Windows と Android で作品の閲覧・再生、歌詞の表示、ローカルデータの管理ができます。
+> ASMR 音声を楽しむためのクライアント。asmr.one、DLsite Play、kikoeru-express ベースの自前サーバーに対応し、Windows と Android で作品の閲覧・再生、歌詞の表示、ローカルデータの管理ができます。
 
 [![GitHub release](https://img.shields.io/github/v/release/chenflxs/kikoeta?display_name=tag&label=Latest%20release)](https://github.com/chenflxs/kikoeta/releases) [![License](https://img.shields.io/github/license/chenflxs/kikoeta)](LICENSE) [![Flutter](https://img.shields.io/badge/Flutter-Material%203-02569B?logo=flutter)](https://flutter.dev/) [![Rust](https://img.shields.io/badge/Rust-Core-000000?logo=rust)](https://www.rust-lang.org/) [![ダウンロード数](https://img.shields.io/github/downloads/chenflxs/kikoeta/total?label=%E3%83%80%E3%82%A6%E3%83%B3%E3%83%AD%E3%83%BC%E3%83%89%E6%95%B0)](https://github.com/chenflxs/kikoeta/releases)
 
@@ -73,7 +73,7 @@
 
 - ページ単位の作品一覧と検索。タイトル、タグ、サークル、声優で検索でき、人気作品・おすすめ作品、並べ替え、年齢区分、字幕による絞り込みに対応しています。
 - SFW モード、ブラックリスト、検索履歴に対応。RJ 番号をコピーして直接検索することもできます。
-- asmr.one と自前の kikoeru-express サーバーを切り替え可能。アカウントでのログインと HTTP プロキシに対応しています。
+- asmr.one、DLsite Play、自前の kikoeru-express サーバーを切り替え可能。アカウントでのログインと HTTP プロキシに対応しています。
 
 ### リスニングのための機能
 
@@ -107,6 +107,16 @@
 
 - Windows：インストーラーを実行します。
 - Android：`arm64-v8a` の APK をダウンロードしてインストールします。
+
+### DLsite Play を使う
+
+ログイン画面で「DLsite Play でログイン」を選びます。ホーム画面のサーバー名を押し、「DLsite Play」を選んで「適用」を押すこともできます。ログイン後は購入済み作品の閲覧・検索・再生や、お気に入りとリストの管理ができます。Cookie でログインする手順は [DLsite Play ログインガイド](docs/dlsite%20play%E7%99%BB%E5%BD%95%E6%8C%87%E5%BC%95.md)（簡体字中国語）を参照してください。
+
+### 既存の歌詞を翻訳する
+
+「設定 → 言語と翻訳」で翻訳エンジン、翻訳元と翻訳先の言語を選びます。翻訳先にはロシア語を選べます。「カスタム言語」では、選んだエンジンが対応する `fr` や `pt-BR` などの言語コードを入力できます。
+
+再生中に「歌詞設定 → 歌詞を翻訳」を開くと、現在のトラックの歌詞を分割して翻訳します。進捗の確認やキャンセルが可能です。翻訳は元のタイムスタンプとトラックのサブフォルダーを保ったまま、歌詞ライブラリ内の `RJ番号-翻訳先言語/`（例：`RJ123-en/`、`RJ123-zh-CN/`）に LRC として保存されます。元の歌詞ファイルはそのまま残ります。歌詞ライブラリでは **TL** で翻訳を絞り込めます。
 
 ### 文字起こしと翻訳
 

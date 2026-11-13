@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../data.dart';
 import '../services/api_service.dart';
+import 'dlsite_login_page.dart';
 import '../smooth_scroll.dart';
 import '../theme.dart';
+import '../widgets/login_form.dart';
 import '../l10n/strings.dart';
 
 /// 登录页：未登录 one 站且未配置自建服务器时作为应用首页显示。
@@ -87,6 +89,13 @@ class _LoginPageState extends State<LoginPage> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _loginWithDlsite() async {
+    if (app.applyDlsiteServer()) return;
+    await Navigator.of(
+      context,
+    ).push<bool>(MaterialPageRoute(builder: (_) => DlsiteLoginPage(app: app)));
   }
 
   /// 「我没有账号」免责声明
@@ -333,13 +342,13 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                       ),
                       const SizedBox(height: 28),
-                      _field(
+                      LoginField(
                         _userCtrl,
                         hint: context.l10n.loginPageBuildLoginHint,
                         icon: Icons.person_outline,
                         textInputAction: TextInputAction.next,
                       ),
-                      _field(
+                      LoginField(
                         _passCtrl,
                         hint: context.l10n.password,
                         icon: Icons.lock_outline,
@@ -377,37 +386,26 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                       ),
                       const SizedBox(height: 6),
-                      // 登录键
-                      SizedBox(
-                        height: 46,
-                        child: ElevatedButton(
-                          onPressed: _busy ? null : _login,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: p.accent,
-                            foregroundColor: Colors.white,
-                            disabledBackgroundColor: p.accent.withValues(
-                              alpha: .5,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(13),
-                            ),
+                      LoginSubmitButton(
+                        label: context.l10n.loginPageBuildLoginText,
+                        busy: _busy,
+                        onPressed: _login,
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: _busy ? null : _loginWithDlsite,
+                        icon: const Icon(Icons.login, size: 18),
+                        label: Text(
+                          DlsiteLoginLabels.get(context, 'loginButton'),
+                          textAlign: TextAlign.center,
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: p.accent,
+                          side: BorderSide(color: p.line),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(13),
                           ),
-                          child: _busy
-                              ? const SizedBox(
-                                  width: 19,
-                                  height: 19,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2.2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : Text(
-                                  context.l10n.loginPageBuildLoginText,
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
                       ),
                     ],
@@ -631,22 +629,22 @@ class _LoginPageState extends State<LoginPage> {
                       ] else ...[
                         const SizedBox(height: 24),
                       ],
-                      _field(
+                      LoginField(
                         _aliasCtrl,
                         hint: context.l10n.loginPageBuildSiteConfigHint3,
                         icon: Icons.label_outline,
                       ),
-                      _field(
+                      LoginField(
                         _urlCtrl,
                         hint: 'http://192.168.1.100:3000',
                         icon: Icons.dns_outlined,
                       ),
-                      _field(
+                      LoginField(
                         _siteUserCtrl,
                         hint: context.l10n.loginPageBuildSiteConfigHint2,
                         icon: Icons.person_outline,
                       ),
-                      _field(
+                      LoginField(
                         _sitePassCtrl,
                         hint: context.l10n.loginPageBuildSiteConfigHint,
                         icon: Icons.lock_outline,
@@ -705,51 +703,6 @@ class _LoginPageState extends State<LoginPage> {
             ),
             Positioned(left: 14, bottom: 14, child: _networkProxyEntry()),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _field(
-    TextEditingController ctrl, {
-    required String hint,
-    required IconData icon,
-    bool obscure = false,
-    Widget? suffix,
-    TextInputAction textInputAction = TextInputAction.done,
-    ValueChanged<String>? onSubmitted,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: TextField(
-        controller: ctrl,
-        obscureText: obscure,
-        style: TextStyle(fontSize: 14, color: p.text),
-        textInputAction: textInputAction,
-        onSubmitted: onSubmitted,
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle: TextStyle(fontSize: 13.5, color: p.dim),
-          prefixIcon: Icon(icon, size: 19, color: p.dim),
-          suffixIcon: suffix,
-          filled: true,
-          fillColor: p.surface2,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(13),
-            borderSide: BorderSide(color: p.line),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(13),
-            borderSide: BorderSide(color: p.line),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(13),
-            borderSide: BorderSide(color: p.accent, width: 1.4),
-          ),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 14,
-            vertical: 14,
-          ),
         ),
       ),
     );

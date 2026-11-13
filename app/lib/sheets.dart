@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 
 import 'data.dart';
+import 'pages/dlsite_login_page.dart';
 import 'services/api_service.dart';
 import 'services/audio_effects.dart';
 import 'services/kikoeru_lyrics_writeback.dart';
 import 'widgets/kikoeru_writeback_settings.dart';
+import 'widgets/form_sheet.dart';
 import 'services/player_service.dart';
-import 'smooth_scroll.dart';
 import 'theme.dart';
 import 'widgets.dart';
 import 'l10n/strings.dart';
@@ -15,52 +16,22 @@ Palette _p(BuildContext c) => Theme.of(c).brightness == Brightness.dark
     ? AppColors.dark
     : AppColors.light;
 
-Widget _sheetScaffold({
-  required BuildContext context,
-  required String title,
-  required String sub,
-  required List<Widget> children,
-}) {
-  final p = _p(context);
-  return SafeArea(
-    child: SmoothSingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(18, 8, 18, 22),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Center(
-            child: Container(
-              width: 38,
-              height: 4,
-              decoration: BoxDecoration(
-                color: p.surface3,
-                borderRadius: BorderRadius.circular(99),
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            title,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 4),
-          Text(sub, style: TextStyle(fontSize: 12, color: p.muted)),
-          const SizedBox(height: 14),
-          ...children,
-        ],
-      ),
-    ),
-  );
-}
-
 // ---------------- 服务器 ----------------
-Future<void> showServerSheet(BuildContext context, AppState app) {
-  return showModalBottomSheet(
+enum _ServerSource { one, custom, dlsite }
+
+enum _ServerSheetResult { openDlsiteLogin }
+
+Future<void> showServerSheet(BuildContext context, AppState app) async {
+  final result = await showModalBottomSheet<_ServerSheetResult>(
     context: context,
     isScrollControlled: true,
     builder: (_) => _ServerSheet(app: app),
   );
+  if (result == _ServerSheetResult.openDlsiteLogin && context.mounted) {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => DlsiteLoginPage(app: app)));
+  }
 }
 
 class _ServerSheet extends StatefulWidget {
@@ -72,7 +43,7 @@ class _ServerSheet extends StatefulWidget {
 }
 
 class _ServerSheetState extends State<_ServerSheet> {
-  late bool _custom;
+  late _ServerSource _source;
   late int _idx;
   bool _applying = false;
 
@@ -84,15 +55,29 @@ class _ServerSheetState extends State<_ServerSheet> {
   @override
   void initState() {
     super.initState();
-    _custom = app.customServer;
+    _source = app.isDlsite
+        ? _ServerSource.dlsite
+        : app.customServer
+        ? _ServerSource.custom
+        : _ServerSource.one;
     _idx = app.customServerIdx;
+  }
+
+  void _showLoginError(Object error) {
+    final raw = error.toString().replaceFirst('Exception: ', '').trim();
+    final message = raw.isEmpty ? context.l10n.loginPageLoginToast2 : raw;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(context.l10n.loginPageLoginToast3(message))),
+      );
   }
 
   Future<void> _applyServer() async {
     if (_applying) return;
-    final custom = _custom;
+    final source = _source;
     final idx = _idx;
-    if (custom && app.customSites.isEmpty) {
+    if (source == _ServerSource.custom && app.customSites.isEmpty) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(context.l10n.sheetsBuildText5)));
@@ -101,16 +86,56 @@ class _ServerSheetState extends State<_ServerSheet> {
     final route = ModalRoute.of(context);
     setState(() => _applying = true);
     try {
-      if (custom && idx >= 0 && idx < app.customSites.length) {
+      if (source == _ServerSource.dlsite) {
+        if (!app.applyDlsiteServer()) {
+          if (mounted && route?.isCurrent == true) {
+            Navigator.pop(context, _ServerSheetResult.openDlsiteLogin);
+          }
+          return;
+        }
+        if (mounted && route?.isCurrent == true) Navigator.pop(context);
+        return;
+      }
+
+      final needsOneLogin =
+          source == _ServerSource.one && !app.hasOneCredentials;
+      if (needsOneLogin) {
+        final saved = await showOneConfigSheet(context, app, validate: true);
+        if (!mounted || route?.isCurrent != true || saved != true) {
+          return;
+        }
+      }
+
+      if (source == _ServerSource.one &&
+          !needsOneLogin &&
+          ApiService.tokenFor(app, 'https://api.asmr.one')?.isNotEmpty !=
+              true) {
+        try {
+          await ApiService.login(
+            app,
+            'https://api.asmr.one',
+            app.asmrUser,
+            app.asmrPass,
+          );
+        } catch (error) {
+          if (mounted && route?.isCurrent == true) _showLoginError(error);
+          return;
+        }
+      } else if (source == _ServerSource.custom &&
+          idx >= 0 &&
+          idx < app.customSites.length) {
         final site = app.customSites[idx];
         if (site.user.isNotEmpty && site.pass.isNotEmpty) {
           try {
             await ApiService.login(app, site.url, site.user, site.pass);
-          } catch (_) {}
+          } catch (error) {
+            if (mounted && route?.isCurrent == true) _showLoginError(error);
+            return;
+          }
         }
       }
       if (!mounted || route?.isCurrent != true) return;
-      app.applyServer(custom, idx);
+      app.applyServer(source == _ServerSource.custom, idx);
       Navigator.pop(context);
     } finally {
       if (mounted && route?.isCurrent == true) {
@@ -124,7 +149,7 @@ class _ServerSheetState extends State<_ServerSheet> {
       AbsorbPointer(absorbing: _applying, child: _buildContent(context));
 
   Widget _buildContent(BuildContext context) {
-    return _sheetScaffold(
+    return formSheet(
       context: context,
       title: context.l10n.sheetsBuildTitle,
       sub: context.l10n.sheetsBuildSub,
@@ -135,20 +160,25 @@ class _ServerSheetState extends State<_ServerSheet> {
           children: [
             Pill(
               label: 'asmr.one',
-              selected: !_custom,
-              onTap: () => setState(() => _custom = false),
+              selected: _source == _ServerSource.one,
+              onTap: () => setState(() => _source = _ServerSource.one),
             ),
             Pill(
               label: context.l10n.sheetsBuildLabel(
                 (app.customSites.length).toString(),
               ),
-              selected: _custom,
-              onTap: () => setState(() => _custom = true),
+              selected: _source == _ServerSource.custom,
+              onTap: () => setState(() => _source = _ServerSource.custom),
+            ),
+            Pill(
+              label: 'DLsite Play',
+              selected: _source == _ServerSource.dlsite,
+              onTap: () => setState(() => _source = _ServerSource.dlsite),
             ),
           ],
         ),
         const SizedBox(height: 8),
-        if (_custom) ...[
+        if (_source == _ServerSource.custom) ...[
           Text(
             context.l10n.sheetsBuildText4,
             style: TextStyle(
@@ -309,20 +339,20 @@ Future<void> showSiteSheet(
     isScrollControlled: true,
     builder: (ctx) => Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-      child: _sheetScaffold(
+      child: formSheet(
         context: ctx,
         title: isEdit
             ? context.l10n.sheetsShowSiteSheetTitle
             : context.l10n.settingsPageSectionsText9,
         sub: context.l10n.loginPageBuildSiteConfigText5,
         children: [
-          _field(
+          sheetField(
             ctx,
             context.l10n.sheetsShowSiteSheetField,
             aliasCtrl,
             hint: context.l10n.sheetsShowSiteSheetHint,
           ),
-          _field(
+          sheetField(
             ctx,
             context.l10n.sheetsShowSiteSheetField2,
             urlCtrl,
@@ -334,13 +364,13 @@ Future<void> showSiteSheet(
               }
             },
           ),
-          _field(
+          sheetField(
             ctx,
             context.l10n.account,
             userCtrl,
             hint: context.l10n.loginPageBuildSiteConfigHint2,
           ),
-          _field(
+          sheetField(
             ctx,
             context.l10n.password,
             passCtrl,
@@ -353,7 +383,7 @@ Future<void> showSiteSheet(
             user: userCtrl,
             password: passCtrl,
             writebackKey: writebackKeyCtrl,
-            keyField: (fieldContext) => _field(
+            keyField: (fieldContext) => sheetField(
               fieldContext,
               context.l10n.sheetsLyricsWritebackKey,
               writebackKeyCtrl,
@@ -429,52 +459,90 @@ Future<void> showSiteSheet(
 }
 
 // ---------------- ASMR.ONE 账号 ----------------
-Future<void> showOneConfigSheet(BuildContext context, AppState app) {
+Future<bool?> showOneConfigSheet(
+  BuildContext context,
+  AppState app, {
+  bool validate = false,
+}) {
   final p = _p(context);
   final userCtrl = TextEditingController(text: app.asmrUser);
   final passCtrl = TextEditingController(text: app.asmrPass);
-  return showModalBottomSheet(
+  var saving = false;
+  String? error;
+  return showModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
-    builder: (ctx) => Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-      child: _sheetScaffold(
-        context: ctx,
-        title: context.l10n.sheetsShowOneConfigSheetTitle,
-        sub: context.l10n.sheetsShowOneConfigSheetSub,
-        children: [
-          _field(
-            ctx,
-            context.l10n.account,
-            userCtrl,
-            hint: context.l10n.sheetsShowOneConfigSheetHint,
-          ),
-          _field(
-            ctx,
-            context.l10n.password,
-            passCtrl,
-            hint: context.l10n.password,
-            obscure: true,
-          ),
-          ElevatedButton(
-            onPressed: () {
-              app.saveAsmr(userCtrl.text.trim(), passCtrl.text);
-              Navigator.pop(ctx);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: p.accent,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setSheetState) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        child: formSheet(
+          context: ctx,
+          title: context.l10n.sheetsShowOneConfigSheetTitle,
+          sub: context.l10n.sheetsShowOneConfigSheetSub,
+          children: [
+            sheetField(
+              ctx,
+              context.l10n.account,
+              userCtrl,
+              hint: context.l10n.sheetsShowOneConfigSheetHint,
+            ),
+            sheetField(
+              ctx,
+              context.l10n.password,
+              passCtrl,
+              hint: context.l10n.password,
+              obscure: true,
+            ),
+            if (error != null)
+              Text(error!, style: TextStyle(fontSize: 12, color: p.red)),
+            ElevatedButton(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      final user = userCtrl.text.trim();
+                      final pass = passCtrl.text;
+                      if (validate) {
+                        final l10n = ctx.l10n;
+                        if (user.isEmpty || pass.isEmpty) {
+                          setSheetState(() => error = l10n.loginPageLoginToast);
+                          return;
+                        }
+                        setSheetState(() {
+                          saving = true;
+                          error = null;
+                        });
+                        try {
+                          await ApiService.login(
+                            app,
+                            'https://api.asmr.one',
+                            user,
+                            pass,
+                          );
+                        } catch (_) {
+                          if (ctx.mounted) {
+                            setSheetState(() {
+                              saving = false;
+                              error = l10n.loginPageLoginToast2;
+                            });
+                          }
+                          return;
+                        }
+                      }
+                      if (!ctx.mounted ||
+                          ModalRoute.of(ctx)?.isCurrent != true) {
+                        return;
+                      }
+                      app.saveAsmr(user, pass);
+                      Navigator.pop(ctx, true);
+                    },
+              style: formSheetActionStyle(p),
+              child: Text(
+                context.l10n.save,
+                style: TextStyle(fontWeight: FontWeight.w600),
               ),
-              padding: const EdgeInsets.symmetric(vertical: 12),
             ),
-            child: Text(
-              context.l10n.save,
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     ),
   );
@@ -495,7 +563,7 @@ Future<void> showEqSheet(BuildContext context, AppState app) {
     context: context,
     isScrollControlled: true,
     builder: (ctx) => StatefulBuilder(
-      builder: (ctx, setSheet) => _sheetScaffold(
+      builder: (ctx, setSheet) => formSheet(
         context: ctx,
         title: context.l10n.equalizer,
         sub: context.l10n.sheetsShowEqSheetSub,
@@ -624,7 +692,7 @@ Future<void> showPlaybackSpeedSheet(BuildContext context, AppState app) {
     isScrollControlled: true,
     builder: (ctx) => ListenableBuilder(
       listenable: app,
-      builder: (ctx, _) => _sheetScaffold(
+      builder: (ctx, _) => formSheet(
         context: ctx,
         title: ctx.l10n.playbackSpeed,
         sub: ctx.l10n.playbackSpeedDescription,
@@ -654,7 +722,7 @@ Future<void> showAudioChannelSheet(BuildContext context, AppState app) {
     isScrollControlled: true,
     builder: (ctx) => ListenableBuilder(
       listenable: app,
-      builder: (ctx, _) => _sheetScaffold(
+      builder: (ctx, _) => formSheet(
         context: ctx,
         title: ctx.l10n.audioChannels,
         sub: ctx.l10n.audioChannelsDescription,
@@ -691,7 +759,7 @@ Future<void> showSleepSheet(BuildContext context, AppState app) {
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setSheet) {
         final remain = app.sleepEndAt?.difference(DateTime.now()).inSeconds;
-        return _sheetScaffold(
+        return formSheet(
           context: ctx,
           title: context.l10n.sleepTimer,
           sub: context.l10n.sheetsShowSleepSheetSub,
@@ -966,63 +1034,5 @@ Widget _timePicker(BuildContext context, AppState app, StateSetter setSheet) {
         ),
       ),
     ],
-  );
-}
-
-Widget _field(
-  BuildContext context,
-  String label,
-  TextEditingController ctrl, {
-  String? hint,
-  bool obscure = false,
-  ValueChanged<String>? onChanged,
-}) {
-  final p = _p(context);
-  return Padding(
-    padding: const EdgeInsets.only(bottom: 13),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 11.5,
-              fontWeight: FontWeight.w600,
-              color: p.muted,
-            ),
-          ),
-        ),
-        TextField(
-          controller: ctrl,
-          obscureText: obscure,
-          onChanged: onChanged,
-          style: TextStyle(fontSize: 13, color: p.text),
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: TextStyle(fontSize: 13, color: p.dim),
-            filled: true,
-            fillColor: p.surface2,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(11),
-              borderSide: BorderSide(color: p.line),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(11),
-              borderSide: BorderSide(color: p.line),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(11),
-              borderSide: BorderSide(color: p.accent),
-            ),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 11,
-            ),
-          ),
-        ),
-      ],
-    ),
   );
 }

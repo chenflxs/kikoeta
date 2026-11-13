@@ -57,7 +57,9 @@ class _MorePageState extends State<MorePage> {
         final p = Theme.of(context).brightness == Brightness.dark
             ? AppColors.dark
             : AppColors.light;
-        final server = app.customServer
+        final server = app.isDlsite
+            ? 'DLsite Play'
+            : app.customServer
             ? (app.customSites.isNotEmpty
                   ? app.customSites[app.customServerIdx].alias
                   : context.l10n.homePageServerLabelText)

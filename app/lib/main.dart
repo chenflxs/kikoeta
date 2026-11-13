@@ -58,8 +58,8 @@ Future<void> main() async {
   AppLog.setEnabled(SettingsStore.get(AppLog.settingKey) == '1');
   AppLog.installFlutterHooks();
   AndroidNetwork.init();
-  await StartupTrace.stage('downloads', DownloadManager.instance.init);
   await StartupTrace.stage('state', appState.loadFromRust);
+  await StartupTrace.stage('downloads', DownloadManager.instance.init);
   if (appState.lyricsLibraryBroadcastOn) {
     try {
       await LyricsLibraryBroadcastService.instance.start();

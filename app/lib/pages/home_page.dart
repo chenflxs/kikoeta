@@ -88,7 +88,11 @@ class _HomePageState extends State<HomePage> {
     }
     if (app.homeRefreshVersion != _seenHomeRefreshVersion) {
       _seenHomeRefreshVersion = app.homeRefreshVersion;
-      _loadRemote();
+      if (app.isDlsite && _searchQuery.isNotEmpty) {
+        _runSearch(_searchQuery);
+      } else {
+        _loadRemote();
+      }
       return;
     }
     if (app.serverEpoch != _seenEpoch) {
@@ -122,7 +126,8 @@ class _HomePageState extends State<HomePage> {
 
   String get _filterSig {
     final ages = app.ageFilters.toList()..sort();
-    return '${app.serverEpoch}|${app.category}|${app.sort}|${app.orderAsc}|${app.subtitleFilter}|$ages';
+    final subtitle = app.isDlsite ? SubtitleFilter.none : app.subtitleFilter;
+    return '${app.serverEpoch}|${app.category}|${app.sort}|${app.orderAsc}|$subtitle|$ages';
   }
 
   Future<void> _loadLocalSubtitleIds() async {
@@ -137,7 +142,7 @@ class _HomePageState extends State<HomePage> {
       ..clear()
       ..addAll(ids);
     setState(() {});
-    if (app.subtitleFilter == SubtitleFilter.all) {
+    if (!app.isDlsite && app.subtitleFilter == SubtitleFilter.all) {
       _maybeRefill();
       _maybeRefillSearch();
     }
@@ -233,7 +238,10 @@ class _HomePageState extends State<HomePage> {
 
   /// 年龄分级是客户端过滤：过滤后不足一页时继续补拉（最多 10 页），直到凑够一页或拉完
   void _maybeRefill() {
-    if (!app.hasAgeFilter && app.subtitleFilter != SubtitleFilter.all) return;
+    if (!app.hasAgeFilter &&
+        (app.isDlsite || app.subtitleFilter != SubtitleFilter.all)) {
+      return;
+    }
     if (!app.worksHasMore || app.worksPage >= 10) return;
     if (_homeOrder.length >= 20) return;
     _loadMore();
@@ -241,7 +249,7 @@ class _HomePageState extends State<HomePage> {
 
   List<int> get _homeOrder {
     final order = app.homeOrder;
-    if (app.subtitleFilter != SubtitleFilter.all) return order;
+    if (app.isDlsite || app.subtitleFilter != SubtitleFilter.all) return order;
     return order.where((i) => _hasAnySubtitle(app.homeList[i])).toList();
   }
 
@@ -261,7 +269,9 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
-  String get serverLabel => app.customServer
+  String get serverLabel => app.isDlsite
+      ? 'DLsite Play'
+      : app.customServer
       ? (app.customSites.isNotEmpty
             ? app.customSites[app.customServerIdx].alias
             : context.l10n.homePageServerLabelText)
@@ -415,11 +425,13 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _sortRow() {
-    final labels = {
-      'all': context.l10n.all,
-      'hot': context.l10n.homePageLabelsLabels,
-      'rec': context.l10n.homePageLabelsLabels2,
-    };
+    final labels = app.isDlsite
+        ? {'all': context.l10n.all}
+        : {
+            'all': context.l10n.all,
+            'hot': context.l10n.homePageLabelsLabels,
+            'rec': context.l10n.homePageLabelsLabels2,
+          };
     return Row(
       children: [
         Expanded(
@@ -460,6 +472,21 @@ class _HomePageState extends State<HomePage> {
     'random': appL10n.homeRandomSort,
   };
 
+  Map<String, String> get _availableSortLabels => app.isDlsite
+      ? {
+          'collect': switch (Localizations.localeOf(context)) {
+            Locale(languageCode: 'zh', scriptCode: 'Hant') => '購買時間',
+            Locale(languageCode: 'zh') => '购买时间',
+            Locale(languageCode: 'ja') => '購入日',
+            Locale(languageCode: 'ru') => 'Дата покупки',
+            _ => 'Purchase date',
+          },
+          'date': sortLabels['date']!,
+          'rj': sortLabels['rj']!,
+          'random': sortLabels['random']!,
+        }
+      : sortLabels;
+
   Widget _sortDropdown() {
     return PopupMenuButton<String>(
       tooltip: context.l10n.favoritesPageReviewSortDropdownTooltip,
@@ -476,7 +503,7 @@ class _HomePageState extends State<HomePage> {
       color: p.surface,
       itemBuilder: (ctx) => [
         _menuHead(context.l10n.favoritesPageReviewSortDropdownTooltip),
-        ...sortLabels.entries.map(
+        ..._availableSortLabels.entries.map(
           (e) => PopupMenuItem(
             value: e.key,
             height: 44,
@@ -495,7 +522,8 @@ class _HomePageState extends State<HomePage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              sortLabels[app.sort]!,
+              (_availableSortLabels[app.sort] ??
+                  _availableSortLabels.values.first),
               style: TextStyle(fontSize: 12, color: p.muted),
             ),
             const SizedBox(width: 6),
@@ -750,7 +778,8 @@ class _HomePageState extends State<HomePage> {
   void _maybeRefillSearch() {
     // 年龄/全部字幕是客户端过滤：结果不足一页时继续补拉（最多 4 页）
     if (_searchQuery.isNotEmpty &&
-        (app.hasAgeFilter || app.subtitleFilter == SubtitleFilter.all) &&
+        (app.hasAgeFilter ||
+            (!app.isDlsite && app.subtitleFilter == SubtitleFilter.all)) &&
         _searchHasMore &&
         !_searchAppending &&
         !_searchError &&
@@ -765,7 +794,7 @@ class _HomePageState extends State<HomePage> {
     if (app.hasAgeFilter) {
       res = res.where((w) => app.ageFilters.contains(w.age.index)).toList();
     }
-    if (app.subtitleFilter == SubtitleFilter.all) {
+    if (!app.isDlsite && app.subtitleFilter == SubtitleFilter.all) {
       res = res.where(_hasAnySubtitle).toList();
     }
     return res;

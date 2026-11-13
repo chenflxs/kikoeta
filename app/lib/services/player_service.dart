@@ -6,6 +6,7 @@ import 'package:media_kit/media_kit.dart' hide Track;
 
 import '../src/rust/api/proxy.dart';
 import '../src/rust/api/simple.dart';
+import 'api_service.dart';
 import 'android_audio.dart';
 import 'app_log.dart';
 import 'audio_effects.dart';
@@ -39,7 +40,8 @@ class AppPlayer {
   }) : player =
            backend ??
            Player(configuration: const PlayerConfiguration(pitch: false)),
-       _resolveMedia = resolveMedia ?? _networkMedia {
+       _resolveMedia = resolveMedia ?? ((url) => _networkMedia(url)),
+       _usesDefaultMediaResolver = resolveMedia == null {
     if (_tracePlayback) unawaited(_trace('created'));
     _subs = [
       player.stream.position.listen((d) {
@@ -102,6 +104,7 @@ class AppPlayer {
   // of replacing af with its own scaletempo filter when changing the rate.
   final Player player;
   final Future<Media> Function(String) _resolveMedia;
+  final bool _usesDefaultMediaResolver;
   final Future<bool> Function()? _audioOutputReleased;
   Duration _stopTimeout = const Duration(seconds: 5);
   Future<void> _mediaOperations = Future<void>.value();
@@ -220,15 +223,21 @@ class AppPlayer {
     return result;
   }
 
-  static Future<Media> _networkMedia(String url) async {
+  static Future<Media> _networkMedia(
+    String url, {
+    bool includeAuthorization = true,
+  }) async {
     final httpProxy = await httpProxyConfig();
-    final direct = Platform.isAndroid && httpProxy == null;
+    final direct =
+        !includeAuthorization || (Platform.isAndroid && httpProxy == null);
     final mediaUrl = direct ? url : apiStreamProxyUrl(url: url);
     final uri = Uri.tryParse(url);
     final base = uri == null || !uri.hasScheme
         ? ''
         : '${uri.scheme}://${uri.authority}';
-    final token = base.isEmpty ? null : getToken(base: base);
+    final token = includeAuthorization && base.isNotEmpty
+        ? getToken(base: base)
+        : null;
     return Media(
       mediaUrl,
       httpHeaders: direct && token != null && token.isNotEmpty
@@ -244,11 +253,21 @@ class AppPlayer {
     bool preserveReconnect = false,
   }) => _openSource(
     url,
-    () => _resolveMedia(url),
+    () => _resolveNetworkMedia(url),
     autoplay: autoplay,
     remote: true,
     preserveReconnect: preserveReconnect,
   );
+
+  Future<Media> _resolveNetworkMedia(String url) async {
+    if (!url.startsWith('dlsite-play:')) return _resolveMedia(url);
+    final signedUrl = await ApiService.resolveActiveMediaUrl(url);
+    // Signed DLsite URLs carry their own authorization. Keep them out of the
+    // Rust stream proxy, which may attach a Kikoeta bearer token by origin.
+    return _usesDefaultMediaResolver
+        ? _networkMedia(signedUrl, includeAuthorization: false)
+        : _resolveMedia(signedUrl);
+  }
 
   /// 打开已下载的真实文件，不经过网络代理。
   Future<void> openLocalPath(String path, {bool autoplay = true}) =>

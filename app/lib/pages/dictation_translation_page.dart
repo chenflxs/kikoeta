@@ -64,7 +64,7 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
     _session = DictationQueue.forApp(widget.app);
     if (widget.work != null && widget.tracks.isNotEmpty) {
       final base = ApiService.resolveBase(app);
-      final token = ApiService.tokenFor(app, base);
+      final token = app.isDlsite ? null : ApiService.tokenFor(app, base);
       final site = app.customServer && app.customSites.isNotEmpty
           ? app.customSites[app.customServerIdx]
           : null;
@@ -72,7 +72,8 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
         work: widget.work!,
         tracks: widget.tracks,
         automaticallyMatched: widget.automaticallyMatched,
-        sourceBase: site?.url,
+        sourceBase: app.isDlsite ? base : site?.url,
+        sourceLoginEpoch: app.isDlsite ? app.dlsiteSessionEpoch : null,
         lyricsWritebackKey: site?.lyricsWritebackKey ?? '',
         sourceHeaders: token == null || token.isEmpty
             ? const {}
@@ -207,12 +208,18 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
     final currentWork = entry.work;
     final tracks = entry.tracks;
     final pausedJob = entry.backendJob;
+    final isDlsitePlay = _isDlsitePlayBase(entry.sourceBase);
+    bool loginChanged() =>
+        isDlsitePlay &&
+        (!app.hasDlsiteSession ||
+            app.dlsiteSessionEpoch != entry.sourceLoginEpoch);
     final service = pausedJob?.connect() ?? connection;
     _session.activeService = service;
     var submissionAttempted = false;
     var terminalObserved = false;
     _appendLog(l10n.dictationQueueProcessing(entry.label));
     try {
+      if (loginChanged()) return DictationQueueStatus.failed;
       if (tracks.isEmpty) {
         throw FormatException(l10n.dictationTranslationPageStartToast3);
       }
@@ -226,14 +233,26 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
         );
       }
       await service.health();
+      if (loginChanged()) return DictationQueueStatus.cancelled;
       if (_session.stopRequested) return DictationQueueStatus.cancelled;
       if (_session.preemptRequested) return DictationQueueStatus.pending;
       final sources = <KtSourceFile>[];
       for (var i = 0; i < tracks.length; i++) {
+        if (_session.stopRequested) return DictationQueueStatus.cancelled;
+        if (_session.preemptRequested) return DictationQueueStatus.pending;
+        if (loginChanged()) return DictationQueueStatus.cancelled;
         final track = tracks[i];
+        final url = await ApiService.resolveMediaUrl(
+          app,
+          track.downloadUrl ?? track.url!,
+        );
+        if (_session.stopRequested || loginChanged()) {
+          return DictationQueueStatus.cancelled;
+        }
+        if (_session.preemptRequested) return DictationQueueStatus.pending;
         sources.add(
           KtSourceFile(
-            url: track.downloadUrl ?? track.url!,
+            url: url,
             name: ktUploadName(i, track.title),
             headers: entry.sourceHeaders,
           ),
@@ -247,6 +266,14 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
         cacheSourceBase: entry.sourceBase,
         cacheTrackPaths: tracks.map((track) => track.path).toList(),
       );
+      if (loginChanged()) {
+        final submittedJobId = created['job_id']?.toString() ?? '';
+        if (submittedJobId.isNotEmpty) {
+          _session.jobId = submittedJobId;
+          await _cancelSubmittedJob(service, submittedJobId, l10n);
+        }
+        return DictationQueueStatus.cancelled;
+      }
       final jobId = created['job_id']?.toString() ?? '';
       if (jobId.isEmpty) {
         throw FormatException(
@@ -278,6 +305,10 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
       var closed = false;
       while (!closed) {
         final batch = await service.events(jobId, cursor);
+        if (loginChanged() && !_session.stopRequested) {
+          _session.stopRequested = true;
+          await _cancelSubmittedJob(service, jobId, l10n);
+        }
         cursor = batch.cursor;
         closed = batch.closed;
         for (final event in batch.events) {
@@ -287,6 +318,10 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
       }
 
       final job = await service.job(jobId);
+      if (loginChanged() && !_session.stopRequested) {
+        _session.stopRequested = true;
+        await _cancelSubmittedJob(service, jobId, l10n);
+      }
       final status = job['status']?.toString() ?? 'failed';
       if (status == 'completed' ||
           status == 'failed' ||
@@ -381,7 +416,10 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
     final work = entry.work;
     final workId = work.apiId;
     final sourceBase = entry.sourceBase;
-    final writeback = job['status'] == 'completed' && workId != null
+    final writeback =
+        job['status'] == 'completed' &&
+            workId != null &&
+            !_isDlsitePlayBase(sourceBase)
         ? KikoeruLyricsWriteback.connect(
             sourceBase,
             entry.sourceHeaders,
@@ -497,7 +535,12 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
   Future<void> _retryWriteback(DictationQueueEntry entry) async {
     final base = entry.sourceBase;
     final id = entry.work.apiId;
-    if (base == null || id == null || entry.retryingWriteback) return;
+    if (base == null ||
+        id == null ||
+        _isDlsitePlayBase(base) ||
+        entry.retryingWriteback) {
+      return;
+    }
     final writer = KikoeruLyricsWriteback.connect(
       base,
       const {},
@@ -547,6 +590,12 @@ class _DictationTranslationPageState extends State<DictationTranslationPage> {
         _appendLog(failure.label(l10n));
       }
     }
+  }
+
+  bool _isDlsitePlayBase(String? sourceBase) {
+    final uri = sourceBase == null ? null : Uri.tryParse(sourceBase.trim());
+    return uri?.scheme == 'https' &&
+        uri?.host.toLowerCase() == 'play.dlsite.com';
   }
 
   Future<void> _jumpEntry(DictationQueueEntry entry) async {

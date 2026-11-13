@@ -2,7 +2,7 @@
 
 [简体中文](README.md) | [繁體中文](README.zh-Hant.md) | [English](README.en.md) | [日本語](README.ja.md) | [Русский](README.ru.md)
 
-> 專為 ASMR 音聲設計的本機聆聽用戶端。支援 asmr.one 與基於 kikoeru-express 的自架站點，在 Windows 和 Android 上提供瀏覽、播放、歌詞與本機資料管理體驗。
+> 專為 ASMR 音聲設計的本機聆聽用戶端。支援 asmr.one、DLsite Play 與基於 kikoeru-express 的自架站點，在 Windows 和 Android 上提供瀏覽、播放、歌詞與本機資料管理體驗。
 
 [![GitHub release](https://img.shields.io/github/v/release/chenflxs/kikoeta?display_name=tag&label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC)](https://github.com/chenflxs/kikoeta/releases) [![License](https://img.shields.io/github/license/chenflxs/kikoeta)](LICENSE) [![Flutter](https://img.shields.io/badge/Flutter-Material%203-02569B?logo=flutter)](https://flutter.dev/) [![Rust](https://img.shields.io/badge/Rust-Core-000000?logo=rust)](https://www.rust-lang.org/) [![下載量](https://img.shields.io/github/downloads/chenflxs/kikoeta/total?label=%E4%B8%8B%E8%BC%89%E9%87%8F)](https://github.com/chenflxs/kikoeta/releases)
 
@@ -73,7 +73,7 @@
 
 - 分頁作品列表與搜尋：支援標題、標籤、社團、聲優搜尋，以及熱門、推薦、排序、年齡分級和字幕篩選。
 - 更清爽的瀏覽體驗：支援 SFW 模式、黑名單篩選和搜尋紀錄；複製 RJ 編號後可直接搜尋。
-- 多伺服器：可在 asmr.one 與自架 kikoeru-express 站點間切換；支援帳號登入和 HTTP 代理。
+- 多伺服器：可在 asmr.one、DLsite Play 與自架 kikoeru-express 站點間切換，支援帳號登入和 HTTP 代理。
 
 ### 專為聆聽設計
 
@@ -107,6 +107,16 @@
 
 - Windows：執行安裝程式完成安裝。
 - Android：下載並安裝 `arm64-v8a` APK。
+
+### 使用 DLsite Play
+
+在登入頁面選擇「使用 DLsite Play 登入」，也可以在首頁點選目前的伺服器名稱，選擇「DLsite Play」並按「套用」。登入後可瀏覽、搜尋和播放帳號內的已購作品，也能管理收藏和清單。使用 Cookie 登入的步驟請見 [DLsite Play 登入指引](docs/dlsite%20play%E7%99%BB%E5%BD%95%E6%8C%87%E5%BC%95.md)（簡體中文）。
+
+### 翻譯現有歌詞
+
+在「設定 → 語言與翻譯」選擇翻譯引擎、來源語言和目標語言。目標語言可選俄語，也能透過「自訂語言」輸入 `fr`、`pt-BR` 等所選引擎支援的語言代碼。
+
+播放時開啟「歌詞設定 → 翻譯歌詞」。目前曲目的歌詞會分批翻譯，可查看進度或取消。完成後，譯文會以 LRC 儲存至歌詞庫的 `RJ編號-目標語言/` 目錄（例如 `RJ123-en/` 或 `RJ123-zh-CN/`），保留原本的時間軸和曲目子目錄。原始歌詞檔案會保留。可在歌詞庫用 **TL** 篩選譯文。
 
 ### 使用聽寫翻譯
 

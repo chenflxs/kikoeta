@@ -112,6 +112,8 @@ class _FavoritesPageState extends State<FavoritesPage> {
   bool _batchOpening = false;
 
   AppState get app => widget.app;
+  bool get _isDlsiteHiddenList =>
+      app.isDlsite && !_reviewsMode && _playlist?.id == 'dlsite:hidden';
   Palette get p => Theme.of(context).brightness == Brightness.dark
       ? AppColors.dark
       : AppColors.light;
@@ -229,6 +231,11 @@ class _FavoritesPageState extends State<FavoritesPage> {
     }
     if (favoriteChanged || sfwChanged || siteChanged) {
       // 收藏增删/开关变化需立即与服务器对齐，保持常规加载（含加载态）。
+      if (siteChanged) {
+        _reviewsMode = true;
+        _playlist = null;
+        _exitSelecting();
+      }
       _loadData(reset: true);
       return;
     }
@@ -268,7 +275,9 @@ class _FavoritesPageState extends State<FavoritesPage> {
         _totalCount = fresh.totalCount;
         _error = false;
       });
-      if (reviewsMode) app.syncFavorites(_works); // 有新数据才同步收藏状态
+      if (reviewsMode && !app.isDlsite) {
+        app.syncFavorites(_works); // 有新数据才同步 one 站收藏状态
+      }
       _maybeRefill();
     } catch (_) {
       // 静默刷新失败：继续显示旧数据
@@ -340,7 +349,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
         _hasMore = list != null && list.hasMore && list.works.isNotEmpty;
         _loading = false;
       });
-      if (reset && _reviewsMode && list != null) {
+      if (reset && _reviewsMode && list != null && !app.isDlsite) {
         app.syncFavorites(_works);
       }
     } catch (_) {
@@ -394,30 +403,35 @@ class _FavoritesPageState extends State<FavoritesPage> {
   }
 
   Future<void> _openBatchTranslation() async {
+    final isDlsite = app.isDlsite;
     if (_batchOpening ||
-        !app.customServer ||
-        app.customSites.isEmpty ||
+        (!isDlsite && (!app.customServer || app.customSites.isEmpty)) ||
         app.sfwMode) {
       return;
     }
     final l10n = context.l10n;
     final epoch = app.serverEpoch;
-    final base = ApiService.resolveBase(app);
-    final writebackKey =
-        app.customSites[app.customServerIdx].lyricsWritebackKey;
+    final loginEpoch = app.dlsiteSessionEpoch;
+    final base = isDlsite
+        ? 'https://play.dlsite.com'
+        : ApiService.resolveBase(app);
+    final writebackKey = isDlsite
+        ? ''
+        : app.customSites[app.customServerIdx].lyricsWritebackKey;
     final playlistId = _reviewsMode ? null : _playlist?.id;
     final order = _reviewSort;
     final sort = _reviewOrderAsc ? 'asc' : 'desc';
     final filter = _reviewFilter;
-    final token = ApiService.tokenFor(app, base);
+    final token = isDlsite ? null : ApiService.tokenFor(app, base);
     final ages = Set<Age>.of(_ageFilters);
     final query = _query;
     bool sourceChanged() =>
         !mounted ||
         app.serverEpoch != epoch ||
         app.sfwMode ||
-        !app.customServer ||
-        ApiService.resolveBase(app) != base;
+        (isDlsite
+            ? !app.isDlsite || app.dlsiteSessionEpoch != loginEpoch
+            : !app.customServer || ApiService.resolveBase(app) != base);
     setState(() => _batchOpening = true);
     try {
       final result = await showDictationBatchImportDialog(
@@ -464,8 +478,9 @@ class _FavoritesPageState extends State<FavoritesPage> {
           tracks: batch.tracks,
           automaticallyMatched: true,
           sourceBase: base,
+          sourceLoginEpoch: isDlsite ? loginEpoch : null,
           lyricsWritebackKey: writebackKey,
-          sourceHeaders: token == null || token.isEmpty
+          sourceHeaders: isDlsite || token == null || token.isEmpty
               ? const {}
               : {'Authorization': 'Bearer $token'},
         );
@@ -491,7 +506,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
   /// 歌单模式下的标题栏操作；「收藏」模式保持原有控件不变。
   List<Widget> _playlistHeaderActions() {
     final pl = _playlist;
-    if (pl == null) return const [];
+    if (pl == null || pl.isSystem) return const [];
     return [
       if (pl.isOwned)
         IconButton(
@@ -505,11 +520,12 @@ class _FavoritesPageState extends State<FavoritesPage> {
           tooltip: context.l10n.favoritesPagePlaylistHeaderActionsTooltip2,
           icon: Icon(Icons.favorite, size: 21, color: p.red),
         ),
-      IconButton(
-        onPressed: _copyCurrentShareLink,
-        tooltip: context.l10n.favoritesPagePlaylistHeaderActionsTooltip,
-        icon: Icon(Icons.link, size: 21, color: p.accent),
-      ),
+      if (!app.isDlsite)
+        IconButton(
+          onPressed: _copyCurrentShareLink,
+          tooltip: context.l10n.favoritesPagePlaylistHeaderActionsTooltip,
+          icon: Icon(Icons.link, size: 21, color: p.accent),
+        ),
     ];
   }
 
@@ -563,7 +579,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
     );
     if (input == null || !mounted) return;
     final rjs = RegExp(
-      r'RJ\d{5,}',
+      app.isDlsite ? r'\b(?:RJ|VJ|BJ)(?:\d{8}|\d{6})\b' : r'RJ\d{5,}',
       caseSensitive: false,
     ).allMatches(input.toUpperCase()).map((m) => m.group(0)!).toSet().toList();
     if (rjs.isEmpty) {
@@ -622,7 +638,8 @@ class _FavoritesPageState extends State<FavoritesPage> {
   }
 
   /// 当前列表是否支持多选管理：收藏与自建列表可用，导入的歌单不可管理。
-  bool get _canManageWorks => _reviewsMode || (_playlist?.isOwned ?? false);
+  bool get _canManageWorks =>
+      _reviewsMode || _isDlsiteHiddenList || (_playlist?.isOwned ?? false);
 
   void _enterSelecting(Work work) {
     if (!_canManageWorks) return;
@@ -698,11 +715,27 @@ class _FavoritesPageState extends State<FavoritesPage> {
         .toList(growable: false);
     try {
       if (reviews) {
-        for (final work in works) {
-          try {
-            await ApiService.deleteReview(app, work);
-          } catch (_) {
-            // 单个删除失败时继续处理剩余作品。
+        if (app.isDlsite) {
+          final ids = works
+              .map((w) => w.apiId?.toString())
+              .whereType<String>()
+              .toList();
+          if (ids.isEmpty) {
+            _toast(l10n.favoritesPageRemoveSelectedWorksToast);
+            return;
+          }
+          await ApiService.removeWorksFromPlaylist(
+            app,
+            'dlsite:favorites',
+            ids,
+          );
+        } else {
+          for (final work in works) {
+            try {
+              await ApiService.deleteReview(app, work);
+            } catch (_) {
+              // 单个删除失败时继续处理剩余作品。
+            }
           }
         }
       } else {
@@ -785,8 +818,8 @@ class _FavoritesPageState extends State<FavoritesPage> {
                 ),
                 if (!_reviewsMode && _playlist != null)
                   ..._playlistHeaderActions(),
-                if (app.customServer &&
-                    app.customSites.isNotEmpty &&
+                if ((app.isDlsite ||
+                        (app.customServer && app.customSites.isNotEmpty)) &&
                     !app.sfwMode)
                   IconButton(
                     onPressed: _batchOpening || _visibleWorks.isEmpty
@@ -905,7 +938,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
-                  if (_reviewsMode) ...[
+                  if (_reviewsMode && !app.isDlsite) ...[
                     _reviewFilterButton(),
                     const SizedBox(width: 8),
                     _reviewSortDropdown(),
