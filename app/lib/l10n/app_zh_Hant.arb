@@ -901,5 +901,9 @@
   "lyricsTranslateDescription": "依目標語言儲存至歌詞庫",
   "lyricsTranslationProgress": "已翻譯 {completed}/{total} 行",
   "lyricsTranslationSaved": "譯文已儲存：{path}",
-  "lyricsTranslationInvalidResponse": "翻譯結果缺行或為空，請重試或切換翻譯引擎。"
+  "lyricsTranslationInvalidResponse": "翻譯結果缺行或為空，請重試或切換翻譯引擎。",
+  "workPlaylistMembershipTitle": "作品所在播放清單",
+  "workPlaylistMembershipEmpty": "沒有可編輯的播放清單",
+  "workPlaylistMembershipUnknown": "無法確認是否已加入",
+  "workPlaylistMembershipSaveFailed": "部分變更未儲存，請重試"
 }

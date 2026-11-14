@@ -631,6 +631,38 @@ class DlsitePlaySession {
     ];
   }
 
+  /// Read membership for the supplied owned lists from the existing mylists
+  /// response. This deliberately does not call _favoriteList(), which may
+  /// create a Favorites list as a side effect.
+  Future<Map<String, bool>> workPlaylistMembership(
+    String workNumber,
+    List<PlaylistInfo> playlists,
+  ) async {
+    final eligibleIds = playlists
+        .where(
+          (playlist) =>
+              playlist.isOwned &&
+              !playlist.isSystem &&
+              playlist.id.isNotEmpty &&
+              playlist.id != hiddenList &&
+              playlist.id != favoritesList,
+        )
+        .map((playlist) => playlist.id)
+        .toSet();
+    if (eligibleIds.isEmpty) return const {};
+    final List<_MyList> lists;
+    try {
+      lists = await _myLists();
+    } catch (_) {
+      return const {};
+    }
+    final byId = {for (final list in lists) list.id: list};
+    return {
+      for (final id in eligibleIds)
+        if (byId[id] case final list?) id: list.members.contains(workNumber),
+    };
+  }
+
   Future<String> createList(String title) async {
     final response = _map(
       await _request(

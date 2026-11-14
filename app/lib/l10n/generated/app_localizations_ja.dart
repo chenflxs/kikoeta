@@ -3072,4 +3072,16 @@ class AppLocalizationsJa extends AppLocalizations {
   @override
   String get lyricsTranslationInvalidResponse =>
       '翻訳結果に欠落または空行があります。再試行するか翻訳エンジンを変更してください。';
+
+  @override
+  String get workPlaylistMembershipTitle => '作品が含まれるプレイリスト';
+
+  @override
+  String get workPlaylistMembershipEmpty => '編集できるプレイリストがありません';
+
+  @override
+  String get workPlaylistMembershipUnknown => '追加済みかどうかを確認できません';
+
+  @override
+  String get workPlaylistMembershipSaveFailed => '一部の変更を保存できませんでした。再試行してください。';
 }

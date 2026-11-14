@@ -3021,6 +3021,18 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get lyricsTranslationInvalidResponse => '翻译结果缺行或为空，请重试或切换翻译引擎。';
+
+  @override
+  String get workPlaylistMembershipTitle => '作品所在播放列表';
+
+  @override
+  String get workPlaylistMembershipEmpty => '没有可编辑的播放列表';
+
+  @override
+  String get workPlaylistMembershipUnknown => '无法确认是否已添加';
+
+  @override
+  String get workPlaylistMembershipSaveFailed => '部分更改未保存，请重试';
 }
 
 /// The translations for Chinese, as used in China (`zh_CN`).
@@ -6046,4 +6058,16 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get lyricsTranslationInvalidResponse => '翻譯結果缺行或為空，請重試或切換翻譯引擎。';
+
+  @override
+  String get workPlaylistMembershipTitle => '作品所在播放清單';
+
+  @override
+  String get workPlaylistMembershipEmpty => '沒有可編輯的播放清單';
+
+  @override
+  String get workPlaylistMembershipUnknown => '無法確認是否已加入';
+
+  @override
+  String get workPlaylistMembershipSaveFailed => '部分變更未儲存，請重試';
 }

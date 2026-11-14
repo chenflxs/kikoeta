@@ -103,6 +103,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
   bool _reviewOrderAsc = false;
   String? _reviewFilter;
   late int _seenFavVersion;
+  late int _seenPlaylistContentsVersion;
   late int _seenFavoritesEntryVersion;
   late int _seenServerEpoch;
   late int _seenLoginEpoch;
@@ -122,6 +123,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
   void initState() {
     super.initState();
     _seenFavVersion = app.favVersion;
+    _seenPlaylistContentsVersion = app.playlistContentsVersion;
     _seenFavoritesEntryVersion = app.favoritesEntryVersion;
     _seenServerEpoch = app.serverEpoch;
     _seenLoginEpoch = app.loginEpoch;
@@ -194,13 +196,21 @@ class _FavoritesPageState extends State<FavoritesPage> {
 
   void _onAppChanged() {
     final favoriteChanged = app.favVersion != _seenFavVersion;
+    final playlistChanged =
+        !_reviewsMode &&
+        app.playlistContentsVersion != _seenPlaylistContentsVersion;
+    _seenPlaylistContentsVersion = app.playlistContentsVersion;
     final enteredFavorites =
         app.favoritesEntryVersion != _seenFavoritesEntryVersion;
     final sfwChanged = app.sfwMode != _seenSfwMode;
     final siteChanged =
         app.serverEpoch != _seenServerEpoch ||
         app.loginEpoch != _seenLoginEpoch;
-    if (!favoriteChanged && !enteredFavorites && !sfwChanged && !siteChanged) {
+    if (!favoriteChanged &&
+        !playlistChanged &&
+        !enteredFavorites &&
+        !sfwChanged &&
+        !siteChanged) {
       return;
     }
 
@@ -229,7 +239,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
       }
       return;
     }
-    if (favoriteChanged || sfwChanged || siteChanged) {
+    if (favoriteChanged || playlistChanged || sfwChanged || siteChanged) {
       // 收藏增删/开关变化需立即与服务器对齐，保持常规加载（含加载态）。
       if (siteChanged) {
         _reviewsMode = true;

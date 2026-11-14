@@ -736,32 +736,13 @@ class _WorkPageState extends State<WorkPage> {
     unawaited(_loadWorkDetails());
   }
 
-  /// 把当前作品添加到 one 站自建播放列表。
-  Future<void> _addToServerPlaylist() async {
+  Future<void> _editPlaylistMembership() async {
     final l10n = context.l10n;
     if (work.apiId == null) {
       _toast(l10n.workPageAddToServerPlaylistToast2);
       return;
     }
-    final picked = await showPlaylistPicker(
-      context,
-      app: app,
-      showFavorites: false,
-    );
-    final pl = picked?.playlist;
-    if (pl == null || !mounted) return;
-    if (!pl.isOwned || pl.isSystem) {
-      _toast(l10n.workPageAddToServerPlaylistToast);
-      return;
-    }
-    try {
-      await ApiService.addWorksToPlaylist(app, pl.id, [work.rj]);
-      if (mounted) {
-        _toast(l10n.workPageAddToPlaylistToast2((pl.name).toString()));
-      }
-    } catch (e) {
-      if (mounted) _toast(l10n.favoritesPageAddWorksByRjToast((e).toString()));
-    }
+    await showWorkPlaylistMembership(context, app: app, work: work);
   }
 
   Future<void> _openLanguageEdition(LanguageEdition edition) async {
@@ -1203,7 +1184,7 @@ class _WorkPageState extends State<WorkPage> {
         await _openReviewDialog();
         return;
       case 'addToPlaylist':
-        await _addToServerPlaylist();
+        await _editPlaylistMembership();
         return;
       case 'dictationTranslation':
         if (_dictationOpening) return;

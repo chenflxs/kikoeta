@@ -902,5 +902,9 @@
   "lyricsTranslateDescription": "Save to the lyrics library by target language",
   "lyricsTranslationProgress": "Translated {completed}/{total} lines",
   "lyricsTranslationSaved": "Translation saved: {path}",
-  "lyricsTranslationInvalidResponse": "The translation has missing or empty lines. Retry or switch translation engines."
+  "lyricsTranslationInvalidResponse": "The translation has missing or empty lines. Retry or switch translation engines.",
+  "workPlaylistMembershipTitle": "Playlists containing this work",
+  "workPlaylistMembershipEmpty": "No editable playlists",
+  "workPlaylistMembershipUnknown": "Could not determine whether it was added",
+  "workPlaylistMembershipSaveFailed": "Some changes were not saved. Please try again."
 }

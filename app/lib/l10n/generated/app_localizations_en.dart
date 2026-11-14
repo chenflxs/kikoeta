@@ -3212,4 +3212,18 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get lyricsTranslationInvalidResponse =>
       'The translation has missing or empty lines. Retry or switch translation engines.';
+
+  @override
+  String get workPlaylistMembershipTitle => 'Playlists containing this work';
+
+  @override
+  String get workPlaylistMembershipEmpty => 'No editable playlists';
+
+  @override
+  String get workPlaylistMembershipUnknown =>
+      'Could not determine whether it was added';
+
+  @override
+  String get workPlaylistMembershipSaveFailed =>
+      'Some changes were not saved. Please try again.';
 }

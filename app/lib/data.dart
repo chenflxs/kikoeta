@@ -337,6 +337,7 @@ class AppState extends ChangeNotifier {
   final List<String> favoriteRjs = [];
   final Set<int> favIds = {}; // 服务器收藏的作品 API id
   int favVersion = 0; // 收藏变更版本（供收藏页刷新）
+  int playlistContentsVersion = 0;
   int favoritesEntryVersion = 0; // 进入收藏页版本（每次切入时刷新）
   int homeRefreshVersion = 0; // 再次点击首页时刷新首页数据
   final List<String> history = [];
@@ -2166,6 +2167,11 @@ class AppState extends ChangeNotifier {
   void refreshDlsiteWorks() {
     homeRefreshVersion++;
     favVersion++;
+    notifyListeners();
+  }
+
+  void notifyPlaylistContentsChanged() {
+    playlistContentsVersion++;
     notifyListeners();
   }
 

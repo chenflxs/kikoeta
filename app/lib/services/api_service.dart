@@ -794,6 +794,101 @@ class ApiService {
     return parseWorks(json, base: resolveBase(app), perPage: perPage);
   }
 
+  /// Read whether [work] belongs to each supplied owned server playlist.
+  /// Missing result keys mean that lookup failed or the list was unavailable.
+  static Future<Map<String, bool>> fetchWorkPlaylistMembership(
+    AppState app,
+    Work work,
+    List<PlaylistInfo> playlists,
+  ) async {
+    // Capture the active source before any await. A later account/server switch
+    // must not redirect requests that are already in flight.
+    final session = app.dlsiteSession;
+    if (session != null) {
+      return session.workPlaylistMembership(work.rj, playlists);
+    }
+    if (app.isDlsite) return const {};
+    final base = resolveBase(app);
+    final serverEpoch = app.serverEpoch;
+    final loginEpoch = app.loginEpoch;
+    final candidates = playlists
+        .where(
+          (playlist) =>
+              playlist.id.isNotEmpty &&
+              playlist.isOwned &&
+              !playlist.isSystem &&
+              playlist.id != DlsitePlaySession.hiddenList &&
+              playlist.id != DlsitePlaySession.favoritesList,
+        )
+        .toList();
+    if (candidates.isEmpty) return const {};
+
+    final targetId = work.apiId ?? apiIdFromRj(work.rj);
+    final targetRj = work.rj.trim().toUpperCase();
+    final result = <String, bool>{};
+    var nextIndex = 0;
+    Future<void> worker() async {
+      while (nextIndex < candidates.length) {
+        final playlist = candidates[nextIndex++];
+        try {
+          const perPage = 50;
+          final seenWorks = <String>{};
+          for (var page = 1; ; page++) {
+            if (app.serverEpoch != serverEpoch ||
+                app.loginEpoch != loginEpoch) {
+              return;
+            }
+            final json = await apiGetPlaylistWorks(
+              base: base,
+              id: playlist.id,
+              page: page,
+              perPage: perPage,
+            );
+            final data = jsonDecode(json) as Map<String, dynamic>;
+            final rawWorks = data['works'] as List;
+            var newWorks = 0;
+            var found = false;
+            for (final raw in rawWorks.cast<Map>()) {
+              final rj = (raw['source_id'] as String?)?.trim().toUpperCase();
+              final id =
+                  int.tryParse(raw['id']?.toString() ?? '') ??
+                  (rj == null ? null : apiIdFromRj(rj));
+              final identity = id?.toString() ?? rj;
+              if (identity == null || identity.isEmpty) {
+                throw const FormatException('Playlist work has no identity.');
+              }
+              if (seenWorks.add(identity)) newWorks++;
+              if ((targetId != null && id == targetId) || rj == targetRj) {
+                found = true;
+                break;
+              }
+            }
+            final pagination = _workPagination(data, rawWorks.length, perPage);
+            if (pagination.page != page || pagination.pageSize <= 0) {
+              throw const FormatException('Invalid playlist pagination.');
+            }
+            if (found || !pagination.hasMore) {
+              result[playlist.id] = found;
+              break;
+            }
+            if (newWorks == 0) {
+              throw const FormatException(
+                'Playlist pagination made no progress.',
+              );
+            }
+          }
+        } catch (_) {
+          // Preserve unknown for this list; membership checks are best effort.
+        }
+      }
+    }
+
+    await Future.wait(
+      List.generate(min(4, candidates.length), (_) => worker()),
+    );
+    return result;
+  }
+
   /// 我的评价/收藏列表（GET /api/review，需登录）
   static Future<WorksPage> fetchMyReviews(
     AppState app, {
@@ -1879,6 +1974,18 @@ class ApiService {
         .entries
         .map((e) => _mapWork(e.value as Map<String, dynamic>, e.key, base))
         .toList();
+    final pagination = _workPagination(data, works.length, perPage);
+    return WorksPage(
+      works: works,
+      page: pagination.page,
+      pageSize: pagination.pageSize,
+      totalCount: pagination.totalCount,
+      hasMore: pagination.hasMore,
+    );
+  }
+
+  static ({int page, int pageSize, int totalCount, bool hasMore})
+  _workPagination(Map<String, dynamic> data, int length, int perPage) {
     // one 站与 kikoeru-express 均返回 {works, pagination:{currentPage,pageSize,totalCount}}
     var page = 1;
     var pageSize = perPage;
@@ -1889,11 +1996,8 @@ class ApiService {
       pageSize = (pag['pageSize'] as num?)?.toInt() ?? pageSize;
       total = (pag['totalCount'] as num?)?.toInt() ?? total;
     }
-    final hasMore = total >= 0
-        ? page * pageSize < total
-        : works.length == perPage;
-    return WorksPage(
-      works: works,
+    final hasMore = total >= 0 ? page * pageSize < total : length == perPage;
+    return (
       page: page,
       pageSize: pageSize,
       totalCount: total,

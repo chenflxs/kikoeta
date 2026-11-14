@@ -901,5 +901,9 @@
   "lyricsTranslateDescription": "Сохранить в библиотеку субтитров по языку перевода",
   "lyricsTranslationProgress": "Переведено строк: {completed}/{total}",
   "lyricsTranslationSaved": "Перевод сохранён: {path}",
-  "lyricsTranslationInvalidResponse": "В переводе есть пропущенные или пустые строки. Повторите попытку или смените движок перевода."
+  "lyricsTranslationInvalidResponse": "В переводе есть пропущенные или пустые строки. Повторите попытку или смените движок перевода.",
+  "workPlaylistMembershipTitle": "Плейлисты с этой работой",
+  "workPlaylistMembershipEmpty": "Нет доступных для редактирования плейлистов",
+  "workPlaylistMembershipUnknown": "Не удалось определить, добавлена ли работа",
+  "workPlaylistMembershipSaveFailed": "Не все изменения сохранены. Повторите попытку."
 }

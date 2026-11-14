@@ -90,10 +90,13 @@ class LyricsOverlay(
         }.getOrDefault(Typeface.DEFAULT_BOLD)
     }
 
-    // 坐标随悬浮窗实例保留，切歌时临时隐藏后重新挂载也使用同一位置。
+    private val positionPreferences = context.applicationContext.getSharedPreferences(
+        "lyrics_overlay_position",
+        Context.MODE_PRIVATE,
+    )
     // CENTER_HORIZONTAL 下 x 为相对水平中心的偏移。
-    private var winX = 0
-    private var winY = dp(90)
+    private var winX = positionPreferences.getInt("x", 0)
+    private var winY = positionPreferences.getInt("y", dp(90))
     // 拖动状态
     private var touchStartX = 0f
     private var touchStartY = 0f
@@ -271,7 +274,9 @@ class LyricsOverlay(
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     val wasDragging = dragging
                     dragging = false
-                    if (!wasDragging && event.action == MotionEvent.ACTION_UP && !locked) {
+                    if (wasDragging && (winX != winStartX || winY != winStartY)) {
+                        positionPreferences.edit().putInt("x", winX).putInt("y", winY).apply()
+                    } else if (!wasDragging && event.action == MotionEvent.ACTION_UP && !locked) {
                         toggleLockButton()
                     }
                     true

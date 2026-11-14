@@ -3232,4 +3232,19 @@ class AppLocalizationsRu extends AppLocalizations {
   @override
   String get lyricsTranslationInvalidResponse =>
       'В переводе есть пропущенные или пустые строки. Повторите попытку или смените движок перевода.';
+
+  @override
+  String get workPlaylistMembershipTitle => 'Плейлисты с этой работой';
+
+  @override
+  String get workPlaylistMembershipEmpty =>
+      'Нет доступных для редактирования плейлистов';
+
+  @override
+  String get workPlaylistMembershipUnknown =>
+      'Не удалось определить, добавлена ли работа';
+
+  @override
+  String get workPlaylistMembershipSaveFailed =>
+      'Не все изменения сохранены. Повторите попытку.';
 }

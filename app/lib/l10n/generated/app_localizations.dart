@@ -5541,6 +5541,30 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'翻译结果缺行或为空，请重试或切换翻译引擎。'**
   String get lyricsTranslationInvalidResponse;
+
+  /// No description provided for @workPlaylistMembershipTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'作品所在播放列表'**
+  String get workPlaylistMembershipTitle;
+
+  /// No description provided for @workPlaylistMembershipEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有可编辑的播放列表'**
+  String get workPlaylistMembershipEmpty;
+
+  /// No description provided for @workPlaylistMembershipUnknown.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法确认是否已添加'**
+  String get workPlaylistMembershipUnknown;
+
+  /// No description provided for @workPlaylistMembershipSaveFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'部分更改未保存，请重试'**
+  String get workPlaylistMembershipSaveFailed;
 }
 
 class _AppLocalizationsDelegate

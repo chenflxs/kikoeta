@@ -3872,5 +3872,9 @@
         "type": "String"
       }
     }
-  }
+  },
+  "workPlaylistMembershipTitle": "作品所在播放列表",
+  "workPlaylistMembershipEmpty": "没有可编辑的播放列表",
+  "workPlaylistMembershipUnknown": "无法确认是否已添加",
+  "workPlaylistMembershipSaveFailed": "部分更改未保存，请重试"
 }

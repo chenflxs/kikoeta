@@ -14,16 +14,33 @@ class PlaylistPick {
   const PlaylistPick(this.playlist);
 }
 
-/// 打开歌单切换/选择面板。
-///
-/// [showFavorites] 为 true 时顶部显示「我的收藏」（收藏页使用）；
-/// 作品详情页的「添加到播放列表」传 false，只列出播放列表。
+/// 打开收藏页的歌单切换面板。
 Future<PlaylistPick?> showPlaylistPicker(
   BuildContext context, {
   required AppState app,
-  bool showFavorites = true,
   bool reviewsMode = false,
   String? currentId,
+}) => _showPlaylistSheet(
+  context,
+  app: app,
+  reviewsMode: reviewsMode,
+  currentId: currentId,
+);
+
+Future<void> showWorkPlaylistMembership(
+  BuildContext context, {
+  required AppState app,
+  required Work work,
+}) async {
+  await _showPlaylistSheet(context, app: app, work: work);
+}
+
+Future<PlaylistPick?> _showPlaylistSheet(
+  BuildContext context, {
+  required AppState app,
+  bool reviewsMode = false,
+  String? currentId,
+  Work? work,
 }) {
   return showModalBottomSheet<PlaylistPick>(
     context: context,
@@ -31,14 +48,15 @@ Future<PlaylistPick?> showPlaylistPicker(
         ? AppColors.dark.surface
         : AppColors.light.surface,
     isScrollControlled: true,
+    enableDrag: work == null,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
     builder: (_) => _PlaylistPickerSheet(
       app: app,
-      showFavorites: showFavorites,
       reviewsMode: reviewsMode,
       currentId: currentId,
+      work: work,
     ),
   );
 }
@@ -65,15 +83,15 @@ class _PlaylistEditInput {
 
 class _PlaylistPickerSheet extends StatefulWidget {
   final AppState app;
-  final bool showFavorites;
   final bool reviewsMode;
   final String? currentId;
+  final Work? work;
 
   const _PlaylistPickerSheet({
     required this.app,
-    required this.showFavorites,
     required this.reviewsMode,
     this.currentId,
+    this.work,
   });
 
   @override
@@ -85,8 +103,28 @@ class _PlaylistPickerSheetState extends State<_PlaylistPickerSheet> {
   bool _loading = true;
   bool _busy = false;
   String? _error;
+  final Map<String, bool> _membership = {};
+  final Map<String, bool> _changes = {};
+  bool _saveFailed = false;
+  late final int _serverEpoch;
+  late final int _loginEpoch;
+  late final int _dlsiteEpoch;
+  late final String _base;
+  late final String _user;
 
   AppState get app => widget.app;
+  bool get _editingMembership => widget.work != null;
+  bool get _sameSource =>
+      app.serverEpoch == _serverEpoch &&
+      app.loginEpoch == _loginEpoch &&
+      app.dlsiteSessionEpoch == _dlsiteEpoch &&
+      ApiService.resolveBase(app) == _base &&
+      _playlistUser == _user;
+  String get _playlistUser => app.customServer && app.customSites.isNotEmpty
+      ? app.customSites[app.customServerIdx].user
+      : app.isDlsite
+      ? ''
+      : app.asmrUser;
   Palette get p => Theme.of(context).brightness == Brightness.dark
       ? AppColors.dark
       : AppColors.light;
@@ -94,10 +132,42 @@ class _PlaylistPickerSheetState extends State<_PlaylistPickerSheet> {
   @override
   void initState() {
     super.initState();
+    _serverEpoch = app.serverEpoch;
+    _loginEpoch = app.loginEpoch;
+    _dlsiteEpoch = app.dlsiteSessionEpoch;
+    _base = ApiService.resolveBase(app);
+    _user = _playlistUser;
+    if (_editingMembership) app.addListener(_onSourceChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _load();
+      if (mounted && (!_editingMembership || _sameSource)) _load();
     });
   }
+
+  @override
+  void dispose() {
+    if (_editingMembership) app.removeListener(_onSourceChanged);
+    super.dispose();
+  }
+
+  void _onSourceChanged() {
+    if (_sameSource) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && ModalRoute.of(context)?.isCurrent == true) {
+        Navigator.of(context).pop();
+      }
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  bool _canUseSource() {
+    if (!mounted) return false;
+    if (_sameSource) return true;
+    _onSourceChanged();
+    return false;
+  }
+
+  static bool _isEditable(PlaylistInfo playlist) =>
+      playlist.id.isNotEmpty && playlist.isOwned && !playlist.isSystem;
 
   Future<void> _load() async {
     final l10n = context.l10n;
@@ -106,17 +176,104 @@ class _PlaylistPickerSheetState extends State<_PlaylistPickerSheet> {
       _error = null;
     });
     try {
-      final list = await ApiService.fetchPlaylists(app);
-      if (!mounted) return;
+      var list = await ApiService.fetchPlaylists(app);
+      if (!mounted || (_editingMembership && !_canUseSource())) return;
+      final work = widget.work;
+      if (work != null) {
+        list = list.where(_isEditable).toList();
+        setState(() => _list = list);
+        final membership = await ApiService.fetchWorkPlaylistMembership(
+          app,
+          work,
+          list,
+        );
+        if (!_canUseSource()) return;
+        _membership
+          ..clear()
+          ..addAll(membership);
+        final ids = list.map((playlist) => playlist.id).toSet();
+        _changes.removeWhere(
+          (id, value) => !ids.contains(id) || membership[id] == value,
+        );
+        if (_changes.isEmpty) _saveFailed = false;
+      }
       setState(() {
         _list = list;
         _loading = false;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || (_editingMembership && !_canUseSource())) return;
       setState(() {
         _loading = false;
         _error = l10n.playlistPickerLoadSetState;
+      });
+    }
+  }
+
+  void _toggleMembership(String id) {
+    final current = _membership[id];
+    if (current == null || !_canUseSource()) return;
+    setState(() {
+      if (_changes.containsKey(id)) {
+        _changes.remove(id);
+      } else {
+        _changes[id] = !current;
+      }
+      if (_changes.isEmpty) _saveFailed = false;
+    });
+  }
+
+  Future<void> _saveMembership() async {
+    final work = widget.work!;
+    final workId = work.apiId;
+    if (workId == null || !_canUseSource()) return;
+    setState(() {
+      _busy = true;
+      _saveFailed = false;
+    });
+    var changed = false;
+    for (final MapEntry(:key, :value) in _changes.entries.toList()) {
+      try {
+        if (value) {
+          await ApiService.addWorksToPlaylist(app, key, [work.rj]);
+        } else {
+          await ApiService.removeWorksFromPlaylist(app, key, [
+            workId.toString(),
+          ]);
+        }
+        if (!_canUseSource()) return;
+        _membership[key] = value;
+        _changes.remove(key);
+        changed = true;
+      } catch (_) {
+        if (!_canUseSource()) return;
+      }
+    }
+    if (_changes.isNotEmpty) {
+      // A failed response can arrive after the server has applied the change.
+      final pending = _list.where((pl) => _changes.containsKey(pl.id)).toList();
+      final actual = await ApiService.fetchWorkPlaylistMembership(
+        app,
+        work,
+        pending,
+      );
+      if (!_canUseSource()) return;
+      for (final MapEntry(:key, :value) in actual.entries) {
+        if (_changes[key] == value) {
+          _membership[key] = value;
+          _changes.remove(key);
+          changed = true;
+        }
+      }
+    }
+    if (changed) app.notifyPlaylistContentsChanged();
+    if (!mounted) return;
+    if (_changes.isEmpty) {
+      Navigator.of(context).pop();
+    } else {
+      setState(() {
+        _busy = false;
+        _saveFailed = true;
       });
     }
   }
@@ -343,16 +500,34 @@ class _PlaylistPickerSheetState extends State<_PlaylistPickerSheet> {
     final l10n = context.l10n;
     if (_busy) return;
     final input = await _showEditor(null);
-    if (input == null || !mounted) return;
+    if (!mounted || (_editingMembership && !_canUseSource()) || input == null) {
+      return;
+    }
     setState(() => _busy = true);
     try {
       final beforeIds = _list.map((e) => e.id).toSet();
+      final name = input.name ?? l10n.apiServiceMapPlaylistName;
       await ApiService.createPlaylist(
         app,
-        name: input.name ?? l10n.apiServiceMapPlaylistName,
+        name: name,
         description: input.description,
         privacy: input.privacy,
       );
+      if (_editingMembership) {
+        if (!_canUseSource()) return;
+        await _load();
+        if (!_canUseSource()) return;
+        final matches = _list.where(
+          (pl) => !beforeIds.contains(pl.id) && pl.name == name,
+        );
+        setState(() {
+          _busy = false;
+          if (matches.length == 1 && _membership[matches.first.id] == false) {
+            _changes[matches.first.id] = true;
+          }
+        });
+        return;
+      }
       final list = await ApiService.fetchPlaylists(app);
       if (!mounted) return;
       PlaylistInfo? created;
@@ -372,7 +547,7 @@ class _PlaylistPickerSheetState extends State<_PlaylistPickerSheet> {
       }
       Navigator.of(context).pop(PlaylistPick(created));
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || (_editingMembership && !_canUseSource())) return;
       setState(() => _busy = false);
       _toast(l10n.playlistPickerCreatePlaylistToast((e).toString()));
     }
@@ -607,7 +782,7 @@ class _PlaylistPickerSheetState extends State<_PlaylistPickerSheet> {
     required String name,
     required String subtitle,
     required bool selected,
-    required VoidCallback onTap,
+    required VoidCallback? onTap,
     Widget? trailing,
     VoidCallback? onLongPress,
   }) {
@@ -666,16 +841,40 @@ class _PlaylistPickerSheetState extends State<_PlaylistPickerSheet> {
   }
 
   Widget _playlistItem(PlaylistInfo pl) {
+    final l10n = context.l10n;
     final subtitle = pl.description.isNotEmpty
-        ? context.l10n.playlistPickerSubtitleSubtitle2(
+        ? l10n.playlistPickerSubtitleSubtitle2(
             (pl.worksCount).toString(),
             (pl.description.replaceAll('\n', ' ')).toString(),
           )
-        : context.l10n.playlistPickerSubtitleSubtitle(
-            (pl.worksCount).toString(),
-          );
+        : l10n.playlistPickerSubtitleSubtitle((pl.worksCount).toString());
+    final leading = _leading(
+      coverUrl: pl.coverUrl,
+      icon: Icons.folder_outlined,
+    );
+    if (_editingMembership) {
+      final current = _membership[pl.id];
+      final value = current == null ? null : _changes[pl.id] ?? current;
+      final canToggle = !_loading && !_busy && current != null;
+      void toggle() => _toggleMembership(pl.id);
+      return _row(
+        leading: leading,
+        name: pl.name,
+        subtitle: !_loading && value == null
+            ? l10n.workPlaylistMembershipUnknown
+            : subtitle,
+        selected: false,
+        onTap: canToggle ? toggle : null,
+        trailing: Checkbox(
+          value: value,
+          tristate: value == null,
+          semanticLabel: pl.name,
+          onChanged: canToggle ? (_) => toggle() : null,
+        ),
+      );
+    }
     return _row(
-      leading: _leading(coverUrl: pl.coverUrl, icon: Icons.folder_outlined),
+      leading: leading,
       name: pl.name,
       subtitle: subtitle,
       selected: !widget.reviewsMode && pl.id == widget.currentId,
@@ -701,6 +900,20 @@ class _PlaylistPickerSheetState extends State<_PlaylistPickerSheet> {
 
   @override
   Widget build(BuildContext context) {
+    return PopScope(
+      canPop: !_editingMembership || !_busy,
+      child: _buildSheet(context),
+    );
+  }
+
+  Widget _buildSheet(BuildContext context) {
+    final l10n = context.l10n;
+    final canSave =
+        !_busy &&
+        !_loading &&
+        _error == null &&
+        _changes.isNotEmpty &&
+        _changes.keys.every(_membership.containsKey);
     return SafeArea(
       child: ConstrainedBox(
         constraints: BoxConstraints(
@@ -711,23 +924,26 @@ class _PlaylistPickerSheetState extends State<_PlaylistPickerSheet> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const SizedBox(height: 10),
-            Center(
-              child: Container(
-                width: 38,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: p.surface3,
-                  borderRadius: BorderRadius.circular(99),
+            if (!_editingMembership)
+              Center(
+                child: Container(
+                  width: 38,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: p.surface3,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
                 ),
               ),
-            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 8, 6),
               child: Row(
                 children: [
                   Expanded(
                     child: Text(
-                      context.l10n.playlistPickerBuildText,
+                      _editingMembership
+                          ? l10n.workPlaylistMembershipTitle
+                          : l10n.playlistPickerBuildText,
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w800,
@@ -735,14 +951,16 @@ class _PlaylistPickerSheetState extends State<_PlaylistPickerSheet> {
                     ),
                   ),
                   TextButton.icon(
-                    onPressed: _busy ? null : _createPlaylist,
+                    onPressed: _busy || (_editingMembership && _loading)
+                        ? null
+                        : _createPlaylist,
                     icon: const Icon(Icons.add, size: 18),
                     label: Text(
                       context.l10n.create,
                       style: TextStyle(fontSize: 12.5),
                     ),
                   ),
-                  if (!app.isDlsite)
+                  if (!_editingMembership && !app.isDlsite)
                     TextButton.icon(
                       onPressed: _busy ? null : _importPlaylist,
                       icon: const Icon(Icons.link, size: 18),
@@ -766,17 +984,26 @@ class _PlaylistPickerSheetState extends State<_PlaylistPickerSheet> {
                   ),
                 ),
               )
-            else if (_error != null && _list.isEmpty)
+            else if (_error != null)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 32),
                 child: Column(
                   children: [
                     Text(_error!, style: TextStyle(fontSize: 13, color: p.dim)),
                     TextButton(
-                      onPressed: _load,
+                      onPressed: _busy ? null : _load,
                       child: Text(context.l10n.retry),
                     ),
                   ],
+                ),
+              )
+            else if (_editingMembership && _list.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  l10n.workPlaylistMembershipEmpty,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 13, color: p.dim),
                 ),
               )
             else
@@ -785,17 +1012,55 @@ class _PlaylistPickerSheetState extends State<_PlaylistPickerSheet> {
                   shrinkWrap: true,
                   padding: const EdgeInsets.symmetric(vertical: 6),
                   children: [
-                    if (widget.showFavorites) ...[
+                    if (!_editingMembership) ...[
                       _reviewsItem(),
                       const Divider(height: 1),
                     ],
-                    for (final pl in _list)
-                      if (widget.showFavorites || !app.isDlsite || !pl.isSystem)
-                        _playlistItem(pl),
+                    for (final pl in _list) _playlistItem(pl),
                   ],
                 ),
               ),
-            if (_busy)
+            if (_editingMembership) ...[
+              if ((_loading && _list.isNotEmpty) || _busy)
+                const LinearProgressIndicator(),
+              if (_saveFailed)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: Text(
+                    l10n.workPlaylistMembershipSaveFailed,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ),
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 4, 16, 8),
+                child: Row(
+                  children: [
+                    if (!_loading &&
+                        _error == null &&
+                        _list.any((pl) => !_membership.containsKey(pl.id)))
+                      TextButton(
+                        onPressed: _busy ? null : _load,
+                        child: Text(l10n.retry),
+                      ),
+                    const Spacer(),
+                    TextButton(
+                      onPressed: _busy
+                          ? null
+                          : () => Navigator.of(context).pop(),
+                      child: Text(l10n.cancel),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      onPressed: canSave ? _saveMembership : null,
+                      child: Text(l10n.save),
+                    ),
+                  ],
+                ),
+              ),
+            ] else if (_busy)
               Padding(
                 padding: const EdgeInsets.only(bottom: 10),
                 child: Center(
