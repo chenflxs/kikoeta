@@ -145,10 +145,10 @@ class MediaNode {
 }
 
 class LyricLine {
-  final int t;
+  final int timeMs;
   final String jp;
   final String zh;
-  const LyricLine(this.t, this.jp, this.zh);
+  const LyricLine(this.timeMs, this.jp, this.zh);
 }
 
 class CustomSite {

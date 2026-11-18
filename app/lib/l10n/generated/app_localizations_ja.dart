@@ -2125,7 +2125,7 @@ class AppLocalizationsJa extends AppLocalizations {
   String get workPageTranslateTitlesToast2 => '不明な翻訳エンジン';
 
   @override
-  String get workPageTranslateTitlesFormatException => '翻訳結果が空です';
+  String get workPageTranslateTitlesFormatException => '翻訳結果に不足があります。';
 
   @override
   String get workPageAllFilesRowText => 'すべてのファイルを表示';
@@ -2345,7 +2345,7 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String workPageTranslateTitlesToast7(String length) {
-    return '翻訳完了（タイトル + $lengthトラック）';
+    return '翻訳完了（作品タイトルとファイル・フォルダー名 $length 件）';
   }
 
   @override

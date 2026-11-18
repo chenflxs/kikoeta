@@ -72,6 +72,7 @@ class LyricsOverlay(
     private var locked = false
     private var screenWidth = 0
     private var screenHeight = 0
+    private var displayRotation = display.rotation
     private var overlayWidth = WindowManager.LayoutParams.MATCH_PARENT
     private var fontSize = 20f
     private var color = Color.WHITE
@@ -94,15 +95,20 @@ class LyricsOverlay(
         "lyrics_overlay_position",
         Context.MODE_PRIVATE,
     )
-    // CENTER_HORIZONTAL 下 x 为相对水平中心的偏移。
-    private var winX = positionPreferences.getInt("x", 0)
-    private var winY = positionPreferences.getInt("y", dp(90))
-    // 拖动状态
-    private var touchStartX = 0f
-    private var touchStartY = 0f
-    private var winStartX = 0
-    private var winStartY = 0
-    private var dragging = false
+    // Layout clamps these preferences to the current bounds without changing the saved anchor.
+    private var preferredX = 0
+    private var preferredY = dp(90)
+    private var gesture: DragGesture? = null
+
+    private class DragGesture(
+        val rawX: Float,
+        val rawY: Float,
+        val startX: Int,
+        val startY: Int,
+        val preferredX: Int,
+        val preferredY: Int,
+        var dragging: Boolean = false,
+    )
 
     private val autoHideLockButton = Runnable {
         lockBtn?.visibility = View.INVISIBLE
@@ -125,11 +131,13 @@ class LyricsOverlay(
     }
 
     private val refreshDisplayLayout = Runnable {
-        if (visible && refreshDisplayGeometry()) {
-            dragging = false
-            hideLockButton()
-            constrainPosition()
-            root?.let { wm.updateViewLayout(it, params()) }
+        val view = root
+        if (visible && view != null) {
+            val geometryChanged = refreshDisplayGeometry()
+            val layout = view.layoutParams as WindowManager.LayoutParams
+            if (geometryChanged || layout.y != constrainY(preferredY)) {
+                wm.updateViewLayout(view, params())
+            }
         }
     }
 
@@ -137,7 +145,10 @@ class LyricsOverlay(
         override fun onDisplayAdded(displayId: Int) {}
         override fun onDisplayRemoved(displayId: Int) {}
         override fun onDisplayChanged(displayId: Int) {
-            if (displayId == display.displayId) scheduleDisplayLayout()
+            if (displayId == display.displayId) {
+                if (displayRotation != display.rotation) finishGesture()
+                scheduleDisplayLayout()
+            }
         }
     }
 
@@ -166,7 +177,15 @@ class LyricsOverlay(
         } else {
             WindowManager.LayoutParams.MATCH_PARENT
         }
-        return screenWidth != previousWidth || screenHeight != previousHeight
+        val rotation = display.rotation
+        val changed = screenWidth != previousWidth || screenHeight != previousHeight ||
+            rotation != displayRotation
+        displayRotation = rotation
+        if (changed) {
+            finishGesture()
+            hideLockButton()
+        }
+        return changed
     }
 
     fun isAvailable(): Boolean =
@@ -186,12 +205,17 @@ class LyricsOverlay(
             activeOverlay?.hide()
             activeOverlay = this
         }
+        if (!visible) {
+            // Read after the previous window has detached and saved its last drag.
+            preferredX = positionPreferences.getInt("x", 0)
+            preferredY = positionPreferences.getInt("y", dp(90))
+        }
         refreshDisplayGeometry()
         // State pushed from the media card arrives through show(), not setLocked().
         // Close the transient button before the window starts passing touches through.
         if (this.locked != locked || locked) {
             hideLockButton()
-            dragging = false
+            finishGesture()
         }
         this.locked = locked
         this.opacityPercent = opacityPercent.coerceIn(10, 100)
@@ -200,7 +224,6 @@ class LyricsOverlay(
         if (root == null) buildOverlay()
         textView?.let { if (!TextUtils.equals(it.text, text)) it.text = text }
         if (!visible) {
-            constrainPosition()
             wm.addView(root, params())
             visible = true
             if (!listeningForDisplayChanges) {
@@ -208,7 +231,6 @@ class LyricsOverlay(
                 listeningForDisplayChanges = true
             }
         } else {
-            constrainPosition()
             wm.updateViewLayout(root, params())
         }
     }
@@ -218,11 +240,15 @@ class LyricsOverlay(
         val root = object : LinearLayout(overlayContext) {
             override fun onConfigurationChanged(newConfig: Configuration) {
                 super.onConfigurationChanged(newConfig)
+                finishGesture()
                 scheduleDisplayLayout()
             }
         }
         root.orientation = LinearLayout.VERTICAL
         root.gravity = Gravity.CENTER_HORIZONTAL
+        root.addOnLayoutChangeListener { _, _, top, _, bottom, _, oldTop, _, oldBottom ->
+            if (bottom - top != oldBottom - oldTop) scheduleDisplayLayout()
+        }
 
         // 锁定键：歌词上方一行、水平居中；始终占位（歌词不因按钮显隐而移动），
         // 平时不可见，点击歌词后显示（INVISIBLE 占位不显示，避免歌词跳动）
@@ -248,37 +274,35 @@ class LyricsOverlay(
         // 歌词文本同时负责点击和拖拽。ACTION_DOWN 必须消费，否则 Android 不会
         // 分派同一次手势后续的 MOVE/UP 事件，导致悬浮窗无法拖动。
         tv.setOnTouchListener { _, event ->
-            when (event.action) {
+            when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     // Also refresh at gesture start if a display callback is still queued.
+                    finishGesture()
                     refreshDisplayLayout.run()
-                    touchStartX = event.rawX
-                    touchStartY = event.rawY
-                    winStartX = winX
-                    winStartY = winY
-                    dragging = false
+                    gesture = DragGesture(
+                        event.rawX,
+                        event.rawY,
+                        constrainX(preferredX),
+                        constrainY(preferredY),
+                        preferredX,
+                        preferredY,
+                    )
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    val dx = event.rawX - touchStartX
-                    val dy = event.rawY - touchStartY
-                    val slop = ViewConfiguration.get(overlayContext).scaledTouchSlop
-                    if (!dragging && (Math.abs(dx) > slop || Math.abs(dy) > slop)) {
-                        dragging = true
-                    }
-                    if (dragging) {
-                        moveTo((winStartX + dx).toInt(), (winStartY + dy).toInt())
-                    }
+                    gesture?.let { moveGesture(it, event) }
                     true
                 }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    val wasDragging = dragging
-                    dragging = false
-                    if (wasDragging && (winX != winStartX || winY != winStartY)) {
-                        positionPreferences.edit().putInt("x", winX).putInt("y", winY).apply()
-                    } else if (!wasDragging && event.action == MotionEvent.ACTION_UP && !locked) {
+                MotionEvent.ACTION_UP -> {
+                    val endingGesture = gesture
+                    if (endingGesture != null && !endingGesture.dragging && !locked) {
                         toggleLockButton()
                     }
+                    finishGesture()
+                    true
+                }
+                MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_POINTER_DOWN -> {
+                    finishGesture()
                     true
                 }
                 else -> true
@@ -295,22 +319,47 @@ class LyricsOverlay(
         lockBtn = btn
     }
 
-    private fun moveTo(x: Int, y: Int) {
-        winX = x
-        winY = y
-        constrainPosition()
-        root?.let { wm.updateViewLayout(it, params()) }
+    private fun moveGesture(drag: DragGesture, event: MotionEvent) {
+        val dx = event.rawX - drag.rawX
+        val dy = event.rawY - drag.rawY
+        if (!drag.dragging) {
+            val slop = ViewConfiguration.get(overlayContext).scaledTouchSlop
+            if (Math.abs(dx) <= slop && Math.abs(dy) <= slop) return
+            drag.dragging = true
+        }
+        val x = constrainX(drag.startX + dx.toInt())
+        val y = constrainY(drag.startY + dy.toInt())
+        // A drag on a constrained axis must preserve the position for larger bounds.
+        val nextX = if (x == constrainX(drag.startX)) drag.preferredX else x
+        val nextY = if (y == constrainY(drag.startY)) drag.preferredY else y
+        if (nextX != preferredX || nextY != preferredY) {
+            preferredX = nextX
+            preferredY = nextY
+            root?.let { wm.updateViewLayout(it, params()) }
+        }
     }
 
-    private fun constrainPosition() {
+    private fun finishGesture() {
+        val drag = gesture ?: return
+        gesture = null
+        if (drag.preferredX != preferredX || drag.preferredY != preferredY) {
+            positionPreferences.edit().putInt("x", preferredX).putInt("y", preferredY).apply()
+        }
+    }
+
+    private fun constrainX(x: Int): Int {
+        // CENTER_HORIZONTAL measures x from the center of the layout frame.
         val maxX = if (overlayWidth == WindowManager.LayoutParams.MATCH_PARENT) {
             0
         } else {
             ((screenWidth - overlayWidth).coerceAtLeast(0)) / 2
         }
+        return x.coerceIn(-maxX, maxX)
+    }
+
+    private fun constrainY(y: Int): Int {
         val height = root?.height?.takeIf { it > 0 } ?: dp(60)
-        winX = winX.coerceIn(-maxX, maxX)
-        winY = winY.coerceIn(0, (screenHeight - height).coerceAtLeast(0))
+        return y.coerceIn(0, (screenHeight - height).coerceAtLeast(0))
     }
 
     private fun params(): WindowManager.LayoutParams {
@@ -338,8 +387,8 @@ class LyricsOverlay(
                 1f
             }
             alpha = maxOpacity * (opacityPercent / 100f)
-            x = winX
-            y = winY
+            x = constrainX(preferredX)
+            y = constrainY(preferredY)
         }
     }
 
@@ -354,7 +403,7 @@ class LyricsOverlay(
     fun setLocked(locked: Boolean) {
         this.locked = locked
         hideLockButton()
-        dragging = false
+        finishGesture()
         if (visible) applyTouchable()
     }
 
@@ -375,6 +424,7 @@ class LyricsOverlay(
     }
 
     fun hide() {
+        finishGesture()
         hideLockButton()
         root?.removeCallbacks(refreshDisplayLayout)
         if (listeningForDisplayChanges) {

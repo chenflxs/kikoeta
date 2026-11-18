@@ -3910,7 +3910,7 @@ abstract class AppLocalizations {
   /// pages/work_page.dart: _translateTitles
   ///
   /// In zh, this message translates to:
-  /// **'翻译结果为空'**
+  /// **'翻译结果不完整'**
   String get workPageTranslateTitlesFormatException;
 
   /// pages/work_page.dart: _allFilesRow
@@ -4270,7 +4270,7 @@ abstract class AppLocalizations {
   /// pages/work_page.dart: _translateTitles
   ///
   /// In zh, this message translates to:
-  /// **'翻译完成（标题 + {length} 个曲目）'**
+  /// **'已翻译作品标题及 {length} 个文件或文件夹名称'**
   String workPageTranslateTitlesToast7(String length);
 
   /// pages/work_page.dart: ok

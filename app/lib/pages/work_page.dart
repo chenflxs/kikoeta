@@ -14,6 +14,7 @@ import '../services/download_service.dart';
 import '../services/dictation_media_matcher.dart';
 import '../services/media_selection.dart';
 import '../services/media_tree.dart';
+import '../services/work_title_translation.dart';
 import '../services/works_page_buffer.dart';
 import '../smooth_scroll.dart';
 import '../src/rust/api/kikoeru_api.dart';
@@ -2918,29 +2919,32 @@ class _WorkPageState extends State<WorkPage> {
   Future<void> _translateTitles() async {
     final l10n = context.l10n;
     // 已翻译：再次点击取消翻译（恢复原文）
-    if (app.translated.containsKey(work.rj)) {
-      app.removeTranslated(work.rj);
-      if (mounted) setState(() {});
+    final rj = work.rj;
+    if (app.translated.containsKey(rj)) {
+      app.removeTranslated(rj);
       _toast(l10n.workPageTranslateTitlesToast);
       return;
     }
-    if (app.engine == 'openai' || app.engine == 'index') {
-      final cfg = app.activeAiConfig;
-      if ((cfg['base'] ?? '').trim().isEmpty ||
-          (cfg['model'] ?? '').trim().isEmpty) {
+    final engine = app.engine;
+    final config = Map<String, String>.of(app.activeAiConfig);
+    final deeplKey = app.deeplKey;
+    if (engine == 'openai' || engine == 'index') {
+      if ((config['base'] ?? '').trim().isEmpty ||
+          (config['model'] ?? '').trim().isEmpty) {
         _toast(l10n.workPageTranslateTitlesToast4);
         return;
       }
-    } else if (app.engine == 'deepl') {
-      if (app.deeplKey.trim().isEmpty) {
+    } else if (engine == 'deepl') {
+      if (deeplKey.trim().isEmpty) {
         _toast(l10n.workPageTranslateTitlesToast6);
         return;
       }
-    } else if (app.engine != 'google' && app.engine != 'microsoft') {
+    } else if (engine != 'google' && engine != 'microsoft') {
       _toast(l10n.workPageTranslateTitlesToast2);
       return;
     }
-    if (_tree == null) {
+    final tree = _tree;
+    if (tree == null) {
       _toast(
         _tracksFailed
             ? l10n.workPageTreePlaceholderText3
@@ -2948,63 +2952,58 @@ class _WorkPageState extends State<WorkPage> {
       );
       return;
     }
-    final audio = _collectAudio(_tree!);
-    final lines = [work.title, ...audio.map((n) => n.title)];
-    _toast(l10n.workPageTranslateTitlesToast5((lines.length).toString()));
+    final target = app.resolvedTranslationTarget;
+    final source = app.translationSource;
+    final serverEpoch = app.serverEpoch;
+    final loginEpoch = app.loginEpoch;
+    bool isCurrent() =>
+        mounted &&
+        work.rj == rj &&
+        identical(_tree, tree) &&
+        app.serverEpoch == serverEpoch &&
+        app.loginEpoch == loginEpoch &&
+        app.engine == engine &&
+        app.resolvedTranslationTarget == target &&
+        app.translationSource == source;
+
     setState(() => _translating = true);
     try {
-      final joined = lines.join('\n');
-      final target = app.resolvedTranslationTarget;
-      final source = app.translationSource;
-      final zh = switch (app.engine) {
-        'google' => await apiTranslateGoogle(
-          text: joined,
-          src: source,
-          dst: target,
-        ),
-        'microsoft' => await apiTranslateMicrosoft(
-          text: joined,
-          src: source,
-          dst: target,
-        ),
-        'deepl' => await apiTranslateDeepl(
-          text: joined,
-          src: source,
-          dst: target,
-          apiKey: app.deeplKey,
-        ),
-        _ => await apiTranslateOpenai(
-          baseUrl: app.activeAiConfig['base']!,
-          model: app.activeAiConfig['model']!,
-          apiKey: app.activeAiConfig['key'] ?? '',
-          text:
-              '[[KIKOETA_TARGET:$target]]\n[[KIKOETA_SOURCE:$source]]\n$joined',
-          temperature: 0.2,
-        ),
-      };
-      // 保留空行位置，避免兼容模型漏译某一行后把后续曲目错位映射。
-      final parts = zh.replaceAll('\r\n', '\n').split('\n');
-      if (parts.every((part) => part.trim().isEmpty)) {
-        throw FormatException(l10n.workPageTranslateTitlesFormatException);
-      }
-      final trackZh = <String, String>{};
-      for (var i = 0; i < audio.length; i++) {
-        final translation = i + 1 < parts.length ? parts[i + 1].trim() : '';
-        if (translation.isNotEmpty) {
-          trackZh[audio[i].path] = translation;
-        }
-      }
-      app.saveTranslated(
-        work.rj,
-        parts.first.trim().isNotEmpty ? parts.first.trim() : work.title,
-        trackZh,
+      final result = await translateWorkTitles(
+        title: work.title,
+        nodes: _indexForTree().rows.map((row) => row.node),
+        engine: engine,
+        isCurrent: isCurrent,
+        invalidResponse: l10n.workPageTranslateTitlesFormatException,
+        request: (text) => switch (engine) {
+          'google' => apiTranslateGoogle(text: text, src: source, dst: target),
+          'microsoft' => apiTranslateMicrosoft(
+            text: text,
+            src: source,
+            dst: target,
+          ),
+          'deepl' => apiTranslateDeepl(
+            text: text,
+            src: source,
+            dst: target,
+            apiKey: deeplKey,
+          ),
+          _ => apiTranslateOpenai(
+            baseUrl: config['base']!,
+            model: config['model']!,
+            apiKey: config['key'] ?? '',
+            text:
+                '[[KIKOETA_TARGET:$target]]\n[[KIKOETA_SOURCE:$source]]\n$text',
+            temperature: 0.2,
+          ),
+        },
       );
-      if (mounted) {
-        setState(() {});
-        _toast(l10n.workPageTranslateTitlesToast7((trackZh.length).toString()));
-      }
+      if (result == null || !isCurrent()) return;
+      app.saveTranslated(rj, result.title, result.names);
+      _toast(
+        l10n.workPageTranslateTitlesToast7(result.names.length.toString()),
+      );
     } catch (e) {
-      if (mounted) {
+      if (isCurrent()) {
         _toast(
           l10n.workPageTranslateTitlesToast3(e.toString()),
           duration: const Duration(seconds: 6),

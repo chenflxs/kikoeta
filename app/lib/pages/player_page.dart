@@ -42,7 +42,8 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   Timer? _sleepTimer;
   Timer? _wideChromeTimer;
   Timer? _wideCoverMenuTimer;
-  int _pos = 0;
+  int _positionMs = 0;
+  int get _pos => _positionMs ~/ 1000;
   int _dur = 0;
   final ScrollController _lyricScroll = ScrollController();
   final Map<int, GlobalKey> _lyricKeys = {};
@@ -50,7 +51,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   bool _lyricAutoFollow = true;
   int _lyricScrollToken = 0;
   int _lastAutoIdx = -1;
-  int _lrcOffsetMs = 0; // 字幕偏移（毫秒，正数表示歌词提前显示）
+  int _lrcOffsetMs = 0; // 字幕偏移（毫秒，正数延后显示）
   String? get _lyricSourceName => LyricsHub.instance.sourceName;
   Size _lyricViewportSize = Size.zero;
   bool? _lyricViewportIsWide;
@@ -97,26 +98,21 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     _reconnecting = AppPlayer.instance.isReconnecting;
     app.addListener(_onAppStateChanged);
     _subs.add(
-      AppPlayer.instance.position.listen((d) {
-        if (mounted) {
-          // 值未变化时跳过重建（同一秒内重复 tick 不重绘整页）
-          if (d != _pos) {
-            final previousLyricIdx = _lyrics.isEmpty ? -1 : _currentLyricIdx();
-            final nextLyricIdx = _lyrics.isEmpty ? -1 : _lyricIdxAt(d);
-            final lyricChanged = nextLyricIdx != previousLyricIdx;
-            if (lyricChanged && _lyricAutoFollow) {
-              // 滚动与高亮渐变同时开始，避免先切换样式再等待帧后定位。
-              _transitionToRenderedLyric(nextLyricIdx);
-            }
-            setState(() => _pos = d);
-            if (lyricChanged && _lyricAutoFollow) {
-              // 尚未布局时再请求定位；已启动的过渡不能被帧后 jumpTo 打断。
-              _requestLyricAlignment();
-            }
-          } else {
-            _maybeAutoScrollLyric();
-          }
+      AppPlayer.instance.position.listen((_) {
+        if (!mounted) return;
+        final positionMs =
+            AppPlayer.instance.currentPositionPrecise.inMilliseconds;
+        final nextLyricIdx = _lyricIdxAt(positionMs);
+        final lyricChanged = nextLyricIdx != _currentLyricIdx();
+        final secondChanged = positionMs ~/ 1000 != _pos;
+        if (lyricChanged && _lyricAutoFollow) {
+          // 滚动与高亮渐变同时开始，避免先切换样式再等待帧后定位。
+          _transitionToRenderedLyric(nextLyricIdx);
         }
+        _positionMs = positionMs;
+        // 同一秒且高亮未变化时，不因毫秒级 tick 重建整页。
+        if (secondChanged || lyricChanged) setState(() {});
+        _maybeAutoScrollLyric();
       }),
     );
     _subs.add(
@@ -207,7 +203,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
       if (!isCurrent()) return;
       app.resumePosition = resume;
       app.savePlayPosition();
-      if (mounted) setState(() => _pos = resume);
+      if (mounted) setState(() => _positionMs = target.inMilliseconds);
     } finally {
       app.restoringPlaybackPosition = false;
     }
@@ -284,17 +280,17 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
       '${app.playWork?.ageKnown}|${app.playWork?.age}';
 
   void _syncPlayerSnapshot({bool rebuild = false}) {
-    final position = AppPlayer.instance.currentPosition;
+    final positionMs = AppPlayer.instance.currentPositionPrecise.inMilliseconds;
     final duration = AppPlayer.instance.currentDuration;
-    if (_pos == position && _dur == duration) return;
+    if (_positionMs == positionMs && _dur == duration) return;
     if (rebuild && mounted) {
       setState(() {
-        _pos = position;
+        _positionMs = positionMs;
         _dur = duration;
       });
       return;
     }
-    _pos = position;
+    _positionMs = positionMs;
     _dur = duration;
   }
 
@@ -455,7 +451,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     }
     _switching = true;
     app.trackIdx = (app.trackIdx + 1) % app.queue.length;
-    _pos = 0;
+    _positionMs = 0;
     _dur = 0;
     AppPlayer.instance.opened = false;
     _refreshLyricsForCurrentTrack();
@@ -471,7 +467,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   }
 
   Future<void> _restartCurrent() async {
-    _pos = 0;
+    _positionMs = 0;
     _dur = 0;
     setState(() {});
     try {
@@ -494,7 +490,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     if (app.queue.isEmpty || _switching) return;
     _switching = true;
     app.trackIdx = idx;
-    _pos = 0;
+    _positionMs = 0;
     _dur = 0;
     AppPlayer.instance.opened = false;
     _refreshLyricsForCurrentTrack();
@@ -515,7 +511,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     }
     _switching = true;
     app.trackIdx--;
-    _pos = 0;
+    _positionMs = 0;
     _dur = 0;
     AppPlayer.instance.opened = false;
     _refreshLyricsForCurrentTrack();
@@ -539,9 +535,9 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   String _fmt(int s) =>
       '${(s ~/ 60).toString().padLeft(2, '0')}:${(s % 60).toString().padLeft(2, '0')}';
 
-  void _seekTo(int t) {
-    _player.seek(Duration(seconds: t));
-    setState(() => _pos = t);
+  void _seekTo(Duration target) {
+    _player.seek(target);
+    setState(() => _positionMs = target.inMilliseconds);
     // 手动跳转（进度条/点歌词）后歌词立即跟随，不再等 3 秒
     _lyricAutoFollow = true;
     _lyricFollowTimer?.cancel();
@@ -552,7 +548,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   void _seekRelative(int delta) {
     final target = (_pos + delta).clamp(0, math.max(_dur, 1)).toInt();
     _player.seek(Duration(seconds: target));
-    setState(() => _pos = target);
+    setState(() => _positionMs = target * 1000);
   }
 
   void _setVolumeMax(int max) {
@@ -984,7 +980,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                   max: math.max(_dur, 1).toDouble(),
                   activeColor: p.text,
                   inactiveColor: p.track,
-                  onChanged: (v) => _seekTo(v.round()),
+                  onChanged: (v) => _seekTo(Duration(seconds: v.round())),
                 ),
               ),
             ),
@@ -1242,7 +1238,14 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                 width: double.infinity,
                 child: InkWell(
                   key: _lyricKeys.putIfAbsent(i, GlobalKey.new),
-                  onTap: () => _seekTo(_lyrics[i].t),
+                  onTap: () => _seekTo(
+                    Duration(
+                      milliseconds: math.max(
+                        0,
+                        _lyrics[i].timeMs + _lrcOffsetMs,
+                      ),
+                    ),
+                  ),
                   child: Padding(
                     padding: EdgeInsets.symmetric(
                       vertical: 7,
@@ -1503,7 +1506,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                 max: math.max(_dur, 1).toDouble(),
                 activeColor: p.accent,
                 inactiveColor: p.track,
-                onChanged: (v) => _seekTo(v.round()),
+                onChanged: (v) => _seekTo(Duration(seconds: v.round())),
               ),
             ),
           ),
@@ -2571,23 +2574,10 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     _maybeAutoScrollLyric();
   }
 
-  int _currentLyricIdx() {
-    return _lyricIdxAt(_pos);
-  }
+  int _currentLyricIdx() => _lyricIdxAt(_positionMs);
 
-  int _lyricIdxAt(int positionSeconds) {
-    final positionMs = positionSeconds * 1000;
-    for (var i = 0; i < _lyrics.length; i++) {
-      final t = _lyrics[i].t * 1000 + _lrcOffsetMs;
-      final next = i == _lyrics.length - 1
-          ? null
-          : _lyrics[i + 1].t * 1000 + _lrcOffsetMs;
-      if (positionMs >= t && (next == null || positionMs < next)) {
-        return i;
-      }
-    }
-    return 0;
-  }
+  int _lyricIdxAt(int positionMs) =>
+      LyricsHub.cueIndexAt(_lyrics, positionMs - _lrcOffsetMs);
 
   /// 播放位置变化时：若处于自动跟随状态，把当前行滚到中间。
   void _maybeAutoScrollLyric() {

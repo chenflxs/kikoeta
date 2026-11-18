@@ -1166,15 +1166,17 @@ class ApiService {
       if (json is! Map || json['result'] != true) return const [];
       final rows = json['lrc'];
       if (rows is! List) return const [];
-      return rows
-          .whereType<Map>()
-          .map((row) {
-            final time = (row['time'] as num?)?.toInt() ?? 0;
-            final text = row['text']?.toString().trim() ?? '';
-            return LyricLine(time ~/ 1000, text, text);
-          })
-          .where((line) => line.jp.isNotEmpty)
-          .toList();
+      return _sortedLyrics(
+        rows
+            .whereType<Map>()
+            .map((row) {
+              final time = (row['time'] as num?)?.toInt() ?? 0;
+              final text = row['text']?.toString().trim() ?? '';
+              return LyricLine(time, text, text);
+            })
+            .where((line) => line.jp.isNotEmpty)
+            .toList(),
+      );
     } catch (_) {
       return null;
     }
@@ -1695,7 +1697,8 @@ class ApiService {
       for (final m in matches) {
         final mm = int.parse(m.group(1)!);
         final ss = int.parse(m.group(2)!);
-        lines.add(LyricLine(mm * 60 + ss, content, content));
+        final timeMs = (mm * 60 + ss) * 1000 + _fractionMs(m.group(3));
+        lines.add(LyricLine(timeMs, content, content));
       }
     }
     return _sortedLyrics(lines);
@@ -1724,8 +1727,8 @@ class ApiService {
         blockLines.skip(timingIndex + 1).join('\n'),
       );
       if (content.isEmpty) continue;
-      final seconds = _parseSubtitleTime(match.group(1)!);
-      if (seconds != null) lines.add(LyricLine(seconds, content, content));
+      final timeMs = _parseSubtitleTimeMs(match.group(1)!);
+      if (timeMs != null) lines.add(LyricLine(timeMs, content, content));
     }
     return _sortedLyrics(lines);
   }
@@ -1737,39 +1740,36 @@ class ApiService {
       if (!line.toLowerCase().startsWith('dialogue:')) continue;
       final fields = line.substring(line.indexOf(':') + 1).split(',');
       if (fields.length < 10) continue;
-      final seconds = _parseAssTime(fields[1].trim());
-      if (seconds == null) continue;
+      final timeMs = _parseSubtitleTimeMs(fields[1].trim());
+      if (timeMs == null) continue;
       final content = _cleanSubtitleText(fields.sublist(9).join(','));
-      if (content.isNotEmpty) lines.add(LyricLine(seconds, content, content));
+      if (content.isNotEmpty) lines.add(LyricLine(timeMs, content, content));
     }
     return _sortedLyrics(lines);
   }
 
   static List<LyricLine> _sortedLyrics(List<LyricLine> lines) {
-    lines.sort((a, b) => a.t.compareTo(b.t));
+    lines.sort((a, b) => a.timeMs.compareTo(b.timeMs));
     return lines;
   }
 
-  static int? _parseSubtitleTime(String value) {
-    final parts = value.trim().replaceAll(',', '.').split(':');
-    if (parts.length == 2) parts.insert(0, '0');
-    if (parts.length != 3) return null;
-    final hours = int.tryParse(parts[0]);
-    final minutes = int.tryParse(parts[1]);
-    final seconds = double.tryParse(parts[2]);
+  static final _subtitleTimestamp = RegExp(
+    r'^(?:(\d+):)?(\d+):(\d+)(?:[,.](\d+))?$',
+  );
+
+  static int? _parseSubtitleTimeMs(String value) {
+    final match = _subtitleTimestamp.firstMatch(value);
+    if (match == null) return null;
+    final hours = int.tryParse(match.group(1) ?? '0');
+    final minutes = int.tryParse(match.group(2)!);
+    final seconds = int.tryParse(match.group(3)!);
     if (hours == null || minutes == null || seconds == null) return null;
-    return (hours * 3600 + minutes * 60 + seconds).floor();
+    return (hours * 3600 + minutes * 60 + seconds) * 1000 +
+        _fractionMs(match.group(4));
   }
 
-  static int? _parseAssTime(String value) {
-    final parts = value.trim().split(':');
-    if (parts.length != 3) return null;
-    final hours = int.tryParse(parts[0]);
-    final minutes = int.tryParse(parts[1]);
-    final seconds = double.tryParse(parts[2]);
-    if (hours == null || minutes == null || seconds == null) return null;
-    return (hours * 3600 + minutes * 60 + seconds).floor();
-  }
+  static int _fractionMs(String? digits) =>
+      int.parse((digits ?? '').padRight(3, '0').substring(0, 3));
 
   static String _cleanSubtitleText(String value) {
     return value

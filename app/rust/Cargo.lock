@@ -914,6 +914,7 @@ dependencies = [
  "encoding_rs",
  "flutter_rust_bridge",
  "hickory-resolver",
+ "httpdate",
  "reqwest",
  "rusqlite",
  "serde",

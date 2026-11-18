@@ -56,7 +56,8 @@ class LyricsHub extends ChangeNotifier {
        _onlineLoader = onlineLoader ?? _loadOnline,
        _libraryRevision =
            libraryRevision ?? LyricsLibraryService.instance.revision,
-       _position = position ?? (() => AppPlayer.instance.player.state.position),
+       _position =
+           position ?? (() => AppPlayer.instance.currentPositionPrecise),
        _duration = duration ?? (() => AppPlayer.instance.player.state.duration),
        _playing =
            playing ??
@@ -437,22 +438,31 @@ class LyricsHub extends ChangeNotifier {
   /// 当前应显示的歌词行（保留首句时间之前显示首句的行为）。
   String get currentLine => currentOverlayCue.text;
 
+  static int cueIndexAt(List<LyricLine> lyrics, int positionMs) {
+    if (lyrics.isEmpty) return -1;
+    // The most recent cue wins when multiple entries share a timestamp.
+    var start = 0;
+    var end = lyrics.length;
+    while (start < end) {
+      final middle = start + (end - start) ~/ 2;
+      if (lyrics[middle].timeMs <= positionMs) {
+        start = middle + 1;
+      } else {
+        end = middle;
+      }
+    }
+    return start == 0 ? 0 : start - 1;
+  }
+
   ({String text, DesktopLyricsTiming? timing}) get currentOverlayCue {
     final lyrics = _visibleLyrics;
     if (lyrics.isEmpty) return (text: '', timing: null);
     final pos = _position();
-    var idx = 0;
-    for (var i = 0; i < lyrics.length; i++) {
-      if (pos >= Duration(seconds: lyrics[i].t)) {
-        idx = i;
-      } else {
-        break;
-      }
-    }
-    final start = Duration(seconds: lyrics[idx].t);
+    final idx = cueIndexAt(lyrics, pos.inMilliseconds);
+    final start = Duration(milliseconds: lyrics[idx].timeMs);
     Duration? end;
     for (var i = idx + 1; i < lyrics.length; i++) {
-      final next = Duration(seconds: lyrics[i].t);
+      final next = Duration(milliseconds: lyrics[i].timeMs);
       if (next > start) {
         end = next;
         break;

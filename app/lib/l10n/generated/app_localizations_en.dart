@@ -2217,7 +2217,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get workPageTranslateTitlesFormatException =>
-      'Translation result is empty';
+      'The translation response was incomplete.';
 
   @override
   String get workPageAllFilesRowText => 'View all files';
@@ -2453,7 +2453,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String workPageTranslateTitlesToast7(String length) {
-    return 'Translation complete (title + $length tracks)';
+    return 'Translated the title and $length file or folder names';
   }
 
   @override

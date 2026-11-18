@@ -1,8 +1,10 @@
 //! AI 翻译（OpenAI 兼容接口，可配置 base_url / model / api_key）。
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 mod microsoft;
+mod rate_limit;
+use rate_limit::RateLimit;
 
 fn translation_prompt(source_language: &str, target_language: &str) -> String {
     let source = match source_language.trim() {
@@ -76,6 +78,7 @@ pub async fn api_translate_openai(
     };
     let url = format!("{base}/chat/completions");
     let client = openai_client(&base)?;
+    let limit = openai_rate_limit(&base, &api_key);
     let mut prompt = translation_prompt(&source_language, &target_language);
     if lyrics {
         prompt = prompt
@@ -98,26 +101,27 @@ pub async fn api_translate_openai(
     for batch in &batches {
         body["messages"][1]["content"] = indexed_translation_input(batch).into();
         let last_line = first_line + batch.len() - 1;
-        let result =
-            request_completion(|| apply_auth(client.post(&url).json(&body), &base, &api_key))
-                .await
-                .and_then(|content| {
-                    if lyrics {
-                        let markers = indexed_markers(&content);
-                        let mut seen = vec![false; batch.len()];
-                        for (_, _, index) in &markers {
-                            if *index >= batch.len() || seen[*index] {
-                                return Ok(String::new());
-                            }
-                            seen[*index] = true;
-                        }
-                        // Dart splits malformed lyric batches before trying again.
-                        if markers.len() != batch.len() || seen.contains(&false) {
-                            return Ok(String::new());
-                        }
+        let result = request_completion(&limit, || {
+            apply_auth(client.post(&url).json(&body), &base, &api_key)
+        })
+        .await
+        .and_then(|content| {
+            if lyrics {
+                let markers = indexed_markers(&content);
+                let mut seen = vec![false; batch.len()];
+                for (_, _, index) in &markers {
+                    if *index >= batch.len() || seen[*index] {
+                        return Ok(String::new());
                     }
-                    unpack_indexed_translation(&content, batch.len())
-                });
+                    seen[*index] = true;
+                }
+                // Dart splits malformed lyric batches before trying again.
+                if markers.len() != batch.len() || seen.contains(&false) {
+                    return Ok(String::new());
+                }
+            }
+            unpack_indexed_translation(&content, batch.len())
+        });
         translations.push(result.map_err(|error| {
             if batches.len() > 1 {
                 format!("第 {first_line}–{last_line} 行：{error}")
@@ -131,17 +135,21 @@ pub async fn api_translate_openai(
 }
 
 async fn request_completion(
+    limit: &RateLimit,
     request: impl Fn() -> reqwest::RequestBuilder,
 ) -> Result<String, String> {
     let mut last_err = String::new();
     let mut delay = Duration::from_secs(1);
     for attempt in 0..3 {
+        limit.check()?;
         match request().send().await {
             Ok(resp) if resp.status() == reqwest::StatusCode::GATEWAY_TIMEOUT => {
                 last_err = "HTTP 504：翻译服务网关超时".to_string();
             }
             Ok(resp) => {
+                limit.observe(&resp)?;
                 let status = resp.status();
+                let html = response_is_html(&resp);
                 let text_body = resp
                     .text()
                     .await
@@ -149,7 +157,7 @@ async fn request_completion(
                 if status.is_success() {
                     return parse_completion(&text_body);
                 }
-                last_err = format!("HTTP {}: {}", status.as_u16(), preview(&text_body));
+                last_err = response_error("", status, html, &text_body);
             }
             Err(e) => last_err = completion_request_error("请求", e),
         }
@@ -238,6 +246,14 @@ fn is_index_compat(base: &str) -> bool {
     reqwest::Url::parse(base)
         .ok()
         .is_some_and(|url| url.host_str() == Some("index-translate.bilibili.com"))
+}
+
+fn openai_rate_limit(base: &str, api_key: &str) -> RateLimit {
+    if is_index_compat(base) {
+        RateLimit::new("Index-Translate", base, "")
+    } else {
+        RateLimit::new("AI 翻译", base, api_key)
+    }
 }
 
 fn apply_auth(req: reqwest::RequestBuilder, base: &str, api_key: &str) -> reqwest::RequestBuilder {
@@ -389,10 +405,36 @@ fn normalize_marked_translation(segment: &str) -> String {
 }
 
 fn preview(s: &str) -> String {
+    let s = s.trim_start_matches(['\u{feff}', ' ', '\n', '\r', '\t']);
+    if s.starts_with('<') {
+        return String::new();
+    }
     s.chars().take(160).collect()
 }
 
-/// Google 免费翻译接口（无需 Key），主域名失败时自动尝试备用域名。
+fn response_is_html(response: &reqwest::Response) -> bool {
+    response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(';').next())
+        .is_some_and(|value| value.trim().eq_ignore_ascii_case("text/html"))
+}
+
+fn response_error(provider: &str, status: reqwest::StatusCode, html: bool, body: &str) -> String {
+    let summary = format!("{provider}HTTP {}", status.as_u16());
+    let detail = if html { String::new() } else { preview(body) };
+    if detail.is_empty() {
+        summary
+    } else {
+        format!("{summary}: {detail}")
+    }
+}
+
+static GOOGLE_COOLDOWN: tokio::sync::Mutex<Option<(Instant, Duration)>> =
+    tokio::sync::Mutex::const_new(None);
+
+/// Google 免费翻译接口（无需 Key）。
 #[flutter_rust_bridge::frb]
 pub async fn api_translate_google(
     text: String,
@@ -405,6 +447,7 @@ pub async fn api_translate_google(
     let client = http_client()?;
     translate_google_with_client(
         &client,
+        &GOOGLE_COOLDOWN,
         &[
             (
                 "https://translate.googleapis.com/translate_a/t",
@@ -422,6 +465,7 @@ pub async fn api_translate_google(
 
 async fn translate_google_with_client(
     client: &reqwest::Client,
+    cooldown: &tokio::sync::Mutex<Option<(Instant, Duration)>>,
     endpoints: &[(&str, &str)],
     text: &str,
     src: &str,
@@ -430,20 +474,27 @@ async fn translate_google_with_client(
     let batches = google_batches(text, 1200);
     let mut translated = Vec::with_capacity(batches.len());
     for batch in batches {
-        let mut errors = Vec::new();
-        let mut result = None;
-        // The dictionary client does not require a webapp token and remains
-        // usable when the single/gtx endpoint rejects requests with 429.
+        // Keep the 429 check and request in one critical section so title and
+        // lyric jobs cannot both send requests before observing the cooldown.
+        let mut limited = cooldown.lock().await;
+        if let Some(remaining) = limited.as_ref().and_then(rate_limit::remaining) {
+            return Err(rate_limit::message("Google 翻译", remaining));
+        }
+        let mut result = Err("Google 翻译端点不可用".to_string());
         for (url, client_name) in endpoints {
             match google_request(client, url, client_name, &batch, src, dst).await {
-                Ok(output) => {
-                    result = Some(output);
+                Ok(GoogleResponse::Translated(output)) => {
+                    result = Ok(output);
                     break;
                 }
-                Err(error) => errors.push(format!("{url}: {error}")),
+                Ok(GoogleResponse::RateLimited(wait)) => {
+                    *limited = Some((Instant::now(), wait));
+                    return Err(rate_limit::message("Google 翻译", wait));
+                }
+                Err(error) => result = Err(error),
             }
         }
-        translated.push(result.ok_or_else(|| errors.join("；"))?);
+        translated.push(result?);
     }
     Ok(translated.join("\n"))
 }
@@ -453,21 +504,32 @@ async fn translate_google_with_client(
 fn google_batches(text: &str, max_chars: usize) -> Vec<String> {
     let mut batches = Vec::new();
     let mut current = String::new();
+    let mut size = 0;
+    let mut has_line = false;
     for line in text.lines() {
-        let extra = if current.is_empty() { 0 } else { 1 };
-        if !current.is_empty() && current.chars().count() + extra + line.chars().count() > max_chars
-        {
+        let line_size = line.chars().count();
+        if has_line && size + 1 + line_size > max_chars {
             batches.push(std::mem::take(&mut current));
+            size = 0;
+            has_line = false;
         }
-        if !current.is_empty() {
+        if has_line {
             current.push('\n');
+            size += 1;
         }
         current.push_str(line);
+        size += line_size;
+        has_line = true;
     }
-    if !current.is_empty() {
+    if has_line {
         batches.push(current);
     }
     batches
+}
+
+enum GoogleResponse {
+    Translated(String),
+    RateLimited(Duration),
 }
 
 async fn google_request(
@@ -477,68 +539,85 @@ async fn google_request(
     text: &str,
     src: &str,
     dst: &str,
-) -> Result<String, String> {
-    let mut delay = Duration::from_secs(2);
-    let mut last_error = String::new();
-    for attempt in 0..3 {
-        let request = client
-            .get(url)
-            .header("user-agent", browser_user_agent())
-            .header("accept", "application/json,text/plain,*/*")
-            .query(&[
-                ("client", client_name),
-                ("sl", src),
-                ("tl", dst),
-                ("dt", "t"),
-                ("q", text),
-                ("ie", "UTF-8"),
-                ("oe", "UTF-8"),
-            ]);
-        let resp = request
-            .send()
-            .await
-            .map_err(|e| format!("Google 翻译请求失败: {e}"))?;
-        let status = resp.status();
-        let retry_after = resp
-            .headers()
-            .get(reqwest::header::RETRY_AFTER)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.parse::<u64>().ok());
-        let body = resp
-            .text()
-            .await
-            .map_err(|e| format!("读取 Google 响应失败: {e}"))?;
-        if status.is_success() {
-            return parse_google(&body);
+) -> Result<GoogleResponse, String> {
+    let dictionary = client_name == "dict-chrome-ex";
+    let lines: Vec<_> = text.split('\n').collect();
+    let request = client
+        .get(url)
+        .header("user-agent", browser_user_agent())
+        .header("accept", "application/json,text/plain,*/*")
+        .query(&[
+            ("client", client_name),
+            ("sl", src),
+            ("tl", dst),
+            ("dt", "t"),
+            ("ie", "UTF-8"),
+            ("oe", "UTF-8"),
+        ]);
+    let request = if dictionary {
+        let queries: Vec<_> = lines
+            .iter()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| ("q", *line))
+            .collect();
+        if queries.is_empty() {
+            return Ok(GoogleResponse::Translated(text.to_string()));
         }
-        last_error = format!("Google 翻译 HTTP {}: {}", status.as_u16(), preview(&body));
-        if status.as_u16() != 429 || attempt == 2 {
-            break;
-        }
-        // Do not let a long server cooldown keep the UI waiting indefinitely;
-        // hand control back to the caller to try the alternate host instead.
-        let wait = retry_after.unwrap_or(delay.as_secs());
-        if wait > 10 {
-            break;
-        }
-        tokio::time::sleep(Duration::from_secs(wait)).await;
-        delay *= 2;
+        request.query(&queries)
+    } else {
+        request.query(&[("q", text)])
+    };
+    let resp = request
+        .send()
+        .await
+        .map_err(|error| format!("Google 翻译请求失败: {}", error.without_url()))?;
+    let status = resp.status();
+    if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        return Ok(GoogleResponse::RateLimited(rate_limit::retry_after(
+            resp.headers(),
+        )));
     }
-    Err(last_error)
+    if !status.is_success() {
+        return Err(format!("Google 翻译 HTTP {}", status.as_u16()));
+    }
+    let body = resp
+        .text()
+        .await
+        .map_err(|error| format!("读取 Google 响应失败: {}", error.without_url()))?;
+    let output = if dictionary {
+        parse_google_dictionary(&body, &lines)
+    } else {
+        parse_google(&body)
+    }?;
+    Ok(GoogleResponse::Translated(output))
+}
+
+fn parse_google_dictionary(body: &str, lines: &[&str]) -> Result<String, String> {
+    let entries: Vec<serde_json::Value> =
+        serde_json::from_str(body).map_err(|error| format!("Google 响应解析失败: {error}"))?;
+    let mut entries = entries.iter();
+    let mut translated = Vec::with_capacity(lines.len());
+    for line in lines {
+        if line.trim().is_empty() {
+            translated.push(String::new());
+            continue;
+        }
+        let output = entries
+            .next()
+            .and_then(|value| value.as_str().or_else(|| value[0].as_str()))
+            .filter(|text| !text.trim().is_empty())
+            .ok_or_else(|| "Google 响应缺少对应译文".to_string())?;
+        translated.push(output.lines().collect::<Vec<_>>().join(" "));
+    }
+    if entries.next().is_some() {
+        return Err("Google 响应译文数量不符".to_string());
+    }
+    Ok(translated.join("\n"))
 }
 
 fn parse_google(body: &str) -> Result<String, String> {
     let v: serde_json::Value =
         serde_json::from_str(body).map_err(|e| format!("Google 响应解析失败: {e}"))?;
-    // /translate_a/t returns ["translation"] for an explicit source, or
-    // [["translation", "detected-language"]] for automatic detection.
-    if let Some(output) = v[0].as_str().or_else(|| v[0][0].as_str()) {
-        return if output.trim().is_empty() {
-            Err("Google 翻译结果为空".to_string())
-        } else {
-            Ok(output.to_string())
-        };
-    }
     let segments = v[0]
         .as_array()
         .ok_or_else(|| "Google 响应结构异常".to_string())?;
@@ -570,20 +649,25 @@ pub async fn api_translate_deepl(
         return Ok(String::new());
     }
     let client = http_client()?;
+    const ENDPOINT: &str = "https://api-free.deepl.com/v2/translate";
+    let limit = RateLimit::new("DeepL", ENDPOINT, key);
+    limit.check()?;
     let resp = client
-        .post("https://api-free.deepl.com/v2/translate")
+        .post(ENDPOINT)
         .header("authorization", format!("DeepL-Auth-Key {key}"))
         .form(&deepl_form(&text, &src, &dst))
         .send()
         .await
         .map_err(|e| format!("DeepL 请求失败: {e}"))?;
+    limit.observe(&resp)?;
     let status = resp.status();
+    let html = response_is_html(&resp);
     let body = resp
         .text()
         .await
         .map_err(|e| format!("读取响应失败: {e}"))?;
     if !status.is_success() {
-        return Err(format!("DeepL HTTP {}: {}", status.as_u16(), preview(&body)));
+        return Err(response_error("DeepL ", status, html, &body));
     }
     let v: serde_json::Value =
         serde_json::from_str(&body).map_err(|e| format!("DeepL 响应解析失败: {e}"))?;
@@ -650,11 +734,11 @@ pub async fn api_translate_index_models(base_url: String) -> Result<String, Stri
     }
     let client = openai_client(&base)?;
     let request = models_request(&client, &base, "").timeout(Duration::from_secs(12));
-    let response = request
-        .send()
-        .await
-        .and_then(reqwest::Response::error_for_status)
-        .map_err(|e| e.to_string())?;
+    let limit = openai_rate_limit(&base, "");
+    limit.check()?;
+    let response = request.send().await.map_err(|e| e.to_string())?;
+    limit.observe(&response)?;
+    let response = response.error_for_status().map_err(|e| e.to_string())?;
     response.text().await.map_err(|e| e.to_string())
 }
 
@@ -669,10 +753,13 @@ async fn test_connection_with_client(
     api_key: &str,
 ) -> Result<String, String> {
     let req = models_request(client, base, api_key);
+    let limit = openai_rate_limit(base, api_key);
+    limit.check()?;
     let resp = req
         .send()
         .await
         .map_err(|e| format!("连接失败: {e}"))?;
+    limit.observe(&resp)?;
     let status = resp.status();
     if !status.is_success() {
         return Err(format!("HTTP {}：请检查地址或密钥", status.as_u16()));
@@ -694,6 +781,7 @@ async fn test_connection_with_client(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::SystemTime;
 
     #[test]
     fn parse_completion_ok() {
@@ -808,19 +896,26 @@ mod tests {
 
     #[test]
     fn parses_google_dictionary_responses() {
-        assert_eq!(parse_google(r#"["你好\n晚安"]"#).unwrap(), "你好\n晚安");
-        assert_eq!(parse_google(r#"[["你好","ja"]]"#).unwrap(), "你好");
-        assert!(parse_google(r#"[""]"#).is_err());
-        assert!(parse_google("[]").is_err());
-        assert!(parse_google("<html>Forbidden</html>").is_err());
+        let lines = ["こんにちは", "", "おやすみなさい"];
+        assert_eq!(
+            parse_google_dictionary(r#"["你好","晚安"]"#, &lines).unwrap(),
+            "你好\n\n晚安"
+        );
+        assert_eq!(
+            parse_google_dictionary(r#"[["你好","ja"],["晚安","ja"]]"#, &lines).unwrap(),
+            "你好\n\n晚安"
+        );
+        assert!(parse_google_dictionary(r#"["你好"]"#, &lines).is_err());
+        assert!(parse_google_dictionary(r#"["你好","","晚安"]"#, &lines).is_err());
+        assert!(parse_google_dictionary("<html>Forbidden</html>", &lines).is_err());
     }
 
     #[test]
-    fn google_falls_back_after_rejected_request() {
+    fn google_falls_back_after_rejection_but_honors_rate_limit() {
         let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
         let base = format!("http://{}", server.server_addr());
         let worker = std::thread::spawn(move || {
-            for path in ["/primary", "/fallback"] {
+            for (path, status) in [("/primary", 403), ("/fallback", 200), ("/primary", 429)] {
                 let request = server
                     .recv_timeout(Duration::from_secs(5))
                     .unwrap()
@@ -828,42 +923,86 @@ mod tests {
                 let url =
                     reqwest::Url::parse(&format!("http://localhost{}", request.url())).unwrap();
                 assert_eq!(url.path(), path);
-                let query = url.query_pairs().collect::<std::collections::HashMap<_, _>>();
+                let query = url
+                    .query_pairs()
+                    .collect::<std::collections::HashMap<_, _>>();
                 assert_eq!(
                     query.get("client").unwrap(),
-                    if path == "/primary" { "dict-chrome-ex" } else { "gtx" }
+                    if path == "/primary" {
+                        "dict-chrome-ex"
+                    } else {
+                        "gtx"
+                    }
                 );
                 assert!(!query.contains_key("tk"));
-                assert_eq!(query.get("q").unwrap(), "こんにちは\nおやすみなさい");
+                assert_eq!(
+                    url.query_pairs()
+                        .filter(|(key, _)| key == "q")
+                        .map(|(_, value)| value)
+                        .collect::<Vec<_>>(),
+                    if path == "/primary" {
+                        vec!["こんにちは", "おやすみなさい"]
+                    } else {
+                        vec!["こんにちは\nおやすみなさい"]
+                    }
+                );
                 assert_eq!(query.get("sl").unwrap(), "ja");
                 assert_eq!(query.get("tl").unwrap(), "zh-CN");
-                let response = if path == "/primary" {
-                    tiny_http::Response::from_string("Forbidden").with_status_code(403)
-                } else {
-                    tiny_http::Response::from_string(
+                let response = match status {
+                    200 => tiny_http::Response::from_string(
                         r#"[[["你好\n晚安","こんにちは\nおやすみなさい",null,null,10]],null,"ja"]"#,
-                    )
+                    ),
+                    429 => tiny_http::Response::from_string("<html>Rate limited</html>")
+                        .with_status_code(429)
+                        .with_header(tiny_http::Header::from_bytes("Retry-After", "120").unwrap()),
+                    _ => tiny_http::Response::from_string("Forbidden").with_status_code(403),
                 };
                 request.respond(response).unwrap();
             }
+            assert!(
+                server
+                    .recv_timeout(Duration::from_millis(250))
+                    .unwrap()
+                    .is_none()
+            );
         });
         let runtime = tokio::runtime::Runtime::new().unwrap();
-        let result = runtime.block_on(async {
+        runtime.block_on(async {
             let client = reqwest::Client::builder().no_proxy().build().unwrap();
-            translate_google_with_client(
-                &client,
-                &[
-                    (&format!("{base}/primary"), "dict-chrome-ex"),
-                    (&format!("{base}/fallback"), "gtx"),
-                ],
-                "こんにちは\nおやすみなさい",
-                "ja",
-                "zh-CN",
-            )
-            .await
+            let cooldown = tokio::sync::Mutex::new(None);
+            let primary = format!("{base}/primary");
+            let fallback = format!("{base}/fallback");
+            let endpoints = [
+                (primary.as_str(), "dict-chrome-ex"),
+                (fallback.as_str(), "gtx"),
+            ];
+            let translate = || {
+                translate_google_with_client(
+                    &client,
+                    &cooldown,
+                    &endpoints,
+                    "こんにちは\nおやすみなさい",
+                    "ja",
+                    "zh-CN",
+                )
+            };
+            assert_eq!(translate().await.unwrap(), "你好\n晚安");
+            let error = translate().await.unwrap_err();
+            assert_eq!(error, rate_limit::message("Google 翻译", Duration::from_secs(120)));
+            assert!(
+                translate()
+                    .await
+                    .unwrap_err()
+                    .starts_with("Google 翻译 HTTP 429")
+            );
         });
         worker.join().unwrap();
-        assert_eq!(result.unwrap(), "你好\n晚安");
+
+        let mut headers = reqwest::header::HeaderMap::new();
+        let future = httpdate::fmt_http_date(SystemTime::now() + Duration::from_secs(90));
+        headers.insert(reqwest::header::RETRY_AFTER, future.parse().unwrap());
+        let wait = rate_limit::retry_after(&headers);
+        assert!(wait > Duration::from_secs(30) && wait <= Duration::from_secs(90));
     }
 
     #[test]

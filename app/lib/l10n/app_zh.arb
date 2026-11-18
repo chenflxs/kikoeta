@@ -2666,7 +2666,7 @@
   "@workPageTranslateTitlesToast2": {
     "description": "pages/work_page.dart: _translateTitles"
   },
-  "workPageTranslateTitlesFormatException": "翻译结果为空",
+  "workPageTranslateTitlesFormatException": "翻译结果不完整",
   "@workPageTranslateTitlesFormatException": {
     "description": "pages/work_page.dart: _translateTitles"
   },
@@ -2996,7 +2996,7 @@
   "@workPageOnMoreActionToast4": {
     "description": "pages/work_page.dart: _onMoreAction"
   },
-  "workPageTranslateTitlesToast7": "翻译完成（标题 + {length} 个曲目）",
+  "workPageTranslateTitlesToast7": "已翻译作品标题及 {length} 个文件或文件夹名称",
   "@workPageTranslateTitlesToast7": {
     "description": "pages/work_page.dart: _translateTitles",
     "placeholders": {

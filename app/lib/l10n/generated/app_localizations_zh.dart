@@ -2096,7 +2096,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get workPageTranslateTitlesToast2 => '未知翻译引擎';
 
   @override
-  String get workPageTranslateTitlesFormatException => '翻译结果为空';
+  String get workPageTranslateTitlesFormatException => '翻译结果不完整';
 
   @override
   String get workPageAllFilesRowText => '查看全部文件';
@@ -2313,7 +2313,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String workPageTranslateTitlesToast7(String length) {
-    return '翻译完成（标题 + $length 个曲目）';
+    return '已翻译作品标题及 $length 个文件或文件夹名称';
   }
 
   @override
@@ -5132,7 +5132,7 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String get workPageTranslateTitlesToast2 => '未知翻譯引擎';
 
   @override
-  String get workPageTranslateTitlesFormatException => '翻譯結果為空';
+  String get workPageTranslateTitlesFormatException => '翻譯結果不完整';
 
   @override
   String get workPageAllFilesRowText => '檢視全部檔案';
@@ -5349,7 +5349,7 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String workPageTranslateTitlesToast7(String length) {
-    return '翻譯完成（標題 + $length 個曲目）';
+    return '已翻譯作品標題及 $length 個檔案或資料夾名稱';
   }
 
   @override

@@ -2233,7 +2233,7 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get workPageTranslateTitlesFormatException =>
-      'Результат перевода пуст';
+      'Получен неполный результат перевода.';
 
   @override
   String get workPageAllFilesRowText => 'Показать все файлы';
@@ -2471,7 +2471,7 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String workPageTranslateTitlesToast7(String length) {
-    return 'Перевод завершён (название + треки: $length)';
+    return 'Переведено название произведения и имена файлов и папок ($length)';
   }
 
   @override

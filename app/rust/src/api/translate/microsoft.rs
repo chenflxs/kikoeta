@@ -1,4 +1,4 @@
-use super::{browser_user_agent, preview};
+use super::{browser_user_agent, preview, rate_limit, response_error, response_is_html, RateLimit};
 
 // Bing's web UI and bing-translate-api use JavaScript string length (UTF-16).
 // https://github.com/plainheart/bing-translate-api/blob/master/src/config.json
@@ -33,10 +33,11 @@ async fn translate_with_page(
         .filter(|line| !line.trim().is_empty())
         .collect::<Vec<_>>();
     let batches = batches(&nonempty)?;
-    let bing = fetch_bing_translation_config(client, page_url).await?;
+    let limit = RateLimit::new("微软翻译", page_url, "");
+    let bing = fetch_bing_translation_config(client, page_url, &limit).await?;
     let mut translated = Vec::with_capacity(nonempty.len());
     for batch in batches {
-        let output = request(client, &bing, &batch, src, dst).await?;
+        let output = request(client, &bing, &limit, &batch, src, dst).await?;
         let count = batch.split('\n').count();
         if let Some(lines) = translation_lines(&output, count) {
             translated.extend(lines);
@@ -44,7 +45,7 @@ async fn translate_with_page(
             // LLM-backed responses can merge paragraphs. Retry individual titles
             // only when batching loses boundaries, so tracks cannot shift rows.
             for line in batch.split('\n') {
-                let output = request(client, &bing, line, src, dst).await?;
+                let output = request(client, &bing, &limit, line, src, dst).await?;
                 translated.push(output.lines().map(str::trim).collect::<Vec<_>>().join(" "));
             }
         }
@@ -107,10 +108,12 @@ fn translation_lines(output: &str, expected: usize) -> Option<Vec<String>> {
 async fn request(
     client: &reqwest::Client,
     bing: &BingTranslationConfig,
+    limit: &RateLimit,
     text: &str,
     src: &str,
     dst: &str,
 ) -> Result<String, String> {
+    limit.check()?;
     let resp = client
         .post(&bing.endpoint)
         .header("user-agent", browser_user_agent())
@@ -125,41 +128,50 @@ async fn request(
         ])
         .send()
         .await
-        .map_err(|e| format!("微软翻译请求失败: {e}"))?;
+        .map_err(|e| format!("微软翻译请求失败: {}", e.without_url()))?;
+    limit.observe(&resp)?;
     let status = resp.status();
+    let html = response_is_html(&resp);
+    let wait = rate_limit::retry_after(resp.headers());
     let body = resp
         .text()
         .await
-        .map_err(|e| format!("读取微软翻译响应失败: {e}"))?;
+        .map_err(|e| format!("读取微软翻译响应失败: {}", e.without_url()))?;
     if !status.is_success() {
-        return Err(format!(
-            "微软翻译 HTTP {}: {}",
-            status.as_u16(),
-            preview(&body)
-        ));
+        return Err(response_error("微软翻译 ", status, html, &body));
     }
-    parse_response(&body)
+    let response = parse_json(&body)?;
+    if response_status(&response) == Some(429) {
+        return Err(limit.record(wait));
+    }
+    parse_response(&response)
 }
 
-fn parse_response(body: &str) -> Result<String, String> {
-    let v: serde_json::Value =
-        serde_json::from_str(body).map_err(|e| format!("微软响应解析失败: {e}"))?;
+fn parse_json(body: &str) -> Result<serde_json::Value, String> {
+    serde_json::from_str(body).map_err(|e| format!("微软响应解析失败: {e}"))
+}
+
+fn response_status(response: &serde_json::Value) -> Option<u64> {
+    response["statusCode"]
+        .as_u64()
+        .or_else(|| response["StatusCode"].as_u64())
+}
+
+fn parse_response(v: &serde_json::Value) -> Result<String, String> {
     if v["ShowCaptcha"].as_bool() == Some(true) {
         return Err("微软翻译要求验证码，请稍后重试或切换渠道".to_string());
     }
-    if let Some(code) = v["statusCode"]
-        .as_u64()
-        .or_else(|| v["StatusCode"].as_u64())
-        .filter(|code| *code >= 400)
-    {
-        if code == 401 || code == 429 {
+    if let Some(code) = response_status(v).filter(|code| *code >= 400) {
+        if code == 401 {
             return Err(format!("微软翻译授权失效或请求受限（{code}），请稍后重试"));
         }
-        let message = v["errorMessage"]
-            .as_str()
-            .filter(|message| !message.is_empty())
-            .unwrap_or("请稍后重试或切换渠道");
-        return Err(format!("微软翻译拒绝请求（{code}）：{}", preview(message)));
+        let message = preview(v["errorMessage"].as_str().unwrap_or_default());
+        let message = if message.is_empty() {
+            "请稍后重试或切换渠道"
+        } else {
+            &message
+        };
+        return Err(format!("微软翻译拒绝请求（{code}）：{message}"));
     }
     let output = v[0]["translations"][0]["text"]
         .as_str()
@@ -182,7 +194,9 @@ struct BingTranslationConfig {
 async fn fetch_bing_translation_config(
     client: &reqwest::Client,
     page_url: &str,
+    limit: &RateLimit,
 ) -> Result<BingTranslationConfig, String> {
+    limit.check()?;
     let resp = client
         .get(page_url)
         .header("user-agent", browser_user_agent())
@@ -190,6 +204,7 @@ async fn fetch_bing_translation_config(
         .send()
         .await
         .map_err(|e| format!("微软翻译页面请求失败: {e}"))?;
+    limit.observe(&resp)?;
     let status = resp.status();
     let page_url = resp.url().clone();
     let body = resp
@@ -277,6 +292,10 @@ fn microsoft_lang(code: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn parse_response(body: &str) -> Result<String, String> {
+        super::parse_response(&parse_json(body)?)
+    }
 
     #[test]
     fn batches_respect_bing_utf16_limit_and_title_boundaries() {

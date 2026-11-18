@@ -18,6 +18,9 @@ const _suppressWindow = Duration(seconds: 2);
 
 const _tracePlayback = bool.fromEnvironment('KIKOETA_PLAYBACK_TRACE');
 
+// mpv can report the timestamp of the packet just before a requested start.
+const _reconnectPositionTolerance = Duration(milliseconds: 100);
+
 /// 网络流中断后的自动重连间隔。最后一档会持续重试，避免网络恢复后仍
 /// 需要切歌才能重新建立 mpv 的媒体会话。
 const _reconnectDelays = <Duration>[
@@ -45,10 +48,23 @@ class AppPlayer {
     if (_tracePlayback) unawaited(_trace('created'));
     _subs = [
       player.stream.position.listen((d) {
+        final resumePosition = _reconnectPosition;
+        if (resumePosition != null) {
+          final attempt = _reconnectAttempt;
+          if (attempt == null ||
+              attempt.isCompleted ||
+              d <= Duration.zero ||
+              d + _reconnectPositionTolerance < resumePosition) {
+            return;
+          }
+          attempt.complete(true);
+        }
+        _position = d;
         _lastPos = d.inSeconds;
         _posCtrl.add(_lastPos);
       }),
       player.stream.duration.listen((d) {
+        if (_reconnectPosition != null && d == Duration.zero) return;
         _lastDur = d.inSeconds;
         _durCtrl.add(_lastDur);
       }),
@@ -77,6 +93,7 @@ class AppPlayer {
       player.stream.error.listen((e) {
         AppLog.recordError('playback backend', e);
         _errorCtrl.add(e.toString());
+        _finishReconnectAttempt();
         _scheduleReconnect();
       }),
     ];
@@ -117,7 +134,7 @@ class AppPlayer {
   Future<void> _audioFilterUpdates = Future<void>.value();
   String? _appliedAudioFilterChain;
 
-  /// 当前是否已打开媒体（页面可据此判断是否需要重新打开）
+  /// 当前是否已打开媒体。自动重连期间保留媒体关联。
   bool opened = false;
 
   /// 最后成功打开的原始媒体 URL（不含桌面本地代理地址）。
@@ -130,7 +147,10 @@ class AppPlayer {
   String? _remoteUrl;
   bool _playbackRequested = false;
   bool _reconnecting = false;
+  Duration? _reconnectPosition;
+  Completer<bool>? _reconnectAttempt;
 
+  Duration _position = Duration.zero;
   int _lastPos = 0;
   int _lastDur = 0;
   bool _nowPlaying = false;
@@ -160,6 +180,7 @@ class AppPlayer {
 
   /// 当前播放位置（秒）
   int get currentPosition => _lastPos;
+  Duration get currentPositionPrecise => _position;
 
   /// 当前媒体时长（秒，未知为 0）
   int get currentDuration => _lastDur;
@@ -247,16 +268,11 @@ class AppPlayer {
   }
 
   /// 打开网络音频：桌面经本地代理；Android 未启用 HTTP 代理时直连。
-  Future<void> openMediaUrl(
-    String url, {
-    bool autoplay = true,
-    bool preserveReconnect = false,
-  }) => _openSource(
+  Future<void> openMediaUrl(String url, {bool autoplay = true}) => _openSource(
     url,
     () => _resolveNetworkMedia(url),
     autoplay: autoplay,
     remote: true,
-    preserveReconnect: preserveReconnect,
   );
 
   Future<Media> _resolveNetworkMedia(String url) async {
@@ -283,42 +299,83 @@ class AppPlayer {
     Future<Media> Function() resolve, {
     required bool autoplay,
     required bool remote,
-    bool preserveReconnect = false,
+    Duration? resumePosition,
   }) {
     final generation = ++_mediaGeneration;
-    if (!preserveReconnect) _cancelReconnect();
+    if (resumePosition == null) {
+      _cancelReconnect();
+      _reconnectPosition = null;
+      _position = Duration.zero;
+      opened = false;
+      openedUrl = null;
+    }
     _playbackRequested = autoplay;
     _remoteUrl = remote ? source : null;
-    opened = false;
-    openedUrl = null;
     final operation = _enqueueMediaOperation(() async {
       if (generation != _mediaGeneration) return;
       await _stop();
       if (generation != _mediaGeneration) return;
-      final media = await resolve();
+      var media = await resolve();
       if (generation != _mediaGeneration) return;
       _suppressCompletedUntil = DateTime.now().add(_suppressWindow);
-      _lastPos = 0;
-      _lastDur = 0;
-      _posCtrl.add(0);
-      _durCtrl.add(0);
-      // Open paused so a superseded/late request can never start old audio.
-      await _trace('open-begin');
-      await player.open(media, play: false);
-      await _trace('open-end');
-      if (generation != _mediaGeneration) {
-        await _stop();
+      if (resumePosition == null) {
+        _position = Duration.zero;
+        _lastPos = 0;
+        _lastDur = 0;
+        _posCtrl.add(0);
+        _durCtrl.add(0);
+      } else if (!_reconnecting || !_playbackRequested) {
         return;
+      } else if (resumePosition > Duration.zero) {
+        // media_kit applies start in mpv's on_load hook, before playback starts.
+        media = media.copyWith(start: resumePosition);
       }
-      opened = true;
-      openedUrl = source;
-      if (_playbackRequested) await _play(generation);
-      if (generation != _mediaGeneration) {
-        await _stop();
-        return;
-      }
-      if (!preserveReconnect) {
-        _cancelReconnect();
+      final attempt = resumePosition == null ? null : Completer<bool>();
+      _reconnectAttempt = attempt;
+      try {
+        // Open paused so a superseded/late request can never start old audio.
+        await _trace('open-begin');
+        await player.open(media, play: false);
+        await _trace('open-end');
+        if (generation != _mediaGeneration) {
+          await _stop();
+          return;
+        }
+        // At position zero, the clock needs to advance to distinguish a working
+        // stream from the zero emitted by stop/open.
+        final waitBeforePlaying =
+            resumePosition != null && resumePosition > Duration.zero;
+        if (!waitBeforePlaying && _playbackRequested) await _play(generation);
+        // open() only queues the media in mpv. Wait for its playback clock to
+        // reach the checkpoint before treating the reconnect as successful.
+        final resumed = attempt == null || await attempt.future;
+        if (generation != _mediaGeneration) {
+          await _stop();
+          return;
+        }
+        if (!resumed) {
+          if (_reconnecting && _playbackRequested) {
+            throw StateError('Playback did not resume');
+          }
+          return;
+        }
+        if (waitBeforePlaying) {
+          await _play(generation);
+          if (generation != _mediaGeneration) {
+            await _stop();
+            return;
+          }
+        }
+        opened = true;
+        openedUrl = source;
+        if (resumePosition == null) {
+          _cancelReconnect();
+        } else {
+          _reconnectPosition = null;
+          _setReconnecting(false);
+        }
+      } finally {
+        _reconnectAttempt = null;
       }
     });
     return operation
@@ -335,8 +392,11 @@ class AppPlayer {
             // Invalidate late completion without cancelling the reconnect loop's
             // playback intent. The queued operation still owns native cleanup.
             _mediaGeneration++;
-            opened = false;
-            openedUrl = null;
+            _finishReconnectAttempt();
+            if (resumePosition == null) {
+              opened = false;
+              openedUrl = null;
+            }
             final error = TimeoutException(
               'Opening media timed out',
               _openTimeout,
@@ -351,6 +411,7 @@ class AppPlayer {
   Future<void> stop() {
     final generation = ++_mediaGeneration;
     _cancelReconnect();
+    _reconnectPosition = null;
     _playbackRequested = false;
     _remoteUrl = null;
     opened = false;
@@ -417,7 +478,7 @@ class AppPlayer {
 
   Future<void> play() {
     _playbackRequested = true;
-    if (_reconnecting && _remoteUrl != null) {
+    if (_reconnectPosition != null && _remoteUrl != null) {
       _cancelReconnect();
       _scheduleReconnect(immediate: true);
       return Future<void>.value();
@@ -441,7 +502,13 @@ class AppPlayer {
 
   void _cancelReconnect() {
     _reconnectGeneration++;
+    _finishReconnectAttempt();
     _setReconnecting(false);
+  }
+
+  void _finishReconnectAttempt() {
+    final attempt = _reconnectAttempt;
+    if (attempt != null && !attempt.isCompleted) attempt.complete(false);
   }
 
   void _setReconnecting(bool value) {
@@ -456,19 +523,21 @@ class AppPlayer {
   void _scheduleReconnect({bool immediate = false}) {
     final url = _remoteUrl;
     if (url == null || !_playbackRequested || _reconnecting) return;
+    final resumePosition = _reconnectPosition ??= _position;
     final generation = ++_reconnectGeneration;
     _setReconnecting(true);
-    unawaited(_reconnect(url, generation, immediate: immediate));
+    unawaited(
+      _reconnect(url, generation, resumePosition, immediate: immediate),
+    );
   }
 
   Future<void> _reconnect(
     String url,
-    int generation, {
+    int generation,
+    Duration resumePosition, {
     required bool immediate,
   }) async {
     var attempt = immediate ? -1 : 0;
-    // open() 会把 position 流归零；重试失败时仍保留第一次断流前的位置。
-    final resumePosition = Duration(seconds: _lastPos);
     while (generation == _reconnectGeneration && _playbackRequested) {
       if (attempt >= 0) {
         final delayIndex = attempt
@@ -479,25 +548,14 @@ class AppPlayer {
       }
       if (generation != _reconnectGeneration || !_playbackRequested) return;
 
-      // 位置由播放器最后一个有效 position 事件提供；网络中断后该值不会被
-      // stop() 归零，因此可从中断处附近恢复，而不是从开头重新播放。
-      opened = false;
       try {
-        await openMediaUrl(url, autoplay: true, preserveReconnect: true);
-        if (generation != _reconnectGeneration || !_playbackRequested) {
-          // 用户在 open() 尚未完成时点了暂停；仅在仍是同一媒体时补一次暂停，
-          // 不影响期间已切换到的新媒体。
-          if (_remoteUrl == url && !_playbackRequested) {
-            await player.pause();
-          }
-          return;
-        }
-        if (resumePosition > Duration.zero) {
-          try {
-            await player.seek(resumePosition);
-          } catch (_) {}
-        }
-        _setReconnecting(false);
+        await _openSource(
+          url,
+          () => _resolveNetworkMedia(url),
+          autoplay: true,
+          remote: true,
+          resumePosition: resumePosition,
+        );
         return;
       } catch (_) {
         attempt++;
@@ -513,6 +571,7 @@ class AppPlayer {
     if (generation != _mediaGeneration) return;
     opened = false;
     openedUrl = null;
+    _position = Duration.zero;
     _lastPos = 0;
     _lastDur = 0;
     _posCtrl.add(_lastPos);

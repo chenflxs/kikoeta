@@ -154,7 +154,7 @@ class LyricsTranslationService {
     return [
       for (var i = 0; i < source.length; i++)
         LyricLine(
-          source[i].t,
+          source[i].timeMs,
           source[i].jp,
           piecesByCue[i].map((piece) => translations[piece]!).join(' '),
         ),
@@ -164,9 +164,11 @@ class LyricsTranslationService {
   /// LRC stores the translated text; the original library file is untouched.
   static String toLrc(List<LyricLine> lyrics) => lyrics
       .map((cue) {
-        final minutes = (cue.t ~/ 60).toString().padLeft(2, '0');
-        final seconds = (cue.t % 60).toString().padLeft(2, '0');
-        return '[$minutes:$seconds]${cue.zh}';
+        final wholeSeconds = cue.timeMs ~/ 1000;
+        final minutes = (wholeSeconds ~/ 60).toString().padLeft(2, '0');
+        final seconds = (wholeSeconds % 60).toString().padLeft(2, '0');
+        final millis = (cue.timeMs % 1000).toString().padLeft(3, '0');
+        return '[$minutes:$seconds.$millis]${cue.zh}';
       })
       .join('\n');
 }
