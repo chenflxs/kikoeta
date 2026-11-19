@@ -9,6 +9,52 @@ class AppLocalizationsJa extends AppLocalizations {
   AppLocalizationsJa([String locale = 'ja']) : super(locale);
 
   @override
+  String get desktopLyricsShortcutScope => 'グローバルで有効';
+
+  @override
+  String desktopLyricsShortcutHint(String shortcut) {
+    return '現在のショートカット：$shortcut\n\nCtrl または Alt と、英字・数字・ナビゲーションキー・ファンクションキーのいずれかを押してください。Shift も組み合わせられます。';
+  }
+
+  @override
+  String get desktopLyricsShortcutUnavailable =>
+      'このショートカットを登録できません。Windows または別のアプリが使用している可能性があります。';
+
+  @override
+  String get workTagAdd => 'タグを追加';
+
+  @override
+  String get workTagBlacklist => 'ブラックリストに追加';
+
+  @override
+  String get workTagBlacklisted => 'ブラックリストに追加済み';
+
+  @override
+  String get workTagDownvote => '低評価';
+
+  @override
+  String get workTagUpvote => '高評価';
+
+  @override
+  String get workTagSignIn => 'タグを編集するには asmr.one にログインしてください';
+
+  @override
+  String get workTagVoteSignIn => '投票するには asmr.one にログインしてください';
+
+  @override
+  String get workTagNoMatches => '追加できるタグが見つかりません';
+
+  @override
+  String get workTagRequestFailed => 'タグの操作に失敗しました';
+
+  @override
+  String get workTagBindEmail =>
+      'asmr.one で同じアカウントにログインし、メールアドレスを連携してから、ここで再試行してください。';
+
+  @override
+  String get workTagOpenAccountSettings => 'asmr.one の設定を開く';
+
+  @override
   String get cacheWritebackSourceMissing =>
       '元のサイトが未設定のキャッシュ歌詞は、ローカルにのみ取り込みました。';
 
@@ -2682,9 +2728,6 @@ class AppLocalizationsJa extends AppLocalizations {
   String get sheetsShowOneConfigSheetHint => 'asmr.oneアカウント';
 
   @override
-  String get sheetsShowOneConfigSheetSub => 'アカウント情報はローカルにのみ保存されます（デモ）';
-
-  @override
   String get sheetsShowSleepSheetText3 => '現在のプレイリスト終了時に再生を停止して閉じる';
 
   @override
@@ -3062,6 +3105,16 @@ class AppLocalizationsJa extends AppLocalizations {
   @override
   String lyricsTranslationProgress(int completed, int total) {
     return '$completed/$total 行を翻訳済み';
+  }
+
+  @override
+  String translationFallback(String from, String to) {
+    return '$from で翻訳できませんでした。$to で再試行します。';
+  }
+
+  @override
+  String translationFallbackWithCode(String from, String code, String to) {
+    return '$from で翻訳できませんでした（エラーコード $code）。$to で再試行します。';
   }
 
   @override

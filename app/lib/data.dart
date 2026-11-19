@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'services/android_audio.dart';
 import 'services/app_log.dart';
 import 'services/audio_effects.dart';
+import 'services/desktop_lyrics_shortcut.dart';
 import 'services/dlsite_play_service.dart';
 import 'services/dictation_queue.dart';
 import 'l10n/app_language.dart';
@@ -36,6 +37,8 @@ class LanguageEdition {
   });
 }
 
+typedef WorkTagVote = ({int id, int myVote, int? upvotes, int? downvotes});
+
 class Work {
   final String rj;
   final String title;
@@ -48,6 +51,7 @@ class Work {
   final List<String> tags;
   final List<String> grayTags; // 低愿力标签（需投票，显示为灰色）
   final Map<String, Map<String, String>> tagNames;
+  final Map<String, WorkTagVote> tagVotes;
   final int grad; // 封面渐变索引
   final String? coverUrl;
   final bool hasSubtitle;
@@ -80,6 +84,7 @@ class Work {
     required this.tags,
     this.grayTags = const [],
     this.tagNames = const {},
+    this.tagVotes = const {},
     required this.grad,
     this.coverUrl,
     this.hasSubtitle = false,
@@ -106,6 +111,7 @@ class Work {
     tags: tags,
     grayTags: grayTags,
     tagNames: tagNames,
+    tagVotes: tagVotes,
     grad: grad,
     coverUrl: coverUrl,
     hasSubtitle: hasSubtitle,
@@ -386,6 +392,8 @@ class AppState extends ChangeNotifier {
   int playbackNextShortcutKey = LogicalKeyboardKey.pageDown.keyId;
   int playbackSeekBackwardShortcutKey = LogicalKeyboardKey.arrowLeft.keyId;
   int playbackSeekForwardShortcutKey = LogicalKeyboardKey.arrowRight.keyId;
+  DesktopLyricsShortcut desktopLyricsShortcut =
+      DesktopLyricsShortcut.defaultValue;
 
   // 智能路径（对齐 asmr.one：打开作品自动进入最佳目录）
   String initialPathBehavior = 'auto'; // auto / root
@@ -1212,6 +1220,11 @@ class AppState extends ChangeNotifier {
       'playback_shortcut_seek_forward',
       LogicalKeyboardKey.arrowRight.keyId,
     );
+    desktopLyricsShortcut =
+        DesktopLyricsShortcut.decode(
+          SettingsStore.get(DesktopLyricsShortcut.settingKey),
+        ) ??
+        DesktopLyricsShortcut.defaultValue;
     final ipb = SettingsStore.get('initial_path_behavior');
     if (ipb != null && ipb.isNotEmpty) initialPathBehavior = ipb;
     final mediaOnly = SettingsStore.get('media_files_only');
@@ -1581,13 +1594,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Map<String, String> get activeAiConfig => engine == 'index'
-      ? {
-          'base': 'https://index-translate.bilibili.com/v1',
-          'model': _indexModel,
-          'key': '',
-        }
-      : aiConfig;
+  Map<String, String> get indexAiConfig => {
+    'base': 'https://index-translate.bilibili.com/v1',
+    'model': _indexModel,
+    'key': '',
+  };
+
+  Map<String, String> get activeAiConfig =>
+      engine == 'index' ? indexAiConfig : aiConfig;
 
   void setIndexModel(String model) {
     final trimmed = model.trim();
@@ -1711,6 +1725,13 @@ class AppState extends ChangeNotifier {
       'playback_shortcut_seek_forward',
       '$playbackSeekForwardShortcutKey',
     );
+    notifyListeners();
+  }
+
+  void setDesktopLyricsShortcut(DesktopLyricsShortcut shortcut) {
+    if (shortcut == desktopLyricsShortcut) return;
+    SettingsStore.set(DesktopLyricsShortcut.settingKey, shortcut.encode());
+    desktopLyricsShortcut = shortcut;
     notifyListeners();
   }
 
@@ -2288,6 +2309,7 @@ class AppState extends ChangeNotifier {
     playbackNextShortcutKey = LogicalKeyboardKey.pageDown.keyId;
     playbackSeekBackwardShortcutKey = LogicalKeyboardKey.arrowLeft.keyId;
     playbackSeekForwardShortcutKey = LogicalKeyboardKey.arrowRight.keyId;
+    desktopLyricsShortcut = DesktopLyricsShortcut.defaultValue;
     initialPathBehavior = 'auto';
     mediaFilesOnly = false;
     sePreference = true;

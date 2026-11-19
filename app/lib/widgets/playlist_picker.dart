@@ -789,6 +789,7 @@ class _PlaylistPickerSheetState extends State<_PlaylistPickerSheet> {
     return InkWell(
       onTap: _busy ? null : onTap,
       onLongPress: _busy ? null : onLongPress,
+      onSecondaryTap: _busy ? null : onLongPress,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
         child: Row(

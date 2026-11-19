@@ -104,6 +104,90 @@ abstract class AppLocalizations {
     Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hant'),
   ];
 
+  /// No description provided for @desktopLyricsShortcutScope.
+  ///
+  /// In zh, this message translates to:
+  /// **'全局生效'**
+  String get desktopLyricsShortcutScope;
+
+  /// Windows desktop lyrics shortcut recorder
+  ///
+  /// In zh, this message translates to:
+  /// **'当前组合键：{shortcut}\n\n按 Ctrl 或 Alt 加字母、数字、导航键或功能键，可再加 Shift。'**
+  String desktopLyricsShortcutHint(String shortcut);
+
+  /// No description provided for @desktopLyricsShortcutUnavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法注册此组合键，可能已被 Windows 或其他应用占用'**
+  String get desktopLyricsShortcutUnavailable;
+
+  /// No description provided for @workTagAdd.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加标签'**
+  String get workTagAdd;
+
+  /// No description provided for @workTagBlacklist.
+  ///
+  /// In zh, this message translates to:
+  /// **'加入黑名单'**
+  String get workTagBlacklist;
+
+  /// No description provided for @workTagBlacklisted.
+  ///
+  /// In zh, this message translates to:
+  /// **'已加入黑名单'**
+  String get workTagBlacklisted;
+
+  /// No description provided for @workTagDownvote.
+  ///
+  /// In zh, this message translates to:
+  /// **'点踩'**
+  String get workTagDownvote;
+
+  /// No description provided for @workTagUpvote.
+  ///
+  /// In zh, this message translates to:
+  /// **'点赞'**
+  String get workTagUpvote;
+
+  /// No description provided for @workTagSignIn.
+  ///
+  /// In zh, this message translates to:
+  /// **'登录 one 站后可编辑作品标签'**
+  String get workTagSignIn;
+
+  /// No description provided for @workTagVoteSignIn.
+  ///
+  /// In zh, this message translates to:
+  /// **'登录 one 站后可投票'**
+  String get workTagVoteSignIn;
+
+  /// No description provided for @workTagNoMatches.
+  ///
+  /// In zh, this message translates to:
+  /// **'未找到可添加的标签'**
+  String get workTagNoMatches;
+
+  /// No description provided for @workTagRequestFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'标签操作失败'**
+  String get workTagRequestFailed;
+
+  /// No description provided for @workTagBindEmail.
+  ///
+  /// In zh, this message translates to:
+  /// **'请在 one 站登录同一账号，绑定邮箱后回来重试。'**
+  String get workTagBindEmail;
+
+  /// No description provided for @workTagOpenAccountSettings.
+  ///
+  /// In zh, this message translates to:
+  /// **'前往 one 站设置'**
+  String get workTagOpenAccountSettings;
+
   /// No description provided for @cacheWritebackSourceMissing.
   ///
   /// In zh, this message translates to:
@@ -4846,12 +4930,6 @@ abstract class AppLocalizations {
   /// **'asmr.one 账号'**
   String get sheetsShowOneConfigSheetHint;
 
-  /// sheets.dart: showOneConfigSheet
-  ///
-  /// In zh, this message translates to:
-  /// **'账号信息仅保存在本地（演示）'**
-  String get sheetsShowOneConfigSheetSub;
-
   /// sheets.dart: showSleepSheet
   ///
   /// In zh, this message translates to:
@@ -5529,6 +5607,18 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'已翻译 {completed}/{total} 行'**
   String lyricsTranslationProgress(int completed, int total);
+
+  /// No description provided for @translationFallback.
+  ///
+  /// In zh, this message translates to:
+  /// **'{from} 翻译失败，改用 {to} 重试。'**
+  String translationFallback(String from, String to);
+
+  /// No description provided for @translationFallbackWithCode.
+  ///
+  /// In zh, this message translates to:
+  /// **'{from} 翻译失败（错误码 {code}），改用 {to} 重试。'**
+  String translationFallbackWithCode(String from, String code, String to);
 
   /// No description provided for @lyricsTranslationSaved.
   ///

@@ -9,6 +9,52 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
+  String get desktopLyricsShortcutScope => 'Works globally';
+
+  @override
+  String desktopLyricsShortcutHint(String shortcut) {
+    return 'Current shortcut: $shortcut\n\nPress Ctrl or Alt with a letter, number, navigation key, or function key. Shift is optional.';
+  }
+
+  @override
+  String get desktopLyricsShortcutUnavailable =>
+      'This shortcut could not be registered. Windows or another app may already use it.';
+
+  @override
+  String get workTagAdd => 'Add tags';
+
+  @override
+  String get workTagBlacklist => 'Add to blacklist';
+
+  @override
+  String get workTagBlacklisted => 'Blacklisted';
+
+  @override
+  String get workTagDownvote => 'Dislike';
+
+  @override
+  String get workTagUpvote => 'Like';
+
+  @override
+  String get workTagSignIn => 'Sign in to asmr.one to edit work tags';
+
+  @override
+  String get workTagVoteSignIn => 'Sign in to asmr.one to vote';
+
+  @override
+  String get workTagNoMatches => 'No tags available to add';
+
+  @override
+  String get workTagRequestFailed => 'Tag action failed';
+
+  @override
+  String get workTagBindEmail =>
+      'Sign in to the same account on asmr.one, link your email, then try again here.';
+
+  @override
+  String get workTagOpenAccountSettings => 'Open asmr.one settings';
+
+  @override
   String get cacheWritebackSourceMissing =>
       'Some cached lyrics were imported locally only because their source site is not configured.';
 
@@ -2801,10 +2847,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sheetsShowOneConfigSheetHint => 'asmr.one account';
 
   @override
-  String get sheetsShowOneConfigSheetSub =>
-      'Account information is stored locally only (demo)';
-
-  @override
   String get sheetsShowSleepSheetText3 =>
       'Stop playback and close when the current playlist ends';
 
@@ -3202,6 +3244,16 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String lyricsTranslationProgress(int completed, int total) {
     return 'Translated $completed/$total lines';
+  }
+
+  @override
+  String translationFallback(String from, String to) {
+    return '$from translation failed. Retrying with $to.';
+  }
+
+  @override
+  String translationFallbackWithCode(String from, String code, String to) {
+    return '$from translation failed (error $code). Retrying with $to.';
   }
 
   @override

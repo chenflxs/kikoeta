@@ -711,6 +711,10 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
     final cards = _filteredCards;
     final visibleCount = _visibleCount.clamp(0, cards.length);
     final itemCount = _hasTypeFilter ? cards.length : _cards.length;
+    final deepRefresh =
+        _source == 'remote' || _loading || _importing || _deleting
+        ? null
+        : _deepRefresh;
     final selectableIds = _selecting
         ? cards.map((card) => card.workId).toSet()
         : const <String>{};
@@ -810,10 +814,8 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
                 : context.l10n.lyricsLibraryPageBuildHint,
             child: InkResponse(
               onTap: _loading || _importing || _deleting ? null : _refresh,
-              onLongPress:
-                  _source == 'remote' || _loading || _importing || _deleting
-                  ? null
-                  : _deepRefresh,
+              onLongPress: deepRefresh,
+              onSecondaryTap: deepRefresh,
               radius: 24,
               child: SizedBox(
                 width: 48,
@@ -940,6 +942,9 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
                               final isAi =
                                   !isTranslated && _aiWorkIds.contains(id);
                               final isOnline = _onlineWorkIds.contains(id);
+                              final confirmDelete = _selecting
+                                  ? null
+                                  : () => _confirmDeleteWork(id);
                               return Stack(
                                 key: ValueKey(card),
                                 fit: StackFit.expand,
@@ -948,9 +953,8 @@ class _LyricsLibraryPageState extends State<LyricsLibraryPage> {
                                     onTap: () => _selecting
                                         ? _toggleSelection(id)
                                         : _showFiles(card),
-                                    onLongPress: _selecting
-                                        ? null
-                                        : () => _confirmDeleteWork(id),
+                                    onLongPress: confirmDelete,
+                                    onSecondaryTap: confirmDelete,
                                     borderRadius: BorderRadius.circular(8),
                                     child: Container(
                                       padding: const EdgeInsets.fromLTRB(
@@ -1399,36 +1403,41 @@ class _LyricsLibraryImportDialogState
         onReorderItem: _reorder,
         itemBuilder: (context, index) {
           final url = _remoteUrls[index];
+          final removeLibrary = _busy ? null : () => _removeRemoteLibrary(url);
           return Card(
             key: ValueKey(url),
             margin: const EdgeInsets.only(bottom: 4),
-            child: ListTile(
-              dense: true,
-              contentPadding: const EdgeInsets.only(left: 4, right: 2),
-              leading: ReorderableDragStartListener(
-                index: index,
-                child: const Padding(
-                  padding: EdgeInsets.all(8),
-                  child: Icon(Icons.drag_handle, size: 20),
+            child: GestureDetector(
+              onSecondaryTap: removeLibrary,
+              child: ListTile(
+                dense: true,
+                contentPadding: const EdgeInsets.only(left: 4, right: 2),
+                leading: ReorderableDragStartListener(
+                  index: index,
+                  child: const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Icon(Icons.drag_handle, size: 20),
+                  ),
                 ),
-              ),
-              title: Text(url, maxLines: 1, overflow: TextOverflow.ellipsis),
-              subtitle: Text(
-                context.l10n.lyricsLibraryPageRemoteSourceListText2(
-                  (index + 1).toString(),
+                title: Text(url, maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: Text(
+                  context.l10n.lyricsLibraryPageRemoteSourceListText2(
+                    (index + 1).toString(),
+                  ),
                 ),
-              ),
-              onLongPress: _busy ? null : () => _removeRemoteLibrary(url),
-              trailing: IconButton(
-                tooltip: context.l10n.lyricsLibraryPageRemoteSourceListTooltip,
-                onPressed: _busy ? null : () => _refreshOne(url),
-                icon: _refreshingUrl == url || _removingUrl == url
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.refresh),
+                onLongPress: removeLibrary,
+                trailing: IconButton(
+                  tooltip:
+                      context.l10n.lyricsLibraryPageRemoteSourceListTooltip,
+                  onPressed: _busy ? null : () => _refreshOne(url),
+                  icon: _refreshingUrl == url || _removingUrl == url
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh),
+                ),
               ),
             ),
           );

@@ -478,7 +478,6 @@ Future<bool?> showOneConfigSheet(
         child: formSheet(
           context: ctx,
           title: context.l10n.sheetsShowOneConfigSheetTitle,
-          sub: context.l10n.sheetsShowOneConfigSheetSub,
           children: [
             sheetField(
               ctx,

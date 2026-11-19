@@ -292,25 +292,31 @@ class _DictationQueueListState extends State<DictationQueueList> {
             color: color,
             size: 20,
           );
+    void showActions() => _showActions(context, entry);
+
     final body = single
         ? Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              ListTile(
-                dense: true,
-                minTileHeight: 72,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                leading: leading,
-                title: title,
-                subtitle: subtitle,
-                onLongPress: () => _showActions(context, entry),
+              GestureDetector(
+                onSecondaryTap: showActions,
+                child: ListTile(
+                  dense: true,
+                  minTileHeight: 72,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                  leading: leading,
+                  title: title,
+                  subtitle: subtitle,
+                  onLongPress: showActions,
+                ),
               ),
               Divider(height: 1, indent: 12, endIndent: 12, color: p.line),
               _tracks(context, entry),
             ],
           )
         : GestureDetector(
-            onLongPress: () => _showActions(context, entry),
+            onLongPress: showActions,
+            onSecondaryTap: showActions,
             child: ExpansionTile(
               key: PageStorageKey(entry),
               dense: true,

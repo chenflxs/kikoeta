@@ -14,16 +14,17 @@ import '../services/download_service.dart';
 import '../services/dictation_media_matcher.dart';
 import '../services/media_selection.dart';
 import '../services/media_tree.dart';
+import '../services/translation_service.dart';
 import '../services/work_title_translation.dart';
 import '../services/works_page_buffer.dart';
 import '../smooth_scroll.dart';
 import '../src/rust/api/kikoeru_api.dart';
 import '../src/rust/api/textcodec.dart';
-import '../src/rust/api/translate.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import '../widgets/media_tree_sliver.dart';
 import '../widgets/playlist_picker.dart';
+import '../widgets/work_tag_dialogs.dart';
 import 'dictation_translation_page.dart';
 import '../l10n/strings.dart';
 
@@ -273,6 +274,10 @@ class _WorkPageState extends State<WorkPage> {
   final Map<String, GlobalKey> _rowKeys = {};
   List<String>? _smartTarget; // 智能路径自动进入的目录（标题链），用于「查看全部文件」
   late int _seenLoginEpoch;
+  late final int _workServerEpoch;
+  int _workDetailsRequest = 0;
+  Work? _tagDetails;
+  bool _tagDialogOpen = false;
   bool _translating = false;
   List<LanguageEdition> _languageEditions = const [];
   bool _openingLanguageEdition = false;
@@ -296,6 +301,7 @@ class _WorkPageState extends State<WorkPage> {
   @override
   void initState() {
     super.initState();
+    _workServerEpoch = app.serverEpoch;
     _seenLoginEpoch = app.loginEpoch;
     _seenSimilarScope = _similarScope;
     _languageEditions = work.languageEditions;
@@ -322,9 +328,11 @@ class _WorkPageState extends State<WorkPage> {
   }
 
   void _onAppChanged() {
-    if (downloadItem == null && app.loginEpoch != _seenLoginEpoch) {
+    if (app.loginEpoch != _seenLoginEpoch) {
       _seenLoginEpoch = app.loginEpoch;
-      _loadTracks();
+      _tagDetails = null;
+      if (downloadItem == null) _loadTracks();
+      if (_isOneTagWork) _loadWorkDetails();
     }
     final scope = _similarScope;
     if (scope != _seenSimilarScope) {
@@ -505,17 +513,25 @@ class _WorkPageState extends State<WorkPage> {
     final id = work.apiId;
     if (id == null) return;
     final epoch = app.serverEpoch;
+    final loginEpoch = app.loginEpoch;
+    final request = ++_workDetailsRequest;
     final favoriteVersion = app.favVersion;
     final previousProgress = _myProgress;
     try {
       final details = await ApiService.fetchWork(app, id);
-      if (!mounted || app.serverEpoch != epoch) return;
+      if (!mounted ||
+          app.serverEpoch != epoch ||
+          app.loginEpoch != loginEpoch ||
+          request != _workDetailsRequest) {
+        return;
+      }
       if (details.hasReview != null &&
           (!app.isDlsite || app.favVersion == favoriteVersion)) {
         app.syncFavoriteFromServer(work, details.hasReview!);
       }
       if (mounted) {
         setState(() {
+          if (_isOneTagWork) _tagDetails = details;
           _languageEditions = app.isDlsite
               ? const []
               : details.languageEditions;
@@ -1167,7 +1183,7 @@ class _WorkPageState extends State<WorkPage> {
     Navigator.of(context).pop();
   }
 
-  void _onDeleteWorkLongPress() {
+  void _onDeleteWorkMenuAction() {
     Navigator.of(context).pop();
     Future<void>.delayed(Duration.zero, _confirmDeleteWork);
   }
@@ -1183,6 +1199,9 @@ class _WorkPageState extends State<WorkPage> {
         return;
       case 'review':
         await _openReviewDialog();
+        return;
+      case 'addTag':
+        await _openAddTags();
         return;
       case 'addToPlaylist':
         await _editPlaylistMembership();
@@ -1832,12 +1851,18 @@ class _WorkPageState extends State<WorkPage> {
           : TextDecoration.lineThrough,
       decorationColor: p.dim,
     );
+    Future<void> copyName() async {
+      final l10n = context.l10n;
+      await Clipboard.setData(ClipboardData(text: n.title));
+      if (mounted) _toast(l10n.workPageNodeRowToast(n.title));
+    }
+
+    void toggleSelection() =>
+        setState(() => _selection.toggle(n, _tree ?? const []));
+
     return InkWell(
-      onLongPress: () async {
-        final l10n = context.l10n;
-        await Clipboard.setData(ClipboardData(text: n.title));
-        if (mounted) _toast(l10n.workPageNodeRowToast((n.title).toString()));
-      },
+      onLongPress: copyName,
+      onSecondaryTap: copyName,
       onTap: () {
         if (n.isDir) {
           setState(() {
@@ -1909,6 +1934,7 @@ class _WorkPageState extends State<WorkPage> {
               onPointerCancel: (_) => _onSelectPointerUp,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
+                onSecondaryTap: toggleSelection,
                 onLongPressStart: (_) => _beginDragSelect(n),
                 onLongPressMoveUpdate: (details) =>
                     _onDragMove(details.globalPosition),
@@ -1921,8 +1947,7 @@ class _WorkPageState extends State<WorkPage> {
                     value: checked,
                     activeColor: p.accent,
                     visualDensity: VisualDensity.compact,
-                    onChanged: (_) =>
-                        setState(() => _selection.toggle(n, _tree ?? const [])),
+                    onChanged: (_) => toggleSelection(),
                   ),
                 ),
               ),
@@ -1972,7 +1997,8 @@ class _WorkPageState extends State<WorkPage> {
                   value: 'deleteLocal',
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onLongPress: _onDeleteWorkLongPress,
+                    onLongPress: _onDeleteWorkMenuAction,
+                    onSecondaryTap: _onDeleteWorkMenuAction,
                     child: _WorkMenuEntry(
                       icon: Icons.delete_outline,
                       label: context.l10n.delete,
@@ -2007,6 +2033,14 @@ class _WorkPageState extends State<WorkPage> {
                   child: _WorkMenuEntry(
                     icon: Icons.chat_bubble_outline,
                     label: context.l10n.workPageBuildLabel,
+                  ),
+                ),
+              if (_isOneTagWork)
+                PopupMenuItem(
+                  value: 'addTag',
+                  child: _WorkMenuEntry(
+                    icon: Icons.label_outline,
+                    label: context.l10n.workTagAdd,
                   ),
                 ),
               if (!app.isDlsite)
@@ -2217,6 +2251,7 @@ class _WorkPageState extends State<WorkPage> {
                         Expanded(
                           child: GestureDetector(
                             onLongPress: _pickEngine,
+                            onSecondaryTap: _pickEngine,
                             child: OutlinedButton.icon(
                               onPressed: _translating ? null : _translateTitles,
                               icon: _translating
@@ -2293,14 +2328,16 @@ class _WorkPageState extends State<WorkPage> {
                       spacing: 7,
                       runSpacing: 7,
                       children: [
-                        ...work.tags.map(
-                          (t) => _tagChip(
-                            work.tagLabel(t, Localizations.localeOf(context)),
-                            gray: work.grayTags.contains(t),
-                            onTap: () => _searchAndBack(t),
-                            onLongPress: () => _blacklistTag(t),
+                        for (final tag in _tagWork.tags)
+                          _tagChip(
+                            _tagWork.tagLabel(
+                              tag,
+                              Localizations.localeOf(context),
+                            ),
+                            gray: _tagWork.grayTags.contains(tag),
+                            onTap: () => _searchAndBack(tag),
+                            onLongPress: () => _openTagActions(tag),
                           ),
-                        ),
                       ],
                     ),
                     const SizedBox(height: 18),
@@ -2761,7 +2798,7 @@ class _WorkPageState extends State<WorkPage> {
     );
   }
 
-  /// 作品标签 chip：灰色标签为低愿力样式；点击搜索、长按加入黑名单
+  /// 作品标签点击搜索，长按或鼠标右键显示可用操作。
   Widget _tagChip(
     String t, {
     required bool gray,
@@ -2771,6 +2808,7 @@ class _WorkPageState extends State<WorkPage> {
     return GestureDetector(
       onTap: onTap,
       onLongPress: onLongPress,
+      onSecondaryTap: onLongPress,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
@@ -2885,6 +2923,94 @@ class _WorkPageState extends State<WorkPage> {
     }
   }
 
+  bool get _isOneTagWork =>
+      app.serverEpoch == _workServerEpoch &&
+      (downloadItem == null ||
+          downloadItem!.server == ApiService.resolveBase(app)) &&
+      ApiService.supportsWorkTagVoting(app, work);
+
+  Work get _tagWork => _isOneTagWork ? _tagDetails ?? work : work;
+
+  bool _currentTagAction(int loginEpoch) =>
+      mounted && _isOneTagWork && app.loginEpoch == loginEpoch;
+
+  Future<void> _openAddTags() async {
+    if (!_isOneTagWork || _tagDialogOpen) return;
+    if (!ApiService.canEditWorkTags(app, work)) {
+      _toast(context.l10n.workTagSignIn);
+      return;
+    }
+    _tagDialogOpen = true;
+    final loginEpoch = app.loginEpoch;
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (_) => AddWorkTagsDialog(
+          attachedIds: _tagWork.tagVotes.values.map((tag) => tag.id).toSet(),
+          attachedNames: _tagWork.tags.toSet(),
+          loadTags: () => _currentTagAction(loginEpoch)
+              ? ApiService.fetchAdvancedFilterEntries(app, 'tags')
+              : Future.value(const <AdvancedFilterEntry>[]),
+          onSubmit: (ids) async {
+            if (!_currentTagAction(loginEpoch)) return;
+            await ApiService.attachWorkTags(app, work, ids);
+            if (_currentTagAction(loginEpoch)) await _loadWorkDetails();
+          },
+        ),
+      );
+    } finally {
+      _tagDialogOpen = false;
+    }
+  }
+
+  Future<void> _openTagActions(String tag) async {
+    if (_tagDialogOpen) return;
+    if (!_tagWork.grayTags.contains(tag) || !_isOneTagWork) {
+      await _blacklistTag(tag);
+      return;
+    }
+    _tagDialogOpen = true;
+    final loginEpoch = app.loginEpoch;
+    try {
+      final canVote = ApiService.canEditWorkTags(app, work);
+      if (!_tagWork.tagVotes.containsKey(tag)) {
+        await _loadWorkDetails();
+      }
+      if (!mounted || !_currentTagAction(loginEpoch)) return;
+      final metadata = _tagWork.tagVotes[tag];
+      final isBlacklisted = app.blacklist.any(
+        (entry) => entry['type'] == 'tag' && entry['value'] == tag,
+      );
+      final label = _tagWork.tagLabel(tag, Localizations.localeOf(context));
+      await showDialog<void>(
+        context: context,
+        builder: (_) => GrayTagActionsDialog(
+          label: label,
+          votes: metadata,
+          needsSignIn: !canVote,
+          onBlacklist: isBlacklisted
+              ? null
+              : () => app.toggleBlacklist('tag', tag),
+          onVote: canVote && metadata != null
+              ? (status) async {
+                  if (!_currentTagAction(loginEpoch)) {
+                    throw StateError('Work tag voting scope changed');
+                  }
+                  await ApiService.voteWorkTag(app, work, metadata.id, status);
+                  if (!_currentTagAction(loginEpoch)) return null;
+                  await _loadWorkDetails();
+                  if (!_currentTagAction(loginEpoch)) return null;
+                  final updated = _tagDetails?.tagVotes[tag];
+                  return updated?.myVote == status ? updated : null;
+                }
+              : null,
+        ),
+      );
+    } finally {
+      _tagDialogOpen = false;
+    }
+  }
+
   /// 长按标签：确认加入黑名单
   Future<void> _blacklistTag(String t) async {
     final l10n = context.l10n;
@@ -2895,7 +3021,7 @@ class _WorkPageState extends State<WorkPage> {
         title: Text(l10n.workPageOkText),
         content: Text(
           l10n.workPageOkText2(
-            work.tagLabel(t, Localizations.localeOf(context)),
+            _tagWork.tagLabel(t, Localizations.localeOf(context)),
           ),
           style: TextStyle(fontSize: 13.5, color: p.text, height: 1.5),
         ),
@@ -2925,22 +3051,17 @@ class _WorkPageState extends State<WorkPage> {
       _toast(l10n.workPageTranslateTitlesToast);
       return;
     }
-    final engine = app.engine;
-    final config = Map<String, String>.of(app.activeAiConfig);
-    final deeplKey = app.deeplKey;
-    if (engine == 'openai' || engine == 'index') {
-      if ((config['base'] ?? '').trim().isEmpty ||
-          (config['model'] ?? '').trim().isEmpty) {
-        _toast(l10n.workPageTranslateTitlesToast4);
-        return;
-      }
-    } else if (engine == 'deepl') {
-      if (deeplKey.trim().isEmpty) {
-        _toast(l10n.workPageTranslateTitlesToast6);
-        return;
-      }
-    } else if (engine != 'google' && engine != 'microsoft') {
-      _toast(l10n.workPageTranslateTitlesToast2);
+    String? fallbackNotice;
+    final translator = TranslationService.fromApp(
+      app,
+      onFallback: (fallback) {
+        final message = fallback.message(l10n);
+        fallbackNotice = message;
+        _toast(message, duration: const Duration(seconds: 4));
+      },
+    );
+    if (translator.configurationError(l10n) case final error?) {
+      _toast(error);
       return;
     }
     final tree = _tree;
@@ -2952,8 +3073,6 @@ class _WorkPageState extends State<WorkPage> {
       );
       return;
     }
-    final target = app.resolvedTranslationTarget;
-    final source = app.translationSource;
     final serverEpoch = app.serverEpoch;
     final loginEpoch = app.loginEpoch;
     bool isCurrent() =>
@@ -2962,50 +3081,37 @@ class _WorkPageState extends State<WorkPage> {
         identical(_tree, tree) &&
         app.serverEpoch == serverEpoch &&
         app.loginEpoch == loginEpoch &&
-        app.engine == engine &&
-        app.resolvedTranslationTarget == target &&
-        app.translationSource == source;
+        app.engine == translator.engine &&
+        app.resolvedTranslationTarget == translator.targetLanguage &&
+        app.translationSource == translator.sourceLanguage;
 
     setState(() => _translating = true);
     try {
       final result = await translateWorkTitles(
         title: work.title,
         nodes: _indexForTree().rows.map((row) => row.node),
-        engine: engine,
+        engine: translator.engine,
         isCurrent: isCurrent,
         invalidResponse: l10n.workPageTranslateTitlesFormatException,
-        request: (text) => switch (engine) {
-          'google' => apiTranslateGoogle(text: text, src: source, dst: target),
-          'microsoft' => apiTranslateMicrosoft(
-            text: text,
-            src: source,
-            dst: target,
-          ),
-          'deepl' => apiTranslateDeepl(
-            text: text,
-            src: source,
-            dst: target,
-            apiKey: deeplKey,
-          ),
-          _ => apiTranslateOpenai(
-            baseUrl: config['base']!,
-            model: config['model']!,
-            apiKey: config['key'] ?? '',
-            text:
-                '[[KIKOETA_TARGET:$target]]\n[[KIKOETA_SOURCE:$source]]\n$text',
-            temperature: 0.2,
-          ),
-        },
+        request: (text) => translator.translate(text, isCurrent: isCurrent),
       );
       if (result == null || !isCurrent()) return;
       app.saveTranslated(rj, result.title, result.names);
-      _toast(
-        l10n.workPageTranslateTitlesToast7(result.names.length.toString()),
+      final message = l10n.workPageTranslateTitlesToast7(
+        result.names.length.toString(),
       );
+      final notice = fallbackNotice;
+      if (notice == null) {
+        _toast(message);
+      } else {
+        _toast('$notice\n$message', duration: const Duration(seconds: 4));
+      }
     } catch (e) {
       if (isCurrent()) {
+        final message = l10n.workPageTranslateTitlesToast3(e.toString());
+        final notice = fallbackNotice;
         _toast(
-          l10n.workPageTranslateTitlesToast3(e.toString()),
+          notice == null ? message : '$notice\n$message',
           duration: const Duration(seconds: 6),
         );
       }

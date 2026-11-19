@@ -1,6 +1,6 @@
 import '../data.dart';
 import '../l10n/strings.dart';
-import '../src/rust/api/translate.dart';
+import 'translation_service.dart';
 
 class LyricsTranslationCancelled implements Exception {}
 
@@ -14,56 +14,25 @@ class LyricsTranslationService {
     this.requestGap = const Duration(milliseconds: 350),
   });
 
-  factory LyricsTranslationService.fromApp(AppState app) {
-    final engine = app.engine;
-    final source = app.translationSource;
-    final target = app.resolvedTranslationTarget;
-    final config = Map<String, String>.of(app.activeAiConfig);
-    final key = app.deeplKey;
-    final ai = engine == 'openai' || engine == 'index';
-    if (ai &&
-        ((config['base'] ?? '').trim().isEmpty ||
-            (config['model'] ?? '').trim().isEmpty)) {
-      throw StateError(appL10n.workPageTranslateTitlesToast4);
-    }
-    if (engine == 'deepl' && key.trim().isEmpty) {
-      throw StateError(appL10n.workPageTranslateTitlesToast6);
-    }
-    if (!ai && !const {'google', 'microsoft', 'deepl'}.contains(engine)) {
-      throw StateError(appL10n.workPageTranslateTitlesToast2);
+  factory LyricsTranslationService.fromApp(
+    AppState app, {
+    void Function(TranslationFallback)? onFallback,
+  }) {
+    final translator = TranslationService.fromApp(app, onFallback: onFallback);
+    if (translator.configurationError(appL10n) case final error?) {
+      throw StateError(error);
     }
     return LyricsTranslationService(
-      isAi: ai,
-      targetLanguage: target,
-      request: (text) => switch (engine) {
-        'google' => apiTranslateGoogle(text: text, src: source, dst: target),
-        'microsoft' => apiTranslateMicrosoft(
-          text: text,
-          src: source,
-          dst: target,
-        ),
-        'deepl' => apiTranslateDeepl(
-          text: text,
-          src: source,
-          dst: target,
-          apiKey: key,
-        ),
-        _ => apiTranslateOpenai(
-          baseUrl: config['base']!,
-          model: config['model']!,
-          apiKey: config['key'] ?? '',
-          temperature: 0.2,
-          text:
-              '[[KIKOETA_TARGET:$target]]\n[[KIKOETA_SOURCE:$source]]\n'
-              '[[KIKOETA_LYRICS]]\n$text',
-        ),
-      },
+      isAi: translator.isAi,
+      targetLanguage: translator.targetLanguage,
+      request: (text, {isCurrent}) =>
+          translator.translate(text, lyrics: true, isCurrent: isCurrent),
     );
   }
 
   final bool isAi;
   final String targetLanguage;
-  final Future<String> Function(String) request;
+  final Future<String> Function(String, {bool Function()? isCurrent}) request;
   final Duration requestGap;
 
   Future<List<LyricLine>> translate(
@@ -114,7 +83,10 @@ class LyricsTranslationService {
       if (requested) await Future<void>.delayed(requestGap);
       checkCancelled();
       requested = true;
-      final output = await request(batch.join('\n'));
+      final output = await request(
+        batch.join('\n'),
+        isCurrent: () => !(isCancelled?.call() ?? false),
+      );
       checkCancelled();
       final lines = isAi
           ? output.replaceAll('\r\n', '\n').trim().split('\n')

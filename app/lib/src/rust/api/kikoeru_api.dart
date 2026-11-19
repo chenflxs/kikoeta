@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `append_custom_params`, `append_filter_params`, `auth_header`, `base_of`, `clear_progress_body`, `clear_rating_body`, `create_playlist_body`, `edit_playlist_body`, `http_client`, `http_delete`, `http_get`, `http_post_json`, `http_put_json`, `neighbors_body`, `origin_of`, `recommender_body`, `review_body`, `urlencoding`
+// These functions are ignored because they are not marked as `pub`: `append_custom_params`, `append_filter_params`, `auth_header`, `base_of`, `clear_progress_body`, `clear_rating_body`, `complete_playlist_works`, `create_playlist_body`, `edit_playlist_body`, `http_client`, `http_delete`, `http_get`, `http_post_json`, `http_put_json`, `neighbors_body`, `origin_of`, `post_one_work_tag`, `recommender_body`, `remove_works_body`, `review_body`, `urlencoding`
 
 /// 作品列表：GET /api/works?page=&per_page=&order=&sort=&subtitle=&seed=
 Future<String> apiGetWorks({
@@ -261,6 +261,9 @@ Future<String> apiPlaylistAddWorks({
 );
 
 /// 从歌单移除作品：POST /api/playlist/remove-works-from-playlist
+///
+/// one 站该接口要求作品数字 id（`works: [1367541]`），这里把传入的
+/// 字符串 id 尽量转成数字，解析失败时保持字符串兜底。
 Future<String> apiPlaylistRemoveWorks({
   required String base,
   required String playlistId,
@@ -280,6 +283,24 @@ Future<String> apiCreateFavoriteReview({
   base: base,
   userName: userName,
   workId: workId,
+);
+
+Future<void> apiAttachOneWorkTags({
+  required BigInt workId,
+  required Uint64List tagIds,
+}) => RustLib.instance.api.crateApiKikoeruApiApiAttachOneWorkTags(
+  workId: workId,
+  tagIds: tagIds,
+);
+
+Future<void> apiVoteOneWorkTag({
+  required BigInt workId,
+  required BigInt tagId,
+  required int status,
+}) => RustLib.instance.api.crateApiKikoeruApiApiVoteOneWorkTag(
+  workId: workId,
+  tagId: tagId,
+  status: status,
 );
 
 /// 提交评价与标记：PUT /api/review

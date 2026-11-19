@@ -7,6 +7,12 @@ import '../services/app_log.dart';
 import '../services/lyrics_hub.dart';
 import '../services/lyrics_library_service.dart';
 import '../services/lyrics_translation_service.dart';
+import '../services/translation_service.dart';
+
+typedef LyricsTranslationResult = ({
+  String path,
+  TranslationFallback? fallback,
+});
 
 class LyricsTranslationDialog extends StatefulWidget {
   const LyricsTranslationDialog({
@@ -31,6 +37,7 @@ class _LyricsTranslationDialogState extends State<LyricsTranslationDialog> {
   int _completed = 0;
   int _total = 0;
   String? _error;
+  TranslationFallback? _fallback;
 
   @override
   void initState() {
@@ -46,7 +53,12 @@ class _LyricsTranslationDialogState extends State<LyricsTranslationDialog> {
 
   Future<void> _translate() async {
     try {
-      final translator = LyricsTranslationService.fromApp(widget.app);
+      final translator = LyricsTranslationService.fromApp(
+        widget.app,
+        onFallback: (fallback) {
+          if (mounted) setState(() => _fallback = fallback);
+        },
+      );
       final translated = await translator.translate(
         widget.source,
         isCancelled: () => _cancelled,
@@ -82,7 +94,12 @@ class _LyricsTranslationDialogState extends State<LyricsTranslationDialog> {
           sourceName: path,
         );
       }
-      if (mounted) Navigator.pop(context, path);
+      if (mounted) {
+        Navigator.pop<LyricsTranslationResult>(context, (
+          path: path,
+          fallback: _fallback,
+        ));
+      }
     } on LyricsTranslationCancelled {
       // Cancellation is handled immediately by the dialog button.
     } catch (error, stack) {
@@ -104,6 +121,7 @@ class _LyricsTranslationDialogState extends State<LyricsTranslationDialog> {
   Widget build(BuildContext context) => PopScope(
     canPop: _error != null || _cancelled,
     child: AlertDialog(
+      scrollable: true,
       title: Text(context.l10n.lyricsTranslate),
       content: Column(
         mainAxisSize: MainAxisSize.min,
@@ -117,6 +135,13 @@ class _LyricsTranslationDialogState extends State<LyricsTranslationDialog> {
             ),
             const SizedBox(height: 12),
             Text(context.l10n.lyricsTranslationProgress(_completed, _total)),
+          ],
+          if (_fallback case final fallback?) ...[
+            const SizedBox(height: 8),
+            Semantics(
+              liveRegion: true,
+              child: Text(fallback.message(context.l10n)),
+            ),
           ],
         ],
       ),

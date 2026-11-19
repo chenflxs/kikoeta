@@ -2157,7 +2157,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     if (selection == null || hub.allLyrics.isEmpty || hub.loading) return;
     final source = hub.allLyrics;
     final l10n = context.l10n;
-    final saved = await showDialog<String>(
+    final saved = await showDialog<LyricsTranslationResult>(
       context: context,
       barrierDismissible: false,
       builder: (_) => LyricsTranslationDialog(
@@ -2166,7 +2166,18 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
         source: source,
       ),
     );
-    if (mounted && saved != null) _toast(l10n.lyricsTranslationSaved(saved));
+    if (mounted && saved != null) {
+      final message = l10n.lyricsTranslationSaved(saved.path);
+      final fallback = saved.fallback;
+      if (fallback == null) {
+        _toast(message);
+      } else {
+        _toast(
+          '${fallback.message(l10n)}\n$message',
+          duration: const Duration(seconds: 4),
+        );
+      }
+    }
   }
 
   Widget _convPill(
@@ -2715,15 +2726,13 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     });
   }
 
-  void _toast(String msg) {
+  void _toast(
+    String msg, {
+    Duration duration = const Duration(milliseconds: 1600),
+  }) {
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(msg),
-          duration: const Duration(milliseconds: 1600),
-        ),
-      );
+      ..showSnackBar(SnackBar(content: Text(msg), duration: duration));
   }
 }
 

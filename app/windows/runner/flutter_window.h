@@ -31,6 +31,10 @@ class FlutterWindow : public Win32Window {
   // The Flutter instance hosted by this window.
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> lifecycle_channel_;
+  HWND lyrics_hotkey_window_ = nullptr;
+  int lyrics_hotkey_id_ = 0;
+  UINT lyrics_hotkey_modifiers_ = 0;
+  UINT lyrics_hotkey_key_ = 0;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

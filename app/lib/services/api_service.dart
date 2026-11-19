@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:ui' show Locale;
 
+import 'package:flutter_rust_bridge/flutter_rust_bridge.dart' show Uint64List;
+
 import '../data.dart';
 import '../l10n/app_language.dart';
 import '../src/rust/api/kikoeru_api.dart';
@@ -43,6 +45,10 @@ class AdvancedFilterEntry {
 
   String label(Locale locale) =>
       TagNames.display(name, locale, translations: tagNames);
+}
+
+final class WorkTagEmailRequired implements Exception {
+  const WorkTagEmailRequired();
 }
 
 /// asmr.one API 客户端（网络请求统一由 Rust 核心执行）。
@@ -311,6 +317,62 @@ class ApiService {
       throw FormatException(appL10n.apiServiceFetchWorkFormatException);
     }
     return _mapWork(Map<String, dynamic>.from(decoded), 0, resolveBase(app));
+  }
+
+  static bool supportsWorkTagVoting(AppState app, Work work) =>
+      !app.customServer && !app.isDlsite && work.apiId != null;
+
+  static bool canEditWorkTags(AppState app, Work work) =>
+      supportsWorkTagVoting(app, work) && app.hasOneCredentials;
+
+  static Future<void> attachWorkTags(AppState app, Work work, List<int> ids) {
+    if (!canEditWorkTags(app, work)) {
+      throw StateError(appL10n.workTagSignIn);
+    }
+    return _runWorkTagEdit(
+      () => apiAttachOneWorkTags(
+        workId: BigInt.from(work.apiId!),
+        tagIds: Uint64List.fromList(ids),
+      ),
+    );
+  }
+
+  static Future<void> voteWorkTag(
+    AppState app,
+    Work work,
+    int tagId,
+    int status,
+  ) {
+    if (!canEditWorkTags(app, work)) {
+      throw StateError(appL10n.workTagSignIn);
+    }
+    return _runWorkTagEdit(
+      () => apiVoteOneWorkTag(
+        workId: BigInt.from(work.apiId!),
+        tagId: BigInt.from(tagId),
+        status: status,
+      ),
+    );
+  }
+
+  static Future<void> _runWorkTagEdit(Future<void> Function() request) async {
+    try {
+      await request();
+    } on String catch (error, stack) {
+      // The Rust bridge returns a failed HTTP response as "HTTP <code>: <body>".
+      const prefix = 'HTTP 400: ';
+      if (error.startsWith(prefix)) {
+        try {
+          final body = jsonDecode(error.substring(prefix.length));
+          if (body is Map && body['error'] == 'vote.mustBindEmailFirst') {
+            Error.throwWithStackTrace(const WorkTagEmailRequired(), stack);
+          }
+        } on FormatException {
+          // Other response formats retain the original HTTP error.
+        }
+      }
+      rethrow;
+    }
   }
 
   /// Playback and automatic track changes share one metadata backfill request.
@@ -2029,9 +2091,19 @@ class ApiService {
     final tags = <String>[];
     final grayTags = <String>[];
     final tagNames = <String, Map<String, String>>{};
+    final tagVotes = <String, WorkTagVote>{};
     for (final t in ((m['tags'] as List?) ?? const [])) {
       final name = (t as Map)['name'] as String? ?? '';
       if (name.isEmpty) continue;
+      final id = int.tryParse(t['id']?.toString() ?? '');
+      if (id != null && id > 0) {
+        tagVotes[name] = (
+          id: id,
+          myVote: int.tryParse(t['myVote']?.toString() ?? '') ?? 0,
+          upvotes: int.tryParse(t['upvote']?.toString() ?? ''),
+          downvotes: int.tryParse(t['downvote']?.toString() ?? ''),
+        );
+      }
       // 反编译原版 + 实测：Tag 模型 voteStatus 为每作品维度状态：
       // 0=低愿力（需投票，显示灰色，默认不在列表展示）
       // 1=普通（作品自带或已获认同，实心；字段缺失时默认 1）
@@ -2074,6 +2146,7 @@ class ApiService {
       tags: tags,
       grayTags: grayTags,
       tagNames: tagNames,
+      tagVotes: tagVotes,
       grad: i % 8,
       coverUrl:
           m['mainCoverUrl'] as String? ??

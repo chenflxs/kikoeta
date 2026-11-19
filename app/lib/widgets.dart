@@ -1708,26 +1708,29 @@ class _HomeSearchBarState extends State<HomeSearchBar> {
                       spacing: 9,
                       runSpacing: 9,
                       children: app.history.map((value) {
+                        void removeHistory() {
+                          app.removeHistory(value);
+                          ScaffoldMessenger.of(context)
+                            ..clearSnackBars()
+                            ..showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  context.l10n.widgetsHistoryPanelText3(
+                                    (value).toString(),
+                                  ),
+                                ),
+                                duration: const Duration(milliseconds: 1600),
+                              ),
+                            );
+                        }
+
                         return GestureDetector(
                           onTap: () {
                             _ctrl.text = value;
                             _submit(value);
                           },
-                          onLongPress: () {
-                            app.removeHistory(value);
-                            ScaffoldMessenger.of(context)
-                              ..clearSnackBars()
-                              ..showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    context.l10n.widgetsHistoryPanelText3(
-                                      (value).toString(),
-                                    ),
-                                  ),
-                                  duration: const Duration(milliseconds: 1600),
-                                ),
-                              );
-                          },
+                          onLongPress: removeHistory,
+                          onSecondaryTap: removeHistory,
                           child: Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 13,

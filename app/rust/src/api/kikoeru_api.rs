@@ -804,6 +804,32 @@ pub async fn api_create_favorite_review(
     http_put_json(&client, &url, auth.as_deref(), body).await
 }
 
+async fn post_one_work_tag(path: &str, body: serde_json::Value) -> Result<(), String> {
+    const BASE: &str = "https://api.asmr.one";
+    let auth = auth_header(BASE).ok_or_else(|| "asmr.one HTTP 401".to_string())?;
+    let client = http_client()?;
+    http_post_json(&client, &format!("{BASE}{path}"), Some(&auth), body).await?;
+    Ok(())
+}
+
+#[flutter_rust_bridge::frb]
+pub async fn api_attach_one_work_tags(work_id: u64, tag_ids: Vec<u64>) -> Result<(), String> {
+    post_one_work_tag(
+        "/api/vote/attach-tags-to-work",
+        serde_json::json!({"workID": work_id, "tagIDs": tag_ids}),
+    )
+    .await
+}
+
+#[flutter_rust_bridge::frb]
+pub async fn api_vote_one_work_tag(work_id: u64, tag_id: u64, status: u8) -> Result<(), String> {
+    post_one_work_tag(
+        "/api/vote/vote-work-tag",
+        serde_json::json!({"workID": work_id, "tagID": tag_id, "status": status}),
+    )
+    .await
+}
+
 /// 提交评价与标记：PUT /api/review
 ///
 /// 只发送调用方明确提供的字段——快速打分只传 rating，进度与评论保持

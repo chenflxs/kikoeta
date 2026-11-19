@@ -8,7 +8,9 @@ import 'package:win32/win32.dart' as win32;
 
 import '../data.dart';
 import 'api_service.dart';
+import 'app_log.dart';
 import 'desktop_lyrics_overlay.dart';
+import 'desktop_lyrics_shortcut.dart';
 import 'download_service.dart';
 import 'player_service.dart';
 import 'startup_trace.dart';
@@ -25,6 +27,10 @@ class WindowsTrayService with TrayListener, WindowListener {
   bool? _menuLyricsOn;
   bool? _menuPlaying;
   String? _menuLanguage;
+  Future<void> _lyricsShortcutUpdates = Future<void>.value();
+  DesktopLyricsShortcut? _observedLyricsShortcut;
+  DesktopLyricsShortcut? _activeLyricsShortcut;
+  bool recordingLyricsShortcut = false;
 
   Future<void> init(AppState app) async {
     _app = app;
@@ -53,6 +59,64 @@ class WindowsTrayService with TrayListener, WindowListener {
       () => trayManager.setToolTip('Kikoeta'),
     );
     await StartupTrace.stage('tray.menu', _setContextMenu);
+    _lifecycle.setMethodCallHandler((call) async {
+      if (call.method == 'toggleDesktopLyrics' &&
+          !_exiting &&
+          !recordingLyricsShortcut) {
+        _toggleDesktopLyrics();
+      }
+    });
+    _app.addListener(_onLyricsShortcutSettingChanged);
+    await _syncStoredLyricsShortcut();
+  }
+
+  void _onLyricsShortcutSettingChanged() =>
+      unawaited(_syncStoredLyricsShortcut());
+
+  Future<void> _syncStoredLyricsShortcut() async {
+    final shortcut = _app.desktopLyricsShortcut;
+    if (_observedLyricsShortcut == shortcut) return;
+    _observedLyricsShortcut = shortcut;
+    try {
+      await _applyLyricsShortcut(shortcut);
+    } catch (error, stack) {
+      AppLog.recordError('register desktop lyrics shortcut', error, stack);
+      final active = _activeLyricsShortcut;
+      if (active != null && _app.desktopLyricsShortcut == shortcut) {
+        _observedLyricsShortcut = active;
+        _app.setDesktopLyricsShortcut(active);
+      }
+    }
+  }
+
+  Future<void> changeLyricsShortcut(DesktopLyricsShortcut shortcut) =>
+      _applyLyricsShortcut(shortcut, save: true);
+
+  Future<void> _applyLyricsShortcut(
+    DesktopLyricsShortcut shortcut, {
+    bool save = false,
+  }) {
+    final update = _lyricsShortcutUpdates.then((_) async {
+      if (_exiting || (!save && _app.desktopLyricsShortcut != shortcut)) return;
+      if (_activeLyricsShortcut != shortcut) {
+        await _lifecycle.invokeMethod<void>('registerLyricsHotkey', [
+          shortcut.modifiers,
+          shortcut.virtualKey,
+        ]);
+        _activeLyricsShortcut = shortcut;
+      }
+      if (save) {
+        _observedLyricsShortcut = shortcut;
+        _app.setDesktopLyricsShortcut(shortcut);
+      }
+    });
+    // Let subsequent edits proceed after a rejected registration.
+    _lyricsShortcutUpdates = update.then<void>((_) {}, onError: (Object _) {});
+    return update;
+  }
+
+  void _toggleDesktopLyrics() {
+    _app.setDesktopLyricsOn(!_app.desktopLyricsOn);
   }
 
   Future<void> _setContextMenu() async {
@@ -117,7 +181,7 @@ class WindowsTrayService with TrayListener, WindowListener {
       case 'show-home':
         unawaited(_showHome());
       case 'desktop-lyrics':
-        _app.setDesktopLyricsOn(!_app.desktopLyricsOn);
+        _toggleDesktopLyrics();
       case 'toggle-playback':
         unawaited(_togglePlayback());
       case 'exit':
@@ -181,6 +245,7 @@ class WindowsTrayService with TrayListener, WindowListener {
       Timer(const Duration(seconds: 3), _terminateProcess);
     }
     _app.removeListener(_syncContextMenu);
+    _app.removeListener(_onLyricsShortcutSettingChanged);
     try {
       // 窗口关闭不会触发播放器页 dispose；退出前强制保存播放器当前位置。
       if (_app.queue.isNotEmpty &&

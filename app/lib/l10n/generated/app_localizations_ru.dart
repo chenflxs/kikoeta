@@ -9,6 +9,52 @@ class AppLocalizationsRu extends AppLocalizations {
   AppLocalizationsRu([String locale = 'ru']) : super(locale);
 
   @override
+  String get desktopLyricsShortcutScope => 'Действует глобально';
+
+  @override
+  String desktopLyricsShortcutHint(String shortcut) {
+    return 'Текущее сочетание: $shortcut\n\nНажмите Ctrl или Alt вместе с буквой, цифрой, навигационной или функциональной клавишей. Можно добавить Shift.';
+  }
+
+  @override
+  String get desktopLyricsShortcutUnavailable =>
+      'Не удалось зарегистрировать сочетание. Возможно, его уже использует Windows или другое приложение.';
+
+  @override
+  String get workTagAdd => 'Добавить теги';
+
+  @override
+  String get workTagBlacklist => 'В чёрный список';
+
+  @override
+  String get workTagBlacklisted => 'В чёрном списке';
+
+  @override
+  String get workTagDownvote => 'Не нравится';
+
+  @override
+  String get workTagUpvote => 'Нравится';
+
+  @override
+  String get workTagSignIn => 'Войдите в asmr.one, чтобы редактировать теги';
+
+  @override
+  String get workTagVoteSignIn => 'Войдите в asmr.one, чтобы проголосовать';
+
+  @override
+  String get workTagNoMatches => 'Нет тегов для добавления';
+
+  @override
+  String get workTagRequestFailed => 'Ошибка при изменении тегов';
+
+  @override
+  String get workTagBindEmail =>
+      'Войдите в тот же аккаунт на asmr.one, привяжите электронную почту и повторите попытку здесь.';
+
+  @override
+  String get workTagOpenAccountSettings => 'Открыть настройки asmr.one';
+
+  @override
   String get cacheWritebackSourceMissing =>
       'Часть текстов импортирована только локально: исходный сервер не настроен.';
 
@@ -2819,10 +2865,6 @@ class AppLocalizationsRu extends AppLocalizations {
   String get sheetsShowOneConfigSheetHint => 'Учётная запись asmr.one';
 
   @override
-  String get sheetsShowOneConfigSheetSub =>
-      'Учётные данные хранятся только локально (демо)';
-
-  @override
   String get sheetsShowSleepSheetText3 =>
       'Остановить воспроизведение и закрыть по окончании текущего плейлиста';
 
@@ -3222,6 +3264,16 @@ class AppLocalizationsRu extends AppLocalizations {
   @override
   String lyricsTranslationProgress(int completed, int total) {
     return 'Переведено строк: $completed/$total';
+  }
+
+  @override
+  String translationFallback(String from, String to) {
+    return 'Ошибка перевода в $from. Повтор через $to.';
+  }
+
+  @override
+  String translationFallbackWithCode(String from, String code, String to) {
+    return 'Ошибка перевода в $from (код $code). Повтор через $to.';
   }
 
   @override

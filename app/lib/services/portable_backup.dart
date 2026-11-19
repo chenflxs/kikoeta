@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 
 import '../l10n/translation_language.dart';
+import 'desktop_lyrics_shortcut.dart';
 
 /// Explicit portable scope. Never copy the database, tokens, credentials,
 /// downloads, lyric files/indexes, caches, or a device's active playback queue.
@@ -37,6 +38,7 @@ class PortableBackup {
     'playback_shortcut_next': '4294968071',
     'playback_shortcut_seek_backward': '4294968066',
     'playback_shortcut_seek_forward': '4294968067',
+    DesktopLyricsShortcut.settingKey: DesktopLyricsShortcut.defaultSetting,
     'initial_path_behavior': 'auto',
     'media_files_only': '0',
     'se_preference': '1',
@@ -91,6 +93,7 @@ class PortableBackup {
     'lyrics_locked_landscape',
   };
   static const _optionalKeys = {
+    DesktopLyricsShortcut.settingKey,
     'translation_source',
     'lyrics_skip_empty',
     'android_lyrics_hide_when_paused',
@@ -394,6 +397,12 @@ class PortableBackup {
       (k) => k.startsWith('playback_shortcut_'),
     )) {
       if ((int.tryParse(values[key]!) ?? -1) < 0) invalid();
+    }
+    if (DesktopLyricsShortcut.decode(
+          values[DesktopLyricsShortcut.settingKey],
+        ) ==
+        null) {
+      invalid();
     }
     const choices = {
       'theme': ['system', 'light', 'dark'],

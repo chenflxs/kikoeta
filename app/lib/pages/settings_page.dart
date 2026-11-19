@@ -14,11 +14,13 @@ import '../services/android_lyrics_overlay.dart';
 import '../services/api_service.dart';
 import '../services/app_log.dart';
 import '../services/desktop_lyrics_overlay.dart';
+import '../services/desktop_lyrics_shortcut.dart';
 import '../services/lyrics_library_broadcast_service.dart';
 import '../services/lyrics_library_service.dart';
 import '../services/player_service.dart';
 import '../services/theme_reveal.dart';
 import '../services/update_service.dart';
+import '../services/windows_tray_service.dart';
 import '../smooth_scroll.dart';
 import '../src/rust/api/translate.dart';
 import '../sheets.dart';
@@ -1322,12 +1324,25 @@ class _SettingsPageState extends State<SettingsPage> {
                     keyId: app.playbackSeekForwardShortcutKey,
                     onChanged: app.setPlaybackSeekForwardShortcutKey,
                   ),
+                  if (Platform.isWindows)
+                    _row(
+                      icon: Icons.subtitles_outlined,
+                      title: context.l10n.desktopLyrics,
+                      sub: context.l10n.desktopLyricsShortcutScope,
+                      trailing: _shortcutTrailing(
+                        _desktopLyricsShortcutLabel(app.desktopLyricsShortcut),
+                      ),
+                      onTap: _editDesktopLyricsShortcut,
+                    ),
                   _row(
                     icon: Icons.restart_alt_outlined,
                     title: context.l10n.settingsPageSectionsTitle13,
-                    sub: context.l10n.settingsPageSectionsSub9,
+                    sub: Platform.isWindows
+                        ? '${context.l10n.settingsPageSectionsSub9} / '
+                              '${_desktopLyricsShortcutLabel(DesktopLyricsShortcut.defaultValue)}'
+                        : context.l10n.settingsPageSectionsSub9,
                     trailing: Icon(Icons.refresh, size: 18, color: p.dim),
-                    onTap: app.resetPlaybackShortcutKeys,
+                    onTap: _resetShortcutKeys,
                     showDivider: false,
                   ),
                 ]),
@@ -1642,21 +1657,7 @@ class _SettingsPageState extends State<SettingsPage> {
       icon: icon,
       title: title,
       sub: context.l10n.settingsPagePlaybackShortcutRowSub,
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            _shortcutLabel(keyId, physical: physical),
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: p.accent,
-            ),
-          ),
-          const SizedBox(width: 6),
-          Icon(Icons.chevron_right, size: 18, color: p.dim),
-        ],
-      ),
+      trailing: _shortcutTrailing(_shortcutLabel(keyId, physical: physical)),
       onTap: () => _editPlaybackShortcut(
         action: action,
         title: title,
@@ -1666,6 +1667,22 @@ class _SettingsPageState extends State<SettingsPage> {
       ),
     );
   }
+
+  Widget _shortcutTrailing(String label) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: p.accent,
+        ),
+      ),
+      const SizedBox(width: 6),
+      Icon(Icons.chevron_right, size: 18, color: p.dim),
+    ],
+  );
 
   String _shortcutLabel(int keyId, {bool physical = false}) {
     final key = LogicalKeyboardKey.findKeyByKeyId(keyId);
@@ -1744,6 +1761,104 @@ class _SettingsPageState extends State<SettingsPage> {
       onChanged(nextKeyId);
     } finally {
       focusNode.dispose();
+    }
+  }
+
+  String _desktopLyricsShortcutLabel(DesktopLyricsShortcut shortcut) => [
+    if (shortcut.control) 'Ctrl',
+    if (shortcut.alt) 'Alt',
+    if (shortcut.shift) 'Shift',
+    if (shortcut.key.keyId < 0x80 && shortcut.key != LogicalKeyboardKey.space)
+      shortcut.key.keyLabel.toUpperCase()
+    else
+      _shortcutLabel(shortcut.key.keyId),
+  ].join(' + ');
+
+  Future<void> _editDesktopLyricsShortcut() async {
+    final l10n = context.l10n;
+    final current = _desktopLyricsShortcutLabel(app.desktopLyricsShortcut);
+    final tray = WindowsTrayService.instance;
+    tray.recordingLyricsShortcut = true;
+    try {
+      var invalidKey = false;
+      final shortcut = await showDialog<DesktopLyricsShortcut>(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            backgroundColor: p.surface,
+            title: Text(
+              l10n.desktopLyrics,
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+            ),
+            content: Focus(
+              autofocus: true,
+              onKeyEvent: (_, event) {
+                if (event is! KeyDownEvent) return KeyEventResult.ignored;
+                final key = event.logicalKey;
+                if (key == LogicalKeyboardKey.escape) {
+                  Navigator.of(ctx).pop();
+                  return KeyEventResult.handled;
+                }
+                if (_isModifierKey(key)) return KeyEventResult.ignored;
+                final keyboard = HardwareKeyboard.instance;
+                final shortcut = keyboard.isMetaPressed
+                    ? null
+                    : DesktopLyricsShortcut.fromKey(
+                        key,
+                        control: keyboard.isControlPressed,
+                        alt: keyboard.isAltPressed,
+                        shift: keyboard.isShiftPressed,
+                      );
+                if (shortcut == null) {
+                  setDialogState(() => invalidKey = true);
+                } else {
+                  Navigator.of(ctx).pop(shortcut);
+                }
+                return KeyEventResult.handled;
+              },
+              child: SizedBox(
+                width: 260,
+                child: Text(
+                  l10n.desktopLyricsShortcutHint(current),
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: invalidKey ? p.red : p.text,
+                  ),
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text(l10n.cancel),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (mounted && shortcut != null) {
+        await _changeDesktopLyricsShortcut(shortcut);
+      }
+    } finally {
+      tray.recordingLyricsShortcut = false;
+    }
+  }
+
+  Future<void> _changeDesktopLyricsShortcut(
+    DesktopLyricsShortcut shortcut,
+  ) async {
+    try {
+      await WindowsTrayService.instance.changeLyricsShortcut(shortcut);
+    } catch (error, stack) {
+      AppLog.recordError('change desktop lyrics shortcut', error, stack);
+      if (mounted) _toast(context.l10n.desktopLyricsShortcutUnavailable);
+    }
+  }
+
+  Future<void> _resetShortcutKeys() async {
+    app.resetPlaybackShortcutKeys();
+    if (Platform.isWindows) {
+      await _changeDesktopLyricsShortcut(DesktopLyricsShortcut.defaultValue);
     }
   }
 

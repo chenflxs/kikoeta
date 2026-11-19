@@ -1216,10 +1216,12 @@ class _FavoritesPageState extends State<FavoritesPage> {
                 itemBuilder: (ctx, i) {
                   final w = _visibleWorks[i];
                   final selected = _selected.contains(w.rj);
+                  final selectWork = !_selecting && _canManageWorks
+                      ? () => _enterSelecting(w)
+                      : null;
                   return GestureDetector(
-                    onLongPress: !_selecting && _canManageWorks
-                        ? () => _enterSelecting(w)
-                        : null,
+                    onLongPress: selectWork,
+                    onSecondaryTap: selectWork,
                     child: Stack(
                       children: [
                         WorkCard(

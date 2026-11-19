@@ -9,6 +9,51 @@ class AppLocalizationsZh extends AppLocalizations {
   AppLocalizationsZh([String locale = 'zh']) : super(locale);
 
   @override
+  String get desktopLyricsShortcutScope => '全局生效';
+
+  @override
+  String desktopLyricsShortcutHint(String shortcut) {
+    return '当前组合键：$shortcut\n\n按 Ctrl 或 Alt 加字母、数字、导航键或功能键，可再加 Shift。';
+  }
+
+  @override
+  String get desktopLyricsShortcutUnavailable =>
+      '无法注册此组合键，可能已被 Windows 或其他应用占用';
+
+  @override
+  String get workTagAdd => '添加标签';
+
+  @override
+  String get workTagBlacklist => '加入黑名单';
+
+  @override
+  String get workTagBlacklisted => '已加入黑名单';
+
+  @override
+  String get workTagDownvote => '点踩';
+
+  @override
+  String get workTagUpvote => '点赞';
+
+  @override
+  String get workTagSignIn => '登录 one 站后可编辑作品标签';
+
+  @override
+  String get workTagVoteSignIn => '登录 one 站后可投票';
+
+  @override
+  String get workTagNoMatches => '未找到可添加的标签';
+
+  @override
+  String get workTagRequestFailed => '标签操作失败';
+
+  @override
+  String get workTagBindEmail => '请在 one 站登录同一账号，绑定邮箱后回来重试。';
+
+  @override
+  String get workTagOpenAccountSettings => '前往 one 站设置';
+
+  @override
   String get cacheWritebackSourceMissing => '部分缓存的原站点未配置，已仅导入本地。';
 
   @override
@@ -2636,9 +2681,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sheetsShowOneConfigSheetHint => 'asmr.one 账号';
 
   @override
-  String get sheetsShowOneConfigSheetSub => '账号信息仅保存在本地（演示）';
-
-  @override
   String get sheetsShowSleepSheetText3 => '当前播放列表播完后自动停止并关闭';
 
   @override
@@ -3015,6 +3057,16 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String translationFallback(String from, String to) {
+    return '$from 翻译失败，改用 $to 重试。';
+  }
+
+  @override
+  String translationFallbackWithCode(String from, String code, String to) {
+    return '$from 翻译失败（错误码 $code），改用 $to 重试。';
+  }
+
+  @override
   String lyricsTranslationSaved(String path) {
     return '译文已保存：$path';
   }
@@ -3043,6 +3095,51 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
 /// The translations for Chinese, using the Han script (`zh_Hant`).
 class AppLocalizationsZhHant extends AppLocalizationsZh {
   AppLocalizationsZhHant() : super('zh_Hant');
+
+  @override
+  String get desktopLyricsShortcutScope => '全域生效';
+
+  @override
+  String desktopLyricsShortcutHint(String shortcut) {
+    return '目前組合鍵：$shortcut\n\n按 Ctrl 或 Alt 加英文字母、數字、導覽鍵或功能鍵，也可加 Shift。';
+  }
+
+  @override
+  String get desktopLyricsShortcutUnavailable =>
+      '無法註冊此組合鍵，可能已被 Windows 或其他應用程式使用';
+
+  @override
+  String get workTagAdd => '新增標籤';
+
+  @override
+  String get workTagBlacklist => '加入黑名單';
+
+  @override
+  String get workTagBlacklisted => '已加入黑名單';
+
+  @override
+  String get workTagDownvote => '點踩';
+
+  @override
+  String get workTagUpvote => '點讚';
+
+  @override
+  String get workTagSignIn => '登入 one 站後可編輯作品標籤';
+
+  @override
+  String get workTagVoteSignIn => '登入 one 站後可投票';
+
+  @override
+  String get workTagNoMatches => '找不到可新增的標籤';
+
+  @override
+  String get workTagRequestFailed => '標籤操作失敗';
+
+  @override
+  String get workTagBindEmail => '請在 one 站登入同一帳號，綁定電子郵件後回來重試。';
+
+  @override
+  String get workTagOpenAccountSettings => '前往 one 站設定';
 
   @override
   String get cacheWritebackSourceMissing => '部分快取的原站點未設定，已僅匯入本機。';
@@ -5673,9 +5770,6 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String get sheetsShowOneConfigSheetHint => 'asmr.one 帳號';
 
   @override
-  String get sheetsShowOneConfigSheetSub => '帳號資訊僅儲存在本機（示範）';
-
-  @override
   String get sheetsShowSleepSheetText3 => '目前播放清單播完後自動停止並關閉';
 
   @override
@@ -6049,6 +6143,16 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   @override
   String lyricsTranslationProgress(int completed, int total) {
     return '已翻譯 $completed/$total 行';
+  }
+
+  @override
+  String translationFallback(String from, String to) {
+    return '$from 翻譯失敗，改用 $to 重試。';
+  }
+
+  @override
+  String translationFallbackWithCode(String from, String code, String to) {
+    return '$from 翻譯失敗（錯誤碼 $code），改用 $to 重試。';
   }
 
   @override

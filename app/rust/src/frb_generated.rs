@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
                     default_rust_auto_opaque = RustAutoOpaqueMoi,
                 );
                 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-                pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -190897282;
+                pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -374656947;
             
 
 // Section: executor
@@ -47,7 +47,17 @@ flutter_rust_bridge::frb_generated_default_handler!();
 
 // Section: wire_funcs
 
-fn wire__crate__api__kikoeru_api__api_check_lrc_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
+fn wire__crate__api__kikoeru_api__api_attach_one_work_tags_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
+                FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "api_attach_one_work_tags", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_work_id = <u64>::sse_decode(&mut deserializer);
+let api_tag_ids = <Vec<u64>>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
+                    transform_result_sse::<_, String>((move || async move {
+                         let output_ok = crate::api::kikoeru_api::api_attach_one_work_tags(api_work_id, api_tag_ids).await?;   Ok(output_ok)
+                    })().await)
+                } })
+            }fn wire__crate__api__kikoeru_api__api_check_lrc_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
                 FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "api_check_lrc", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || { 
             let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
             let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
@@ -492,6 +502,17 @@ let api_api_key = <String>::sse_decode(&mut deserializer);deserializer.end(); mo
                          let output_ok = crate::api::translate::api_translate_test(api_base_url, api_model, api_api_key).await?;   Ok(output_ok)
                     })().await)
                 } })
+            }fn wire__crate__api__kikoeru_api__api_vote_one_work_tag_impl(port_: flutter_rust_bridge::for_generated::MessagePort,ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32)  {
+                FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec,_,_,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "api_vote_one_work_tag", port: Some(port_), mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal }, move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_work_id = <u64>::sse_decode(&mut deserializer);
+let api_tag_id = <u64>::sse_decode(&mut deserializer);
+let api_status = <u8>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
+                    transform_result_sse::<_, String>((move || async move {
+                         let output_ok = crate::api::kikoeru_api::api_vote_one_work_tag(api_work_id, api_tag_id, api_status).await?;   Ok(output_ok)
+                    })().await)
+                } })
             }fn wire__crate__api__simple__clear_all_settings_impl(ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,rust_vec_len_: i32,data_len_: i32) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
                 FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec,_>(flutter_rust_bridge::for_generated::TaskInfo{ debug_name: "clear_all_settings", port: None, mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync }, move || { 
             let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
@@ -644,6 +665,14 @@ return crate::api::textcodec::DecodedText{encoding: var_encoding, text: var_text
         return ans_;}
                 }
                 
+                impl SseDecode for Vec<u64> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ { ans_.push(<u64>::sse_decode(deserializer)); }
+        return ans_;}
+                }
+
                 impl SseDecode for Vec<u8> {
                     // Codec=Sse (Serialization based), see doc to use other codecs
                     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {let mut len_ = <i32>::sse_decode(deserializer);
@@ -730,48 +759,50 @@ return crate::api::textcodec::DecodedText{encoding: var_encoding, text: var_text
                 )  {
                     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
                     match func_id {
-                        1 => wire__crate__api__kikoeru_api__api_check_lrc_impl(port, ptr, rust_vec_len, data_len),
-2 => wire__crate__api__kikoeru_api__api_clear_review_progress_impl(port, ptr, rust_vec_len, data_len),
-3 => wire__crate__api__kikoeru_api__api_clear_review_rating_impl(port, ptr, rust_vec_len, data_len),
-5 => wire__crate__api__kikoeru_api__api_create_favorite_review_impl(port, ptr, rust_vec_len, data_len),
-6 => wire__crate__api__kikoeru_api__api_create_playlist_impl(port, ptr, rust_vec_len, data_len),
-8 => wire__crate__api__kikoeru_api__api_delete_favorite_review_impl(port, ptr, rust_vec_len, data_len),
-9 => wire__crate__api__kikoeru_api__api_delete_playlist_impl(port, ptr, rust_vec_len, data_len),
-10 => wire__crate__api__kikoeru_api__api_edit_playlist_metadata_impl(port, ptr, rust_vec_len, data_len),
-11 => wire__crate__api__kikoeru_api__api_get_bytes_impl(port, ptr, rust_vec_len, data_len),
-12 => wire__crate__api__kikoeru_api__api_get_custom_works_impl(port, ptr, rust_vec_len, data_len),
-13 => wire__crate__api__kikoeru_api__api_get_my_reviews_impl(port, ptr, rust_vec_len, data_len),
-14 => wire__crate__api__kikoeru_api__api_get_playlist_metadata_impl(port, ptr, rust_vec_len, data_len),
-15 => wire__crate__api__kikoeru_api__api_get_playlist_works_impl(port, ptr, rust_vec_len, data_len),
-16 => wire__crate__api__kikoeru_api__api_get_playlists_impl(port, ptr, rust_vec_len, data_len),
-17 => wire__crate__api__kikoeru_api__api_get_random_work_impl(port, ptr, rust_vec_len, data_len),
-18 => wire__crate__api__kikoeru_api__api_get_recommender_neighbors_impl(port, ptr, rust_vec_len, data_len),
-19 => wire__crate__api__kikoeru_api__api_get_recommender_popular_impl(port, ptr, rust_vec_len, data_len),
-20 => wire__crate__api__kikoeru_api__api_get_recommender_recommend_impl(port, ptr, rust_vec_len, data_len),
-21 => wire__crate__api__kikoeru_api__api_get_tracks_impl(port, ptr, rust_vec_len, data_len),
-22 => wire__crate__api__kikoeru_api__api_get_work_impl(port, ptr, rust_vec_len, data_len),
-23 => wire__crate__api__kikoeru_api__api_get_work_v2_impl(port, ptr, rust_vec_len, data_len),
-24 => wire__crate__api__kikoeru_api__api_get_works_impl(port, ptr, rust_vec_len, data_len),
-25 => wire__crate__api__kikoeru_api__api_health_impl(port, ptr, rust_vec_len, data_len),
-26 => wire__crate__api__kikoeru_api__api_like_playlist_impl(port, ptr, rust_vec_len, data_len),
-27 => wire__crate__api__kikoeru_api__api_login_impl(port, ptr, rust_vec_len, data_len),
-28 => wire__crate__api__kikoeru_api__api_playlist_add_works_impl(port, ptr, rust_vec_len, data_len),
-29 => wire__crate__api__kikoeru_api__api_playlist_remove_works_impl(port, ptr, rust_vec_len, data_len),
-30 => wire__crate__api__kikoeru_api__api_remove_like_playlist_impl(port, ptr, rust_vec_len, data_len),
-31 => wire__crate__api__kikoeru_api__api_search_impl(port, ptr, rust_vec_len, data_len),
-32 => wire__crate__api__kikoeru_api__api_search_custom_impl(port, ptr, rust_vec_len, data_len),
-34 => wire__crate__api__kikoeru_api__api_submit_review_impl(port, ptr, rust_vec_len, data_len),
-35 => wire__crate__api__translate__api_translate_deepl_impl(port, ptr, rust_vec_len, data_len),
-36 => wire__crate__api__translate__api_translate_google_impl(port, ptr, rust_vec_len, data_len),
-37 => wire__crate__api__translate__api_translate_index_models_impl(port, ptr, rust_vec_len, data_len),
-38 => wire__crate__api__translate__api_translate_microsoft_impl(port, ptr, rust_vec_len, data_len),
-39 => wire__crate__api__translate__api_translate_openai_impl(port, ptr, rust_vec_len, data_len),
-40 => wire__crate__api__translate__api_translate_test_impl(port, ptr, rust_vec_len, data_len),
-45 => wire__crate__api__simple__http_proxy_config_impl(port, ptr, rust_vec_len, data_len),
-46 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
-49 => wire__crate__api__proxy__proxy_port_impl(port, ptr, rust_vec_len, data_len),
-51 => wire__crate__api__simple__save_token_for_base_impl(port, ptr, rust_vec_len, data_len),
-53 => wire__crate__api__simple__token_for_base_impl(port, ptr, rust_vec_len, data_len),
+                        1 => wire__crate__api__kikoeru_api__api_attach_one_work_tags_impl(port, ptr, rust_vec_len, data_len),
+2 => wire__crate__api__kikoeru_api__api_check_lrc_impl(port, ptr, rust_vec_len, data_len),
+3 => wire__crate__api__kikoeru_api__api_clear_review_progress_impl(port, ptr, rust_vec_len, data_len),
+4 => wire__crate__api__kikoeru_api__api_clear_review_rating_impl(port, ptr, rust_vec_len, data_len),
+6 => wire__crate__api__kikoeru_api__api_create_favorite_review_impl(port, ptr, rust_vec_len, data_len),
+7 => wire__crate__api__kikoeru_api__api_create_playlist_impl(port, ptr, rust_vec_len, data_len),
+9 => wire__crate__api__kikoeru_api__api_delete_favorite_review_impl(port, ptr, rust_vec_len, data_len),
+10 => wire__crate__api__kikoeru_api__api_delete_playlist_impl(port, ptr, rust_vec_len, data_len),
+11 => wire__crate__api__kikoeru_api__api_edit_playlist_metadata_impl(port, ptr, rust_vec_len, data_len),
+12 => wire__crate__api__kikoeru_api__api_get_bytes_impl(port, ptr, rust_vec_len, data_len),
+13 => wire__crate__api__kikoeru_api__api_get_custom_works_impl(port, ptr, rust_vec_len, data_len),
+14 => wire__crate__api__kikoeru_api__api_get_my_reviews_impl(port, ptr, rust_vec_len, data_len),
+15 => wire__crate__api__kikoeru_api__api_get_playlist_metadata_impl(port, ptr, rust_vec_len, data_len),
+16 => wire__crate__api__kikoeru_api__api_get_playlist_works_impl(port, ptr, rust_vec_len, data_len),
+17 => wire__crate__api__kikoeru_api__api_get_playlists_impl(port, ptr, rust_vec_len, data_len),
+18 => wire__crate__api__kikoeru_api__api_get_random_work_impl(port, ptr, rust_vec_len, data_len),
+19 => wire__crate__api__kikoeru_api__api_get_recommender_neighbors_impl(port, ptr, rust_vec_len, data_len),
+20 => wire__crate__api__kikoeru_api__api_get_recommender_popular_impl(port, ptr, rust_vec_len, data_len),
+21 => wire__crate__api__kikoeru_api__api_get_recommender_recommend_impl(port, ptr, rust_vec_len, data_len),
+22 => wire__crate__api__kikoeru_api__api_get_tracks_impl(port, ptr, rust_vec_len, data_len),
+23 => wire__crate__api__kikoeru_api__api_get_work_impl(port, ptr, rust_vec_len, data_len),
+24 => wire__crate__api__kikoeru_api__api_get_work_v2_impl(port, ptr, rust_vec_len, data_len),
+25 => wire__crate__api__kikoeru_api__api_get_works_impl(port, ptr, rust_vec_len, data_len),
+26 => wire__crate__api__kikoeru_api__api_health_impl(port, ptr, rust_vec_len, data_len),
+27 => wire__crate__api__kikoeru_api__api_like_playlist_impl(port, ptr, rust_vec_len, data_len),
+28 => wire__crate__api__kikoeru_api__api_login_impl(port, ptr, rust_vec_len, data_len),
+29 => wire__crate__api__kikoeru_api__api_playlist_add_works_impl(port, ptr, rust_vec_len, data_len),
+30 => wire__crate__api__kikoeru_api__api_playlist_remove_works_impl(port, ptr, rust_vec_len, data_len),
+31 => wire__crate__api__kikoeru_api__api_remove_like_playlist_impl(port, ptr, rust_vec_len, data_len),
+32 => wire__crate__api__kikoeru_api__api_search_impl(port, ptr, rust_vec_len, data_len),
+33 => wire__crate__api__kikoeru_api__api_search_custom_impl(port, ptr, rust_vec_len, data_len),
+35 => wire__crate__api__kikoeru_api__api_submit_review_impl(port, ptr, rust_vec_len, data_len),
+36 => wire__crate__api__translate__api_translate_deepl_impl(port, ptr, rust_vec_len, data_len),
+37 => wire__crate__api__translate__api_translate_google_impl(port, ptr, rust_vec_len, data_len),
+38 => wire__crate__api__translate__api_translate_index_models_impl(port, ptr, rust_vec_len, data_len),
+39 => wire__crate__api__translate__api_translate_microsoft_impl(port, ptr, rust_vec_len, data_len),
+40 => wire__crate__api__translate__api_translate_openai_impl(port, ptr, rust_vec_len, data_len),
+41 => wire__crate__api__translate__api_translate_test_impl(port, ptr, rust_vec_len, data_len),
+42 => wire__crate__api__kikoeru_api__api_vote_one_work_tag_impl(port, ptr, rust_vec_len, data_len),
+47 => wire__crate__api__simple__http_proxy_config_impl(port, ptr, rust_vec_len, data_len),
+48 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
+51 => wire__crate__api__proxy__proxy_port_impl(port, ptr, rust_vec_len, data_len),
+53 => wire__crate__api__simple__save_token_for_base_impl(port, ptr, rust_vec_len, data_len),
+55 => wire__crate__api__simple__token_for_base_impl(port, ptr, rust_vec_len, data_len),
                         _ => unreachable!(),
                     }
                 }
@@ -784,17 +815,17 @@ return crate::api::textcodec::DecodedText{encoding: var_encoding, text: var_text
                 ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
                     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
                     match func_id {
-                        4 => wire__crate__api__textconv__api_convert_text_impl(ptr, rust_vec_len, data_len),
-7 => wire__crate__api__textcodec__api_decode_text_impl(ptr, rust_vec_len, data_len),
-33 => wire__crate__api__proxy__api_stream_proxy_url_impl(ptr, rust_vec_len, data_len),
-41 => wire__crate__api__simple__clear_all_settings_impl(ptr, rust_vec_len, data_len),
-42 => wire__crate__api__simple__get_setting_impl(ptr, rust_vec_len, data_len),
-43 => wire__crate__api__simple__get_token_impl(ptr, rust_vec_len, data_len),
-44 => wire__crate__api__simple__greet_impl(ptr, rust_vec_len, data_len),
-47 => wire__crate__api__simple__notify_default_network_changed_impl(ptr, rust_vec_len, data_len),
-48 => wire__crate__api__simple__open_settings_impl(ptr, rust_vec_len, data_len),
-50 => wire__crate__api__simple__rust_platform_impl(ptr, rust_vec_len, data_len),
-52 => wire__crate__api__simple__set_setting_impl(ptr, rust_vec_len, data_len),
+                        5 => wire__crate__api__textconv__api_convert_text_impl(ptr, rust_vec_len, data_len),
+8 => wire__crate__api__textcodec__api_decode_text_impl(ptr, rust_vec_len, data_len),
+34 => wire__crate__api__proxy__api_stream_proxy_url_impl(ptr, rust_vec_len, data_len),
+43 => wire__crate__api__simple__clear_all_settings_impl(ptr, rust_vec_len, data_len),
+44 => wire__crate__api__simple__get_setting_impl(ptr, rust_vec_len, data_len),
+45 => wire__crate__api__simple__get_token_impl(ptr, rust_vec_len, data_len),
+46 => wire__crate__api__simple__greet_impl(ptr, rust_vec_len, data_len),
+49 => wire__crate__api__simple__notify_default_network_changed_impl(ptr, rust_vec_len, data_len),
+50 => wire__crate__api__simple__open_settings_impl(ptr, rust_vec_len, data_len),
+52 => wire__crate__api__simple__rust_platform_impl(ptr, rust_vec_len, data_len),
+54 => wire__crate__api__simple__set_setting_impl(ptr, rust_vec_len, data_len),
                         _ => unreachable!(),
                     }
                 }
@@ -848,6 +879,12 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::textcodec::DecodedText> for c
                     // Codec=Sse (Serialization based), see doc to use other codecs
                     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<i32>::sse_encode(self.len() as _, serializer);
         for item in self { <String>::sse_encode(item, serializer); }}
+                }
+
+                impl SseEncode for Vec<u64> {
+                    // Codec=Sse (Serialization based), see doc to use other codecs
+                    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {<i32>::sse_encode(self.len() as _, serializer);
+        for item in self { <u64>::sse_encode(item, serializer); }}
                 }
                 
                 impl SseEncode for Vec<u8> {
@@ -973,4 +1010,4 @@ flutter_rust_bridge::frb_generated_boilerplate_web!();
         }
         #[cfg(target_family = "wasm")]
         pub use web::*;
-        
+

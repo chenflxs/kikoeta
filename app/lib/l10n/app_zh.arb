@@ -1,4 +1,22 @@
 {
+  "desktopLyricsShortcutScope": "全局生效",
+  "desktopLyricsShortcutHint": "当前组合键：{shortcut}\n\n按 Ctrl 或 Alt 加字母、数字、导航键或功能键，可再加 Shift。",
+  "desktopLyricsShortcutUnavailable": "无法注册此组合键，可能已被 Windows 或其他应用占用",
+  "@desktopLyricsShortcutHint": {
+    "description": "Windows desktop lyrics shortcut recorder",
+    "placeholders": { "shortcut": { "type": "String" } }
+  },
+  "workTagAdd": "添加标签",
+  "workTagBlacklist": "加入黑名单",
+  "workTagBlacklisted": "已加入黑名单",
+  "workTagDownvote": "点踩",
+  "workTagUpvote": "点赞",
+  "workTagSignIn": "登录 one 站后可编辑作品标签",
+  "workTagVoteSignIn": "登录 one 站后可投票",
+  "workTagNoMatches": "未找到可添加的标签",
+  "workTagRequestFailed": "标签操作失败",
+  "workTagBindEmail": "请在 one 站登录同一账号，绑定邮箱后回来重试。",
+  "workTagOpenAccountSettings": "前往 one 站设置",
   "cacheWritebackSourceMissing": "部分缓存的原站点未配置，已仅导入本地。",
   "cacheWritebackLegacyTitle": "旧缓存写回目标",
   "cacheWritebackLegacyHint": "旧缓存未记录原站点。选择目标后将核对作品和音轨路径；无法匹配时仅导入本地。",
@@ -3433,10 +3451,6 @@
   "@sheetsShowOneConfigSheetHint": {
     "description": "sheets.dart: showOneConfigSheet"
   },
-  "sheetsShowOneConfigSheetSub": "账号信息仅保存在本地（演示）",
-  "@sheetsShowOneConfigSheetSub": {
-    "description": "sheets.dart: showOneConfigSheet"
-  },
   "sheetsShowSleepSheetText3": "当前播放列表播完后自动停止并关闭",
   "@sheetsShowSleepSheetText3": {
     "description": "sheets.dart: showSleepSheet"
@@ -3854,6 +3868,14 @@
   "translatedSubtitleBadge": "翻译字幕",
   "lyricsTranslateDescription": "按目标语言保存到歌词库",
   "lyricsTranslationProgress": "已翻译 {completed}/{total} 行",
+  "translationFallback": "{from} 翻译失败，改用 {to} 重试。",
+  "@translationFallback": {
+    "placeholders": {"from": {"type": "String"}, "to": {"type": "String"}}
+  },
+  "translationFallbackWithCode": "{from} 翻译失败（错误码 {code}），改用 {to} 重试。",
+  "@translationFallbackWithCode": {
+    "placeholders": {"from": {"type": "String"}, "code": {"type": "String"}, "to": {"type": "String"}}
+  },
   "lyricsTranslationSaved": "译文已保存：{path}",
   "lyricsTranslationInvalidResponse": "翻译结果缺行或为空，请重试或切换翻译引擎。",
   "@lyricsTranslationProgress": {
