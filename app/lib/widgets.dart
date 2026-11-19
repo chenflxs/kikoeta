@@ -10,11 +10,13 @@ import 'data.dart';
 import 'pages/advanced_filter_page.dart';
 import 'services/app_paths.dart';
 import 'services/cover_cache.dart';
+import 'services/lyrics_hub.dart';
 import 'services/lyrics_library_service.dart';
 import 'services/player_service.dart';
 import 'smooth_scroll.dart';
 import 'theme.dart';
 import 'l10n/strings.dart';
+import 'widgets/mini_player_titles.dart';
 
 final List<List<Color>> coverGrads = [
   [const Color(0xFF3B82F6), const Color(0xFF6366F1)],
@@ -1317,26 +1319,16 @@ class MiniPlayer extends StatelessWidget {
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    t?.title ?? '',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  Text(
-                    w.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 11, color: p.muted),
-                  ),
-                ],
+              child: ValueListenableBuilder<String?>(
+                valueListenable: LyricsHub.instance.currentLyric,
+                builder: (context, lyric, _) => MiniPlayerTitles(
+                  key: ValueKey((w.rj, t?.path, t?.url)),
+                  playing: app.playing,
+                  lyric: lyric,
+                  trackTitle: t?.title ?? '',
+                  workTitle: w.title,
+                  secondaryColor: p.muted,
+                ),
               ),
             ),
             IconButton(

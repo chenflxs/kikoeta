@@ -111,6 +111,7 @@ class LyricsHub extends ChangeNotifier {
   bool _loading = false;
   String _conv = 'orig';
   final Map<String, String> _convCache = {};
+  final _currentLyric = ValueNotifier<String?>(null);
   bool _started = false;
   bool _disposed = false;
   String _lastSent = '';
@@ -127,6 +128,8 @@ class LyricsHub extends ChangeNotifier {
   List<LyricLine> get allLyrics => _lyrics;
   String? get sourceName => _sourceName;
   bool get loading => _loading;
+  // Null means no lyrics are loaded. An empty cue can mark a gap in the lyrics.
+  ValueListenable<String?> get currentLyric => _currentLyric;
 
   void start() {
     if (_started) return;
@@ -484,6 +487,7 @@ class LyricsHub extends ChangeNotifier {
 
   void _tick({bool force = false}) {
     final cue = currentOverlayCue;
+    _currentLyric.value = _visibleLyrics.isEmpty ? null : cue.text;
     if (!force && cue.text == _lastSent && !_sendTimingUpdates) return;
     _lastSent = cue.text;
     _overlayUpdate(cue.text, cue.timing);
@@ -526,6 +530,7 @@ class LyricsHub extends ChangeNotifier {
     for (final subscription in _subscriptions) {
       unawaited(subscription.cancel());
     }
+    _currentLyric.dispose();
     super.dispose();
   }
 }

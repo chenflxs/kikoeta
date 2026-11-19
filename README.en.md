@@ -79,7 +79,7 @@
 ### Built for listening
 
 - Track trees with audio format preferences, playback queues, saved progress, and attachment previews or external opening for images, text, and video.
-- Playback modes, volume control, playback speed, channel selection, two levels of loudness boost, a 10-band equalizer, and a mini player.
+- Playback modes, volume control, playback speed, channel selection, two levels of loudness boost, a 10-band equalizer, and a mini player. When a track has lyrics, the mini player shows the current line and track title during playback. Pause to see the track and work titles again.
 - Automatic online lyrics matching, manual selection of local or online lyrics, timing offsets, and Simplified/Traditional Chinese conversion. Landscape mode can show playback controls and lyrics together.
 - Sleep timers with a countdown, a scheduled time, or an end-of-playback option. The desktop app exits when the timer finishes; the mobile app stops playback.
 
