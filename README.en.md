@@ -73,21 +73,23 @@
 
 - Paginated browsing and search by title, tag, circle, or voice actor, with popular and recommended works, sorting, age ratings, and subtitle filters.
 - SFW mode, blacklist filtering, and search history. Copy an RJ ID to search for it directly.
+- On a work’s detail page, you can change its membership in multiple playlists at once. After signing in to asmr.one, you can also add tags and vote tags up or down.
 - Switch between asmr.one, DLsite Play, and self-hosted kikoeru-express servers, with account sign-in and HTTP proxy support.
 
 ### Built for listening
 
 - Track trees with audio format preferences, playback queues, saved progress, and attachment previews or external opening for images, text, and video.
-- Playback modes, volume control, two levels of loudness boost, a 10-band equalizer, and a mini player.
+- Playback modes, volume control, playback speed, channel selection, two levels of loudness boost, a 10-band equalizer, and a mini player.
 - Automatic online lyrics matching, manual selection of local or online lyrics, timing offsets, and Simplified/Traditional Chinese conversion. Landscape mode can show playback controls and lyrics together.
 - Sleep timers with a countdown, a scheduled time, or an end-of-playback option. The desktop app exits when the timer finishes; the mobile app stops playback.
 
 ### Local data and platform features
 
 - Store favorites, playback and search history, playlists, blacklists, translation caches, and playback progress locally.
-- Translate work titles and track names using Google, Microsoft Edge, DeepL, or an OpenAI-compatible translation service.
+- Export favorites, playlists, blacklists, history, and preferences as a backup, or sync them between devices through WebDAV. Downloads, the lyrics library, and account credentials are excluded from backups.
+- Translate work titles, track names, and existing lyrics using Google, Microsoft, DeepL, Index-Translate, or an OpenAI-compatible service. When Google or Microsoft fails or omits lines, the app automatically retries that batch with another engine.
 - Connect to an external [kikoeta-transl](https://github.com/chenflxs/kikoeta-transl) service. Select audio on a work's detail page to create transcription and translation tasks; completed LRC files are automatically imported into the local lyrics library.
-- Windows: desktop lyrics with locking, adjustable font size and colors, plus system tray controls.
+- Windows: desktop lyrics with locking, adjustable font size and colors, horizontal scrolling for long lines, and a remembered position after dragging. Show or hide them with `Ctrl+Alt+K` by default, or change the shortcut in settings. System tray controls are also available.
 - Android: draggable and lockable floating lyrics, lock-screen and notification media controls, audio focus handling, pause on headphone disconnect, and battery optimization settings.
 
 ## Supported platforms
@@ -120,13 +122,13 @@ During playback, open **Lyrics settings → Translate lyrics**. You can follow p
 
 ### Transcription and translation
 
-This feature requires the separate [kikoeta-transl](https://github.com/chenflxs/kikoeta-transl) service, which is **not bundled with Kikoeta**. Download, deploy, and start it yourself. Kikoeta submits the work's audio, displays task progress, and saves the generated LRC files to the lyrics library.
+This feature requires the separate [kikoeta-transl](https://github.com/chenflxs/kikoeta-transl) service, which is **not bundled with Kikoeta**. Download, deploy, and start it yourself. Kikoeta submits tracks, displays task progress, and saves the generated LRC files to the lyrics library.
 
 1. Download and start `kikoeta-transl` on Windows, then select the local connection option under **More → Transcription and translation** (default address: `127.0.0.1:2370`). You can also enter the `IP/domain:port` of a deployed service.
 2. On Android, select a network connection and make sure the device can reach the service.
-3. Open a work's detail page, select the audio to process, and choose **Transcription and translation** from the menu in the upper-right corner. Test the connection, then start the task.
+3. Open a work's detail page, select the audio to process, and choose **Transcription and translation** from the menu in the upper-right corner. Test the connection, then start the task. To process an entire work, leave the selection empty and let Kikoeta select tracks using the [transcription media matching rules](docs/听写媒体匹配规则.md) (Simplified Chinese).
 
-Connection settings are saved locally. Once the task is complete, open the work's lyrics selector to use the automatically imported lyrics.
+Connection settings are saved locally. Once the task is complete, open the work's lyrics selector to use the automatically imported lyrics. Self-hosted servers that support lyrics writeback can also save the lyrics alongside the original tracks. Failed writebacks can be retried separately without repeating transcription.
 
 ### Remote lyrics library
 
