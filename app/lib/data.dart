@@ -14,6 +14,7 @@ import 'services/dictation_queue.dart';
 import 'l10n/app_language.dart';
 import 'l10n/translation_language.dart';
 import 'l10n/tag_names.dart';
+import 'services/media_title_order.dart';
 import 'services/player_service.dart';
 import 'services/settings_store.dart';
 
@@ -678,6 +679,7 @@ class AppState extends ChangeNotifier {
       'play_state',
       jsonEncode({
         'stateId': stateId,
+        'queueOrderVersion': 1,
         'work': _workToJson(w),
         'queue': queue.map(_nodeToJson).toList(),
         'trackIdx': trackIdx,
@@ -764,6 +766,7 @@ class AppState extends ChangeNotifier {
     resumePosition = 0;
     playing = false;
     String? stateId;
+    var migratedOrder = false;
     if (raw != null && raw.isNotEmpty) {
       try {
         final m = jsonDecode(raw) as Map<String, dynamic>;
@@ -795,6 +798,9 @@ class AppState extends ChangeNotifier {
           }
         }
         if (doNotRememberPlaybackProgress) resumePosition = 0;
+        if (!m.containsKey('queueOrderVersion')) {
+          migratedOrder = _migrateLegacyPlaybackOrder();
+        }
       } catch (_) {
         currentWork = null;
         queue = [];
@@ -803,7 +809,67 @@ class AppState extends ChangeNotifier {
         stateId = null;
       }
     }
-    _rememberSavedPlayback(stateId);
+    _rememberSavedPlayback(migratedOrder ? null : stateId);
+    if (migratedOrder) {
+      try {
+        // Save the remapped checkpoint as part of the new queue snapshot.
+        savePlayState();
+      } catch (error, stack) {
+        AppLog.recordError('save migrated playback queue', error, stack);
+      }
+    }
+  }
+
+  bool _migrateLegacyPlaybackOrder() {
+    if (queue.length < 2) return false;
+    final firstPath = queue.first.path;
+    final folder = firstPath.substring(0, firstPath.lastIndexOf('/') + 1);
+    // Only upgrade a single-folder queue that follows the old default sort.
+    // A flattened tree or a playlist can have an intentional different order.
+    if (queue.any(
+      (track) =>
+          track.isDir ||
+          track.work != null ||
+          track.path != '$folder${track.title}',
+    )) {
+      return false;
+    }
+    if (!_matchesPlaybackOrder(MediaTitleOrderVersion.original) &&
+        !_matchesPlaybackOrder(MediaTitleOrderVersion.chapters)) {
+      return false;
+    }
+
+    final ordered = [
+      for (final (index, track) in queue.indexed)
+        (index: index, parts: MediaTitleOrder.parts(track.title)),
+    ];
+    final needsSorting = ordered.indexed.skip(1).any((entry) {
+      final (index, current) = entry;
+      return MediaTitleOrder.compare(ordered[index - 1].parts, current.parts) >
+          0;
+    });
+    if (!needsSorting) return false;
+
+    ordered.sort((a, b) {
+      final order = MediaTitleOrder.compare(a.parts, b.parts);
+      return order == 0 ? a.index.compareTo(b.index) : order;
+    });
+
+    trackIdx = ordered.indexWhere((entry) => entry.index == trackIdx);
+    queue = [for (final entry in ordered) queue[entry.index]];
+    return true;
+  }
+
+  bool _matchesPlaybackOrder(MediaTitleOrderVersion version) {
+    var previous = MediaTitleOrder.parts(queue.first.title, version: version);
+    for (final track in queue.skip(1)) {
+      final parts = MediaTitleOrder.parts(track.title, version: version);
+      if (MediaTitleOrder.compare(previous, parts, version: version) > 0) {
+        return false;
+      }
+      previous = parts;
+    }
+    return true;
   }
 
   Map<String, dynamic> _workToJson(Work w) => {

@@ -12,6 +12,7 @@ import '../src/rust/api/textcodec.dart';
 import '../l10n/strings.dart';
 import '../l10n/tag_names.dart';
 import 'dlsite_play_service.dart';
+import 'media_title_order.dart';
 
 /// 一页作品 + 服务端分页信息（用于 hasMore 判断）
 class WorksPage {
@@ -1990,59 +1991,19 @@ class ApiService {
     return const [];
   }
 
-  static final _mediaTitleParts = RegExp(r'\d+|\D+');
-  static final _mediaChapterPrefix = RegExp(
-    r'^(\s*第)([〇零一二两兩三四五六七八九十百千]{1,7})(?=\s*[篇章节節话話集回卷巻部轨軌])',
-  );
-  static const _hanUnitValues = {'十': 10, '百': 100, '千': 1000};
-
-  static String _mediaSortTitle(String title) {
-    return title.toLowerCase().replaceFirstMapped(_mediaChapterPrefix, (match) {
-      final number = _hanChapterNumber(match.group(2)!);
-      return number == null ? match.group(0)! : '${match.group(1)}$number';
-    });
-  }
-
-  static int? _hanChapterNumber(String text) {
-    var number = 0;
-    var lastUnit = 10000;
-    var digits = 0;
-    for (final character in text.split('')) {
-      final unit = _hanUnitValues[character];
-      if (unit == null) {
-        final digit = switch (character) {
-          '零' => 0,
-          '两' || '兩' => 2,
-          _ => '〇一二三四五六七八九'.indexOf(character),
-        };
-        digits = digits * 10 + digit;
-      } else {
-        // Unit notation is descending, e.g. 一百零二 or 十二.
-        if (unit >= lastUnit || digits > 9) return null;
-        if (digits == 0 && (unit != 10 || number != 0)) return null;
-        number += (digits == 0 ? 1 : digits) * unit;
-        lastUnit = unit;
-        digits = 0;
-      }
-    }
-    if (lastUnit != 10000 && digits > 9) return null;
-    return number + digits;
-  }
-
   static void _sortMediaLevel(List<MediaNode> nodes) {
     if (nodes.length < 2) return;
-    final parts = {
-      for (final node in nodes)
-        node: _mediaTitleParts
-            .allMatches(_mediaSortTitle(node.title))
-            .map((match) => match.group(0)!)
-            .toList(),
+    final keys = {
+      for (final (index, node) in nodes.indexed)
+        node: (index: index, parts: MediaTitleOrder.parts(node.title)),
     };
     nodes.sort((a, b) {
-      final byTitle = _naturalCompare(parts[a]!, parts[b]!);
+      final aKey = keys[a]!;
+      final bKey = keys[b]!;
+      final byTitle = MediaTitleOrder.compare(aKey.parts, bKey.parts);
       if (byTitle != 0) return byTitle;
       if (a.isDir != b.isDir) return a.isDir ? -1 : 1;
-      return 0;
+      return aKey.index.compareTo(bKey.index);
     });
   }
 
@@ -2052,23 +2013,6 @@ class ApiService {
     return Uri.parse(
       '${base.replaceFirst(RegExp(r'/+$'), '')}/',
     ).resolve(value).toString();
-  }
-
-  static int _naturalCompare(List<String> a, List<String> b) {
-    final n = a.length < b.length ? a.length : b.length;
-    for (var i = 0; i < n; i++) {
-      final x = a[i];
-      final y = b[i];
-      final xd = int.tryParse(x);
-      final yd = int.tryParse(y);
-      if (xd != null && yd != null) {
-        if (xd != yd) return xd.compareTo(yd);
-      } else {
-        final c = x.compareTo(y);
-        if (c != 0) return c;
-      }
-    }
-    return a.length.compareTo(b.length);
   }
 
   static WorksPage parseWorks(String json, {String? base, int perPage = 20}) {
