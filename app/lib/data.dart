@@ -631,6 +631,28 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// [newIndex] is the destination after removal, as in `onReorderItem`.
+  void reorderPlaybackTrack(int oldIndex, int newIndex) {
+    if (oldIndex == newIndex ||
+        oldIndex < 0 ||
+        oldIndex >= queue.length ||
+        newIndex < 0 ||
+        newIndex >= queue.length) {
+      return;
+    }
+    // Keep the queue instance so an in-flight open or restore stays valid.
+    queue.insert(newIndex, queue.removeAt(oldIndex));
+    if (trackIdx == oldIndex) {
+      trackIdx = newIndex;
+    } else if (oldIndex < trackIdx && trackIdx <= newIndex) {
+      trackIdx--;
+    } else if (newIndex <= trackIdx && trackIdx < oldIndex) {
+      trackIdx++;
+    }
+    savePlayState(forceStructure: true);
+    notifyListeners();
+  }
+
   // ---------- 播放状态记忆（重启恢复，默认暂停） ----------
   bool get _samePlaybackStructure =>
       identical(_currentWork, _savedPlaybackWork) &&

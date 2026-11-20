@@ -25,6 +25,7 @@ import '../smooth_scroll.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import '../widgets/lyrics_translation_dialog.dart';
+import '../widgets/playback_queue_sheet.dart';
 import '../l10n/strings.dart';
 
 class PlayerPage extends StatefulWidget {
@@ -60,7 +61,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   final Map<String, String> _convCache = {};
   late String _lastConv;
   late bool _lastAppPlaying;
-  late int _lastTrackIdx;
+  MediaNode? _lastTrack;
   late String _lastUiStateSig;
   int _openRequest = 0;
   bool _opening = false; // 正在打开媒体
@@ -82,6 +83,8 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
       : AppColors.light;
   Work get work => app.playWork!;
   MediaNode get track => app.queue[app.trackIdx];
+  MediaNode? get _selectedTrack =>
+      app.trackIdx >= 0 && app.trackIdx < app.queue.length ? track : null;
 
   @override
   void initState() {
@@ -92,7 +95,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
         lifecycle == null || lifecycle == AppLifecycleState.resumed;
     _lastConv = app.conv;
     _lastAppPlaying = app.playing;
-    _lastTrackIdx = app.trackIdx;
+    _lastTrack = _selectedTrack;
     _lastUiStateSig = _uiStateSig;
     _syncPlayerSnapshot();
     _reconnecting = AppPlayer.instance.isReconnecting;
@@ -250,9 +253,10 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     final playingChanged = app.playing != _lastAppPlaying;
     _lastAppPlaying = app.playing;
     var needsRebuild = playingChanged;
-    if (app.trackIdx != _lastTrackIdx) {
+    final selectedTrack = _selectedTrack;
+    if (!identical(selectedTrack, _lastTrack)) {
       _openRequest++;
-      _lastTrackIdx = app.trackIdx;
+      _lastTrack = selectedTrack;
       // 歌词由全局中枢随曲目变化更新。
       needsRebuild = true;
     }
@@ -276,7 +280,8 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
       '${app.volumeBoostLevel}|${app.sleepEndAt?.millisecondsSinceEpoch}|'
       '${app.playbackSeekBackwardSeconds}|${app.playbackSeekForwardSeconds}|'
       '${app.playbackSpeedEnabled}|${app.playbackRate}|'
-      '${app.queue.length}|${app.playWork?.rj ?? ''}|${app.lyricsLibraryAuto}|'
+      '${app.trackIdx}|${app.queue.length}|${app.playWork?.rj ?? ''}|'
+      '${app.lyricsLibraryAuto}|'
       '${app.playWork?.ageKnown}|${app.playWork?.age}';
 
   void _syncPlayerSnapshot({bool rebuild = false}) {
@@ -454,7 +459,6 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     _positionMs = 0;
     _dur = 0;
     AppPlayer.instance.opened = false;
-    _refreshLyricsForCurrentTrack();
     app.notify();
     setState(() {});
     // 自动跳转（播放结束）不依赖 playing 状态，强制打开下一首；
@@ -480,11 +484,6 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     }
   }
 
-  void _refreshLyricsForCurrentTrack() {
-    // 索引快照用于页面更新；紧随的 app.notify() 交给中枢统一匹配。
-    _lastTrackIdx = app.trackIdx;
-  }
-
   void _jumpTo(int idx) {
     if (idx == app.trackIdx) return;
     if (app.queue.isEmpty || _switching) return;
@@ -493,7 +492,6 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     _positionMs = 0;
     _dur = 0;
     AppPlayer.instance.opened = false;
-    _refreshLyricsForCurrentTrack();
     app.notify();
     setState(() {});
     if (app.playing) {
@@ -514,7 +512,6 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     _positionMs = 0;
     _dur = 0;
     AppPlayer.instance.opened = false;
-    _refreshLyricsForCurrentTrack();
     app.notify();
     setState(() {});
     if (app.playing) {
@@ -1614,118 +1611,12 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        height: MediaQuery.sizeOf(context).height * 0.7,
-        decoration: BoxDecoration(
-          color: p.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const SizedBox(height: 10),
-            Center(
-              child: Container(
-                width: 38,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: p.surface3,
-                  borderRadius: BorderRadius.circular(99),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 12, 10, 8),
-              child: Row(
-                children: [
-                  Icon(Icons.queue_music, size: 18, color: p.accent),
-                  const SizedBox(width: 8),
-                  Text(
-                    context.l10n.playerPageShowQueueText2(
-                      (app.queue.length).toString(),
-                    ),
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                      color: p.text,
-                    ),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    icon: Icon(Icons.close, size: 18, color: p.dim),
-                  ),
-                ],
-              ),
-            ),
-            Divider(height: 1, color: p.line),
-            Expanded(
-              child: app.queue.isEmpty
-                  ? Center(
-                      child: Text(
-                        context.l10n.playerPageShowQueueText,
-                        style: TextStyle(fontSize: 13, color: p.dim),
-                      ),
-                    )
-                  : SmoothListView.builder(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      itemCount: app.queue.length,
-                      itemBuilder: (ctx, i) {
-                        final n = app.queue[i];
-                        final current = i == app.trackIdx;
-                        return InkWell(
-                          onTap: current
-                              ? null
-                              : () {
-                                  Navigator.pop(ctx);
-                                  _jumpTo(i);
-                                },
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 18,
-                              vertical: 11,
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  current
-                                      ? Icons.graphic_eq
-                                      : Icons.music_note_outlined,
-                                  size: 18,
-                                  color: current ? p.accent : p.dim,
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    n.title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 13.5,
-                                      color: current ? p.accent : p.text,
-                                      fontWeight: current
-                                          ? FontWeight.w700
-                                          : FontWeight.normal,
-                                    ),
-                                  ),
-                                ),
-                                if (current)
-                                  Text(
-                                    context.l10n.playerPageTopBarText,
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: p.accent,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
+      builder: (context) => PlaybackQueueSheet(
+        app: app,
+        onSelectTrack: (index) {
+          Navigator.pop(context);
+          _jumpTo(index);
+        },
       ),
     );
   }
